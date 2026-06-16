@@ -109,13 +109,13 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "What PDB entries match this protein sequence: MTEY..." → `search_by_sequence`
 - "Find structures containing a ligand like this SMILES / with formula C8H9NO2." → `search_by_chemical`
 - "Which structures have a 3D fold similar to 4HHB?" → `search_by_structure`
-- "Find proteins with a zinc-finger PROSITE motif." → `search_by_seqmotif`
+- "Find proteins with a zinc-finger motif." → `search_by_seqmotif`
 - "Non-redundant human kinase structures (90% identity clusters)." → `search_fulltext` / `search_combined` with `group_by_identity=90`
 - "Summarize PDB entries 4HHB, 1MBN and 6VXX." → `get_entries`
 - "What's the sequence and organism of entity 4HHB_1?" → `get_polymer_entities`
 - "Tell me about the ligand HEM." → `get_chem_comps`
 - "What's the composition of the 4HHB biological assembly?" → `get_assemblies`
-- "Which UniProt entry does P69905 map to?" → `get_uniprot`
+- "Which PDB entries does P69905 map to?" → `get_uniprot`
 - "Pull a field GraphQL doesn't expose by default / combine objects." → `data_graphql`
 
 ## Notes
