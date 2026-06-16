@@ -20,7 +20,18 @@
       "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entries\\(entry_ids:[\\\\\"4HHB\\\\\",\\\\\"ZZZZ\\\\\"]\\){ rcsb_id } }\"}')",
       "Bash(python -c \"import mcp; print\\('mcp', mcp.__version__ if hasattr\\(mcp,'__version__'\\) else 'ok'\\)\")",
       "Bash(python -m py_compile src/rcsb_mcp/server.py src/rcsb_mcp/queries.py)",
-      "Bash(PYTHONPATH=src python -c ' *)"
+      "Bash(PYTHONPATH=src python -c ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ uniprot\\(uniprot_id:\\\\\"P69905\\\\\"\\){ rcsb_id rcsb_uniprot_accession rcsb_uniprot_entry_name rcsb_uniprot_protein{ name{value} source_organism{scientific_name} } } }\"}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\([f['name'] for f in d['data']['__type']['fields']]\\)\")",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entry\\(entry_id:\\\\\"4HHB\\\\\"\\){ rcsb_entry_container_identifiers{ polymer_entity_ids non_polymer_entity_ids assembly_ids } } polymer_entity_instances\\(instance_ids:[\\\\\"4HHB.A\\\\\"]\\){ rcsb_id } } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ nonpolymer_entity_instances\\(instance_ids:[\\\\\"4HHB.C\\\\\"]\\){ rcsb_id } interfaces\\(interface_ids:[\\\\\"1BMV-1.1\\\\\"]\\){ rcsb_id } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entry\\(entry_id:\\\\\"4HHB\\\\\"\\){ rcsb_entry_container_identifiers{ polymer_entity_ids non_polymer_entity_ids assembly_ids } } polymer_entity_instances\\(instance_ids:[\\\\\"4HHB.A\\\\\"]\\){ rcsb_id rcsb_polymer_entity_instance_container_identifiers{ asym_id auth_asym_id entity_id } } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ nonpolymer_entities\\(entity_ids:[\\\\\"4HHB_3\\\\\"]\\){ rcsb_id rcsb_nonpolymer_entity{pdbx_description} rcsb_nonpolymer_entity_container_identifiers{ entry_id entity_id nonpolymer_comp_id auth_asym_ids asym_ids } } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entry\\(entry_id:\\\\\"4HHB\\\\\"\\){ rcsb_entry_container_identifiers{ pubmed_id } } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"query\\($id:Int!\\){ pubmed\\(pubmed_id:$id\\){ rcsb_id rcsb_pubmed_central_id rcsb_pubmed_doi } }\",\"variables\":{\"id\":6726807}}')",
+      "Bash(PYTHONPATH=src python -)",
+      "Bash(rm -f /tmp/introspect_types.py /tmp/introspect_nested.py /tmp/validate_defaults.py)"
     ]
   }
 }

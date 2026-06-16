@@ -54,17 +54,47 @@ async def _post_graphql(query: str, variables: dict[str, Any] | None = None) -> 
     return resp.json()
 
 
-async def _graphql_nodes(body: dict[str, Any], field: str) -> list[dict[str, Any]]:
-    """Run a builder's GraphQL body and return the list under data[field], raising on errors."""
+async def _graphql_field(body: dict[str, Any], field: str) -> Any:
+    """Run a builder's GraphQL body and return data[field] (dict/list/None), raising on errors."""
     payload = await _post_graphql(body["query"], body.get("variables"))
     if payload.get("errors"):
         msgs = "; ".join(e.get("message", "") for e in payload["errors"])
         raise RuntimeError(f"RCSB Data API GraphQL error: {msgs}")
-    return (payload.get("data") or {}).get(field) or []
+    return (payload.get("data") or {}).get(field)
+
+
+async def _query_batch(
+    object_key: str, ids: list[str], fields: str | None
+) -> dict[str, Any]:
+    """Fetch a batch Data API object, returning {count, <object>: [...], not_found?}.
+
+    The API silently drops unknown ids, so we report which requested ids did
+    not come back. Returned field selections are passed through as-is.
+    """
+    spec = queries.DATA_OBJECTS[object_key]
+    nodes = await _graphql_field(queries.build_data_query(object_key, ids, fields), spec.root_field)
+    # Unknown ids are either dropped or returned as null depending on the field.
+    nodes = [n for n in (nodes or []) if n is not None]
+    returned = {str(n.get("rcsb_id", "")).upper() for n in nodes}
+    requested = [str(i).strip().upper() for i in ids if str(i).strip()]
+    missing = [i for i in requested if i not in returned]
+    result: dict[str, Any] = {"count": len(nodes), spec.root_field: nodes}
+    if missing:
+        result["not_found"] = missing
+    return result
+
+
+async def _query_single(
+    object_key: str, id_value: Any, fields: str | None
+) -> dict[str, Any]:
+    """Fetch a singleton Data API object, or a not-found marker."""
+    spec = queries.DATA_OBJECTS[object_key]
+    node = await _graphql_field(queries.build_data_query(object_key, id_value, fields), spec.root_field)
+    return node if node is not None else {"id": id_value, "error": "not found"}
 
 
 def _entry_summary(node: dict[str, Any]) -> dict[str, Any]:
-    """Compact summary for one CoreEntry GraphQL node."""
+    """Compact, flat summary for one CoreEntry node (used to enrich search hits)."""
     info = node.get("rcsb_entry_info") or {}
     resolutions = info.get("resolution_combined") or []
     return {
@@ -76,41 +106,8 @@ def _entry_summary(node: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _polymer_entity_summary(node: dict[str, Any]) -> dict[str, Any]:
-    """Compact summary for one CorePolymerEntity GraphQL node."""
-    entity = node.get("rcsb_polymer_entity") or {}
-    poly = node.get("entity_poly") or {}
-    organisms = [
-        o.get("ncbi_scientific_name") for o in (node.get("rcsb_entity_source_organism") or [])
-    ]
-    return {
-        "id": node.get("rcsb_id"),
-        "description": entity.get("pdbx_description"),
-        "polymer_type": poly.get("type"),
-        "length": poly.get("rcsb_sample_sequence_length"),
-        "sequence": poly.get("pdbx_seq_one_letter_code_can"),
-        "source_organisms": [o for o in organisms if o],
-        "formula_weight_kDa": entity.get("formula_weight"),
-    }
-
-
-def _chem_comp_summary(node: dict[str, Any]) -> dict[str, Any]:
-    """Compact summary for one CoreChemComp (ligand) GraphQL node."""
-    comp = node.get("chem_comp") or {}
-    desc = node.get("rcsb_chem_comp_descriptor") or {}
-    return {
-        "id": node.get("rcsb_id"),
-        "name": comp.get("name"),
-        "formula": comp.get("formula"),
-        "formula_weight": comp.get("formula_weight"),
-        "type": comp.get("type"),
-        "smiles": desc.get("SMILES"),
-        "inchikey": desc.get("InChIKey"),
-    }
-
-
 async def _fetch_entry_summaries(pdb_ids: list[str]) -> list[dict[str, Any]]:
-    """Batch-fetch entry summaries via GraphQL, one result per requested id.
+    """Batch-fetch flat entry summaries via GraphQL, one result per requested id.
 
     The API drops unknown ids from its response, so we map returned nodes back
     by id and fill an explicit "not found" for any that are missing.
@@ -118,8 +115,10 @@ async def _fetch_entry_summaries(pdb_ids: list[str]) -> list[dict[str, Any]]:
     ids = [pid.strip().upper() for pid in pdb_ids if pid.strip()]
     if not ids:
         return []
-    nodes = await _graphql_nodes(queries.build_entries_query(ids), "entries")
-    by_id = {n.get("rcsb_id", "").upper(): _entry_summary(n) for n in nodes}
+    nodes = await _graphql_field(queries.build_data_query("entries", ids), "entries") or []
+    by_id = {
+        str(n.get("rcsb_id", "")).upper(): _entry_summary(n) for n in nodes if n is not None
+    }
     return [by_id.get(pid, {"id": pid, "error": "not found"}) for pid in ids]
 
 
@@ -305,72 +304,149 @@ async def search_by_sequence(
     return _format(raw, None)
 
 
+# --------------------------------------------------------------------------- #
+# Data API tools — one per GraphQL root field (singular forms are covered by
+# their batch tool, called with a single-element list). Each returns the raw
+# selected GraphQL node(s); pass `fields` to override the curated default
+# selection with your own GraphQL sub-selection (omit the surrounding braces).
+# --------------------------------------------------------------------------- #
 @mcp.tool()
-async def get_entry(pdb_id: str) -> dict[str, Any]:
-    """Fetch a metadata summary (title, method, resolution, date) for one PDB ID."""
-    summaries = await _fetch_entry_summaries([pdb_id])
-    return summaries[0] if summaries else {"id": pdb_id.strip().upper(), "error": "not found"}
+async def get_entries(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch metadata for one or more PDB entries (title, method, resolution, dates).
 
-
-@mcp.tool()
-async def get_entries(pdb_ids: list[str]) -> dict[str, Any]:
-    """Fetch metadata summaries for several PDB entries in one Data API request.
-
-    More efficient than calling get_entry repeatedly. Unknown IDs come back with
-    an "error": "not found" marker.
-
-    Args:
-        pdb_ids: List of 4-character entry IDs, e.g. ["4HHB", "1MBN"].
+    IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]. Unknown IDs are
+    listed under "not_found". For a single entry pass a one-element list.
     """
-    # De-duplicate while preserving order.
-    seen: set[str] = set()
-    unique = [pid for pid in pdb_ids if not (pid.upper() in seen or seen.add(pid.upper()))]
-    summaries = await _fetch_entry_summaries(unique)
-    return {"count": len(summaries), "entries": summaries}
+    return await _query_batch("entries", entry_ids, fields)
 
 
 @mcp.tool()
-async def get_polymer_entity(entity_id: str) -> dict[str, Any]:
-    """Fetch details for one polymer entity (chain/molecule) from the Data API.
+async def get_polymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch polymer entities (protein/nucleic-acid molecules).
 
-    Polymer entity IDs combine an entry and an entity number, e.g. "4HHB_1".
-    These are exactly what search_by_sequence returns, so use this to look up the
-    description, sequence, length, and source organism of a sequence-search hit.
+    IDs combine entry + entity number, e.g. ["4HHB_1"] — exactly what
+    search_by_sequence returns. Default fields: description, sequence, length,
+    weight, and source organism.
     """
-    eid = entity_id.strip().upper()
-    nodes = await _graphql_nodes(queries.build_polymer_entities_query([eid]), "polymer_entities")
-    return _polymer_entity_summary(nodes[0]) if nodes else {"id": eid, "error": "not found"}
+    return await _query_batch("polymer_entities", entity_ids, fields)
 
 
 @mcp.tool()
-async def get_chem_comp(comp_id: str) -> dict[str, Any]:
-    """Fetch details for a chemical component / ligand from the Data API.
+async def get_nonpolymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch non-polymer (ligand/cofactor) entities, e.g. ["4HHB_3"].
 
-    Component IDs are the short codes used in PDB files, e.g. "HEM" (heme),
-    "ATP", "NAG". Returns name, formula, weight, type, SMILES, and InChIKey.
+    Default fields: description, weight, copy count, and the bound chemical
+    component ID. Use get_chem_comps for the chemistry of that component.
     """
-    cid = comp_id.strip().upper()
-    nodes = await _graphql_nodes(queries.build_chem_comps_query([cid]), "chem_comps")
-    return _chem_comp_summary(nodes[0]) if nodes else {"id": cid, "error": "not found"}
+    return await _query_batch("nonpolymer_entities", entity_ids, fields)
+
+
+@mcp.tool()
+async def get_branched_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch branched (carbohydrate / oligosaccharide) entities, e.g. ["5FMB_2"]."""
+    return await _query_batch("branched_entities", entity_ids, fields)
+
+
+@mcp.tool()
+async def get_polymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch polymer entity instances (individual chains), e.g. ["4HHB.A"] (entry.asym_id)."""
+    return await _query_batch("polymer_entity_instances", instance_ids, fields)
+
+
+@mcp.tool()
+async def get_nonpolymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch non-polymer entity instances (individual bound ligands), e.g. ["4HHB.E"]."""
+    return await _query_batch("nonpolymer_entity_instances", instance_ids, fields)
+
+
+@mcp.tool()
+async def get_branched_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch branched entity instances (individual glycan chains), e.g. ["5FMB.C"]."""
+    return await _query_batch("branched_entity_instances", instance_ids, fields)
+
+
+@mcp.tool()
+async def get_assemblies(assembly_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch biological assemblies, e.g. ["4HHB-1"] (entry-assembly).
+
+    Default fields: composition counts and oligomeric state.
+    """
+    return await _query_batch("assemblies", assembly_ids, fields)
+
+
+@mcp.tool()
+async def get_interfaces(interface_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch assembly interfaces, e.g. ["1BMV-1.1"] (entry-assembly.interface).
+
+    Default fields: buried area, character, composition, residue count.
+    """
+    return await _query_batch("interfaces", interface_ids, fields)
+
+
+@mcp.tool()
+async def get_chem_comps(comp_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch chemical components / ligands by their short codes, e.g. ["HEM", "ATP"].
+
+    Default fields: name, formula, weight, type, SMILES, InChIKey.
+    """
+    return await _query_batch("chem_comps", comp_ids, fields)
+
+
+@mcp.tool()
+async def get_entry_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch entry groups (clusters of related entries) by group ID."""
+    return await _query_batch("entry_groups", group_ids, fields)
+
+
+@mcp.tool()
+async def get_polymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch polymer entity groups (e.g. sequence clusters), e.g. ["85_70"]."""
+    return await _query_batch("polymer_entity_groups", group_ids, fields)
+
+
+@mcp.tool()
+async def get_nonpolymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+    """Fetch non-polymer entity groups (clusters of related ligands) by group ID."""
+    return await _query_batch("nonpolymer_entity_groups", group_ids, fields)
+
+
+@mcp.tool()
+async def get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[str, Any]:
+    """Fetch the UniProt record RCSB maps to an accession, e.g. "P69905".
+
+    Default fields: accession(s), entry name, protein name, source organism.
+    """
+    return await _query_single("uniprot", uniprot_id, fields)
+
+
+@mcp.tool()
+async def get_pubmed(pubmed_id: int, fields: str | None = None) -> dict[str, Any]:
+    """Fetch the PubMed record for a citation by its integer ID, e.g. 6726807.
+
+    Default fields: PubMed Central ID, DOI, abstract text.
+    """
+    return await _query_single("pubmed", pubmed_id, fields)
+
+
+@mcp.tool()
+async def get_group_provenance(group_provenance_id: str, fields: str | None = None) -> dict[str, Any]:
+    """Fetch provenance/method metadata for a grouping, e.g. "provenance_sequence_identity"."""
+    return await _query_single("group_provenance", group_provenance_id, fields)
 
 
 @mcp.tool()
 async def data_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run an arbitrary GraphQL query against the RCSB Data API.
+    """Run an arbitrary GraphQL query against the RCSB Data API (escape hatch).
 
-    Endpoint: https://data.rcsb.org/graphql . Use this escape hatch for Data API
-    objects and fields the typed tools don't cover (assemblies, polymer/branched
-    instances, UniProt mappings, interfaces, deeply nested annotations, etc.).
+    Endpoint: https://data.rcsb.org/graphql . The get_* tools cover every root
+    field with curated defaults; reach for this only when you need fields or
+    nesting they don't expose, or to combine several objects in one query.
     Returns the raw {"data": ..., "errors": ...} payload so query/validation
     errors are visible.
 
-    Root fields include: entry / entries(entry_ids), polymer_entity /
-    polymer_entities(entity_ids), assembly / assemblies(assembly_ids),
-    chem_comp / chem_comps(comp_ids), uniprot, interface, branched_entity, ...
-
     Example:
         query='''query($ids:[String!]!){
-          assemblies(assembly_ids:$ids){ rcsb_id rcsb_assembly_info{polymer_entity_instance_count} }
+          assemblies(assembly_ids:$ids){ rcsb_id pdbx_struct_oper_list{ matrix } }
         }'''
         variables={"ids": ["4HHB-1"]}
 

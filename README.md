@@ -18,17 +18,37 @@ MCP Inspector, Cursor, etc.).
 
 ### Data (data.rcsb.org/graphql)
 
-| Tool | What it does |
-|------|--------------|
-| `get_entry` | Metadata summary (title, method, resolution, date) for one PDB ID. |
-| `get_entries` | Same summary for many PDB IDs in a single batched request. |
-| `get_polymer_entity` | Description / sequence / length / organism for a polymer entity, e.g. `"4HHB_1"` (what `search_by_sequence` returns). |
-| `get_chem_comp` | Name / formula / weight / SMILES / InChIKey for a ligand or chemical component, e.g. `"HEM"`, `"ATP"`. |
-| `data_graphql` | Escape hatch: run an arbitrary GraphQL query against the Data API (assemblies, instances, UniProt, interfaces, ...). |
+There is one tool per Data API GraphQL root field. Each takes a **list of IDs**
+(singular lookups = a one-element list) plus an optional `fields` argument to
+override the curated default selection with your own GraphQL sub-selection.
+Unknown IDs are reported under `not_found`.
+
+| Tool | Object | Example ID |
+|------|--------|------------|
+| `get_entries` | PDB entries | `"4HHB"` |
+| `get_polymer_entities` | Polymer entities (protein/NA) | `"4HHB_1"` |
+| `get_nonpolymer_entities` | Ligand/cofactor entities | `"4HHB_3"` |
+| `get_branched_entities` | Carbohydrate entities | `"5FMB_2"` |
+| `get_polymer_entity_instances` | Polymer chains | `"4HHB.A"` |
+| `get_nonpolymer_entity_instances` | Bound-ligand instances | `"4HHB.E"` |
+| `get_branched_entity_instances` | Glycan chains | `"5FMB.C"` |
+| `get_assemblies` | Biological assemblies | `"4HHB-1"` |
+| `get_interfaces` | Assembly interfaces | `"1BMV-1.1"` |
+| `get_chem_comps` | Chemical components / ligands | `"HEM"`, `"ATP"` |
+| `get_entry_groups` | Entry groups | group ID |
+| `get_polymer_entity_groups` | Polymer entity groups (seq. clusters) | `"85_70"` |
+| `get_nonpolymer_entity_groups` | Non-polymer entity groups | group ID |
+| `get_uniprot` | UniProt record (single) | `"P69905"` |
+| `get_pubmed` | PubMed record (single, integer) | `6726807` |
+| `get_group_provenance` | Grouping provenance (single) | `"provenance_sequence_identity"` |
+| `data_graphql` | Escape hatch: run any GraphQL query against the Data API. | — |
 
 The Search API only returns identifiers, so the search tools optionally
 **enrich** entry hits with metadata. Enrichment and all Data API tools query
-the GraphQL endpoint, batching every requested ID into one request.
+the GraphQL endpoint, batching every requested ID into one request. All 16
+typed tools are generated from a single registry in
+[`queries.py`](src/rcsb_mcp/queries.py) (`DATA_OBJECTS`), so adding a field or
+endpoint is a one-line change.
 
 ## Install
 
@@ -79,11 +99,12 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Find high-resolution human hemoglobin structures." → `search_by_attribute` + `search_fulltext`
 - "Human hemoglobin structures better than 2 Å, best resolution first." → `search_combined`
 - "What PDB entries match this protein sequence: MTEY..." → `search_by_sequence`
-- "Summarize PDB entry 4HHB." → `get_entry`
-- "Summarize entries 4HHB, 1MBN and 6VXX." → `get_entries`
-- "What's the sequence and organism of entity 4HHB_1?" → `get_polymer_entity`
-- "Tell me about the ligand HEM." → `get_chem_comp`
-- "Get the assembly composition of 4HHB." → `data_graphql`
+- "Summarize PDB entries 4HHB, 1MBN and 6VXX." → `get_entries`
+- "What's the sequence and organism of entity 4HHB_1?" → `get_polymer_entities`
+- "Tell me about the ligand HEM." → `get_chem_comps`
+- "What's the composition of the 4HHB biological assembly?" → `get_assemblies`
+- "Which UniProt entry does P69905 map to?" → `get_uniprot`
+- "Pull a field GraphQL doesn't expose by default / combine objects." → `data_graphql`
 
 ## Notes
 

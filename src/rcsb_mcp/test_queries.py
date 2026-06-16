@@ -87,8 +87,10 @@ def test_validation_errors():
         lambda: queries.build_combined_query(
             filters=[{"attribute": "a", "operator": "bogus", "value": 1}]
         ),
-        lambda: queries.build_entries_query([]),  # empty id list
-        lambda: queries.build_polymer_entities_query(["", "  "]),  # all blank
+        lambda: queries.build_data_query("entries", []),  # empty id list
+        lambda: queries.build_data_query("polymer_entities", ["", "  "]),  # all blank
+        lambda: queries.build_data_query("bogus_object", ["X"]),  # unknown object
+        lambda: queries.build_data_query("uniprot", "  "),  # blank single id
     ):
         try:
             bad()
@@ -98,27 +100,56 @@ def test_validation_errors():
     print("ok: validation")
 
 
-def test_graphql_entries():
-    body = queries.build_entries_query(["4hhb", " 1mbn "])
+def test_graphql_batch():
+    body = queries.build_data_query("entries", ["4hhb", " 1mbn "])
     assert "entries(entry_ids: $ids)" in body["query"]
-    # ids are passed through variables (no inlining); stripping is applied.
-    assert body["variables"] == {"ids": ["4hhb", "1mbn"]}
-    print("ok: graphql entries")
+    assert "query Q($ids: [String!]!)" in body["query"]
+    # ids ride in variables (no inlining), stripped and upper-cased.
+    assert body["variables"] == {"ids": ["4HHB", "1MBN"]}
+    # a single id is accepted as a scalar and wrapped into the list.
+    assert queries.build_data_query("chem_comps", "hem")["variables"] == {"ids": ["HEM"]}
+    print("ok: graphql batch")
 
 
-def test_graphql_polymer_entities():
-    body = queries.build_polymer_entities_query(["4HHB_1"])
-    assert "polymer_entities(entity_ids: $ids)" in body["query"]
-    assert "pdbx_seq_one_letter_code_can" in body["query"]
-    assert body["variables"] == {"ids": ["4HHB_1"]}
-    print("ok: graphql polymer entities")
+def test_graphql_single():
+    body = queries.build_data_query("uniprot", "p69905")
+    assert "uniprot(uniprot_id: $ids)" in body["query"]
+    assert "query Q($ids: String!)" in body["query"]
+    assert body["variables"] == {"ids": "P69905"}
+    # pubmed takes an Int id (coerced, not upper-cased).
+    pm = queries.build_data_query("pubmed", "6726807")
+    assert "query Q($ids: Int!)" in pm["query"]
+    assert pm["variables"] == {"ids": 6726807}
+    # opaque group/provenance tokens are case-sensitive: case is preserved.
+    gp = queries.build_data_query("group_provenance", "provenance_sequence_identity")
+    assert gp["variables"] == {"ids": "provenance_sequence_identity"}
+    grp = queries.build_data_query("entry_groups", ["Foo_1"])
+    assert grp["variables"] == {"ids": ["Foo_1"]}
+    print("ok: graphql single")
 
 
-def test_graphql_chem_comps():
-    body = queries.build_chem_comps_query(["HEM", "ATP"])
-    assert "chem_comps(comp_ids: $ids)" in body["query"]
-    assert body["variables"] == {"ids": ["HEM", "ATP"]}
-    print("ok: graphql chem comps")
+def test_graphql_fields_override():
+    body = queries.build_data_query("entries", ["4HHB"], fields="rcsb_id struct{title}")
+    assert "{ rcsb_id struct{title} }" in body["query"]
+    assert "resolution_combined" not in body["query"]  # default not used
+    print("ok: graphql fields override")
+
+
+def test_graphql_registry():
+    # Every endpoint maps to a usable builder with a non-empty default selection.
+    assert len(queries.DATA_OBJECTS) == 16
+    batch = [k for k, s in queries.DATA_OBJECTS.items() if s.batch]
+    single = [k for k, s in queries.DATA_OBJECTS.items() if not s.batch]
+    assert len(batch) == 13 and len(single) == 3
+    assert set(single) == {"uniprot", "pubmed", "group_provenance"}
+    for key, spec in queries.DATA_OBJECTS.items():
+        assert spec.default_fields.startswith("rcsb_id"), key
+        assert spec.arg_type in {"String", "Int"}, key
+        sample = "1" if spec.arg_type == "Int" else "X"
+        ids = sample if not spec.batch else [sample]
+        body = queries.build_data_query(key, ids)
+        assert f"{spec.root_field}({spec.arg}: $ids)" in body["query"], key
+    print("ok: graphql registry (16 endpoints)")
 
 
 if __name__ == "__main__":
@@ -129,7 +160,8 @@ if __name__ == "__main__":
     test_combined()
     test_combined_single_collapses()
     test_validation_errors()
-    test_graphql_entries()
-    test_graphql_polymer_entities()
-    test_graphql_chem_comps()
+    test_graphql_batch()
+    test_graphql_single()
+    test_graphql_fields_override()
+    test_graphql_registry()
     print("\nAll query-builder tests passed.")
