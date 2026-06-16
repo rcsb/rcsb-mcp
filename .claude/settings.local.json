@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import mcp; print\\('mcp', mcp.__version__\\)\")",
+      "Bash(python -c \"import httpx; print\\('httpx', httpx.__version__\\)\")",
+      "Bash(python -c \"import rcsb_mcp; print\\('rcsb_mcp installed'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python src/rcsb_mcp/test_queries.py)",
+      "Bash(python -c ' *)",
+      "Bash([ -f \"$CFG\" ])",
+      "Read(//Users/joan/Library/Application Support/Claude/**)",
+      "Bash(ls /Users/joan/app/conda/miniconda3/bin/rcsb-mcp 2>&1; echo \"---entrypoint check above---\")",
+      "mcp__rcsb-pdb__get_entry",
+      "mcp__rcsb-pdb__search_fulltext",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entries\\(entry_ids:[\\\\\"4HHB\\\\\",\\\\\"1MBN\\\\\"]\\){ rcsb_id struct{title} exptl{method} rcsb_entry_info{resolution_combined} rcsb_accession_info{deposit_date initial_release_date} } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ polymer_entities\\(entity_ids:[\\\\\"4HHB_1\\\\\"]\\){ rcsb_id rcsb_polymer_entity{pdbx_description formula_weight} entity_poly{type rcsb_sample_sequence_length pdbx_seq_one_letter_code_can} rcsb_entity_source_organism{ncbi_scientific_name} } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ chem_comps\\(comp_ids:[\\\\\"HEM\\\\\",\\\\\"ATP\\\\\"]\\){ rcsb_id chem_comp{name formula formula_weight type} rcsb_chem_comp_descriptor{SMILES InChIKey} } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entries\\(entry_ids:[\\\\\"4HHB\\\\\"]\\){ bogus_field } }\"}')",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entries\\(entry_ids:[\\\\\"4HHB\\\\\"]\\){ bogus } }\"}')",
+      "Bash(curl -s -X POST https://data.rcsb.org/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ entries\\(entry_ids:[\\\\\"4HHB\\\\\",\\\\\"ZZZZ\\\\\"]\\){ rcsb_id } }\"}')",
+      "Bash(python -c \"import mcp; print\\('mcp', mcp.__version__ if hasattr\\(mcp,'__version__'\\) else 'ok'\\)\")",
+      "Bash(python -m py_compile src/rcsb_mcp/server.py src/rcsb_mcp/queries.py)",
+      "Bash(PYTHONPATH=src python -c ' *)"
+    ]
+  }
+}
