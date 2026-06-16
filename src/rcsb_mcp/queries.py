@@ -588,3 +588,180 @@ def build_data_query(
         f"}}"
     )
     return {"query": query, "variables": variables}
+
+
+# --------------------------------------------------------------------------- #
+# Sequence Coordinates API GraphQL bodies (https://sequence-coordinates.rcsb.org/graphql)
+# --------------------------------------------------------------------------- #
+# This API maps alignments and positional annotations between sequence reference
+# systems (UniProt, NCBI, PDB entity/instance). Each builder returns a
+# {"query", "variables"} dict; enum arguments are validated against the schema
+# and ids ride in GraphQL variables. Pass `fields` to override the selection.
+
+# Reference systems a query/target sequence can be expressed in.
+SEQUENCE_REFERENCES = {"NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"}
+# How a group of related sequences is defined.
+GROUP_REFERENCES = {"MATCHING_UNIPROT_ACCESSION", "SEQUENCE_IDENTITY"}
+# Annotation provenance/scope.
+ANNOTATION_REFERENCES = {"PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"}
+
+SC_ALIGNMENTS_FIELDS = (
+    "query_sequence alignment_length "
+    "target_alignments{ target_id orientation "
+    "coverage{ query_coverage query_length target_coverage target_length } "
+    "aligned_regions{ query_begin query_end target_begin target_end } }"
+)
+SC_ANNOTATIONS_FIELDS = (
+    "source target_id "
+    "target_identifiers{ entry_id entity_id asym_id interface_id uniprot_id } "
+    "features{ type feature_id name description provenance_source value "
+    "feature_positions{ beg_seq_id end_seq_id value } }"
+)
+
+
+def _require_enum(value: str, allowed: set[str], name: str) -> str:
+    if value not in allowed:
+        raise ValueError(f"{name} must be one of {sorted(allowed)}")
+    return value
+
+
+def _check_sources(sources: list[str]) -> list[str]:
+    if not sources:
+        raise ValueError("provide at least one annotation source")
+    for s in sources:
+        _require_enum(s, ANNOTATION_REFERENCES, "source")
+    return list(sources)
+
+
+def _clean_range(seq_range: Any) -> list[int] | None:
+    if seq_range is None:
+        return None
+    try:
+        return [int(x) for x in seq_range]
+    except (TypeError, ValueError):
+        raise ValueError("range must be a list of integers, e.g. [1, 120]") from None
+
+
+def build_sc_alignments_query(
+    query_id: str,
+    from_ref: str,
+    to_ref: str,
+    seq_range: Any = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Alignments mapping `query_id` from one reference system to another.
+
+    Example: query_id="P69905", from_ref="UNIPROT", to_ref="PDB_ENTITY".
+    """
+    _require_enum(from_ref, SEQUENCE_REFERENCES, "from_ref")
+    _require_enum(to_ref, SEQUENCE_REFERENCES, "to_ref")
+    qid = str(query_id).strip()
+    if not qid:
+        raise ValueError("query_id must be a non-empty string")
+    selection = fields or SC_ALIGNMENTS_FIELDS
+    query = (
+        "query A($from: SequenceReference!, $to: SequenceReference!, "
+        "$queryId: String!, $range: [Int!]) { "
+        f"alignments(from: $from, to: $to, queryId: $queryId, range: $range) {{ {selection} }} "
+        "}"
+    )
+    return {
+        "query": query,
+        "variables": {"from": from_ref, "to": to_ref, "queryId": qid, "range": _clean_range(seq_range)},
+    }
+
+
+def build_sc_annotations_query(
+    query_id: str,
+    reference: str,
+    sources: list[str],
+    seq_range: Any = None,
+    filters: list[dict[str, Any]] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Positional annotations for `query_id` in a given reference system.
+
+    Example: query_id="4HHB_1", reference="PDB_ENTITY", sources=["UNIPROT"].
+    """
+    _require_enum(reference, SEQUENCE_REFERENCES, "reference")
+    srcs = _check_sources(sources)
+    qid = str(query_id).strip()
+    if not qid:
+        raise ValueError("query_id must be a non-empty string")
+    selection = fields or SC_ANNOTATIONS_FIELDS
+    query = (
+        "query An($queryId: String!, $reference: SequenceReference!, "
+        "$sources: [AnnotationReference]!, $range: [Int!], $filters: [AnnotationFilterInput!]) { "
+        "annotations(queryId: $queryId, reference: $reference, sources: $sources, "
+        f"range: $range, filters: $filters) {{ {selection} }} "
+        "}"
+    )
+    return {
+        "query": query,
+        "variables": {
+            "queryId": qid,
+            "reference": reference,
+            "sources": srcs,
+            "range": _clean_range(seq_range),
+            "filters": filters,
+        },
+    }
+
+
+def build_sc_group_alignments_query(
+    group: str,
+    group_id: str,
+    filter_terms: list[str] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Alignments among the members of a sequence group.
+
+    Example: group="MATCHING_UNIPROT_ACCESSION", group_id="P69905".
+    """
+    _require_enum(group, GROUP_REFERENCES, "group")
+    gid = str(group_id).strip()
+    if not gid:
+        raise ValueError("group_id must be a non-empty string")
+    selection = fields or SC_ALIGNMENTS_FIELDS
+    query = (
+        "query GA($group: GroupReference!, $groupId: String!, $filter: [String!]) { "
+        f"group_alignments(group: $group, groupId: $groupId, filter: $filter) {{ {selection} }} "
+        "}"
+    )
+    return {
+        "query": query,
+        "variables": {"group": group, "groupId": gid, "filter": filter_terms},
+    }
+
+
+def build_sc_group_annotations_query(
+    group: str,
+    group_id: str,
+    sources: list[str],
+    summary: bool = False,
+    filters: list[dict[str, Any]] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Annotations across a sequence group (or a positional summary if summary=True).
+
+    Example: group="MATCHING_UNIPROT_ACCESSION", group_id="P69905",
+             sources=["UNIPROT"].
+    """
+    _require_enum(group, GROUP_REFERENCES, "group")
+    srcs = _check_sources(sources)
+    gid = str(group_id).strip()
+    if not gid:
+        raise ValueError("group_id must be a non-empty string")
+    root_field = "group_annotations_summary" if summary else "group_annotations"
+    selection = fields or SC_ANNOTATIONS_FIELDS
+    query = (
+        "query GAn($group: GroupReference!, $groupId: String!, "
+        "$sources: [AnnotationReference]!, $filters: [AnnotationFilterInput!]) { "
+        f"{root_field}(group: $group, groupId: $groupId, sources: $sources, "
+        f"filters: $filters) {{ {selection} }} "
+        "}"
+    )
+    return {
+        "query": query,
+        "variables": {"group": group, "groupId": gid, "sources": srcs, "filters": filters},
+    }

@@ -220,6 +220,56 @@ def test_graphql_registry():
     print("ok: graphql registry (16 endpoints)")
 
 
+def test_seqcoord_alignments():
+    body = queries.build_sc_alignments_query("p69905", "UNIPROT", "PDB_ENTITY", seq_range=[1, 50])
+    assert "alignments(from: $from, to: $to, queryId: $queryId, range: $range)" in body["query"]
+    assert "target_alignments{" in body["query"]
+    assert body["variables"] == {
+        "from": "UNIPROT", "to": "PDB_ENTITY", "queryId": "p69905", "range": [1, 50],
+    }
+    print("ok: seqcoord alignments")
+
+
+def test_seqcoord_annotations():
+    body = queries.build_sc_annotations_query("4HHB_1", "PDB_ENTITY", ["UNIPROT", "PDB_ENTITY"])
+    assert "annotations(queryId: $queryId, reference: $reference, sources: $sources" in body["query"]
+    v = body["variables"]
+    assert v["queryId"] == "4HHB_1" and v["reference"] == "PDB_ENTITY"
+    assert v["sources"] == ["UNIPROT", "PDB_ENTITY"] and v["range"] is None
+    print("ok: seqcoord annotations")
+
+
+def test_seqcoord_groups():
+    a = queries.build_sc_group_alignments_query("MATCHING_UNIPROT_ACCESSION", "P69905")
+    assert "group_alignments(group: $group, groupId: $groupId, filter: $filter)" in a["query"]
+    # the summary flag swaps the root field name.
+    g = queries.build_sc_group_annotations_query("SEQUENCE_IDENTITY", "X", ["UNIPROT"])
+    assert "group_annotations(" in g["query"] and "summary" not in g["query"]
+    s = queries.build_sc_group_annotations_query(
+        "SEQUENCE_IDENTITY", "X", ["UNIPROT"], summary=True
+    )
+    assert "group_annotations_summary(" in s["query"]
+    print("ok: seqcoord groups")
+
+
+def test_seqcoord_validation():
+    for bad in (
+        lambda: queries.build_sc_alignments_query("P1", "BOGUS", "UNIPROT"),
+        lambda: queries.build_sc_alignments_query("", "UNIPROT", "PDB_ENTITY"),
+        lambda: queries.build_sc_annotations_query("X", "UNIPROT", []),  # no sources
+        lambda: queries.build_sc_annotations_query("X", "UNIPROT", ["BOGUS"]),  # bad source
+        lambda: queries.build_sc_alignments_query("P1", "UNIPROT", "UNIPROT", seq_range=["a"]),
+        lambda: queries.build_sc_group_alignments_query("BOGUS", "X"),
+        lambda: queries.build_sc_group_annotations_query("SEQUENCE_IDENTITY", "X", ["NOPE"]),
+    ):
+        try:
+            bad()
+        except ValueError:
+            continue
+        raise AssertionError("expected ValueError")
+    print("ok: seqcoord validation")
+
+
 if __name__ == "__main__":
     test_fulltext()
     test_fulltext_with_computed()
@@ -237,4 +287,8 @@ if __name__ == "__main__":
     test_graphql_single()
     test_graphql_fields_override()
     test_graphql_registry()
+    test_seqcoord_alignments()
+    test_seqcoord_annotations()
+    test_seqcoord_groups()
+    test_seqcoord_validation()
     print("\nAll query-builder tests passed.")

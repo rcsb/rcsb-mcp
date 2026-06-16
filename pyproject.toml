@@ -1,7 +1,7 @@
 [project]
 name = "rcsb-mcp"
 version = "0.1.0"
-description = "An MCP server for the RCSB PDB Search and Data APIs (search.rcsb.org, data.rcsb.org)"
+description = "An MCP server for the RCSB PDB Search, Data, and Sequence Coordinates APIs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

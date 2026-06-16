@@ -1,9 +1,10 @@
 # rcsb-mcp
 
 An [MCP](https://modelcontextprotocol.io) server that exposes the
-[RCSB PDB Search API](https://search.rcsb.org) and
-[Data API](https://data.rcsb.org/graphql) to LLM clients (Claude Desktop,
-MCP Inspector, Cursor, etc.).
+[RCSB PDB Search API](https://search.rcsb.org),
+[Data API](https://data.rcsb.org/graphql), and
+[Sequence Coordinates API](https://sequence-coordinates.rcsb.org/graphql) to LLM
+clients (Claude Desktop, MCP Inspector, Cursor, etc.).
 
 ## Tools
 
@@ -57,6 +58,20 @@ the GraphQL endpoint, batching every requested ID into one request. All 16
 typed tools are generated from a single registry in
 [`queries.py`](src/rcsb_mcp/queries.py) (`DATA_OBJECTS`), so adding a field or
 endpoint is a one-line change.
+
+### Sequence Coordinates (sequence-coordinates.rcsb.org/graphql)
+
+Maps alignments and positional annotations between sequence reference systems
+(`UNIPROT`, `NCBI_PROTEIN`, `NCBI_GENOME`, `PDB_ENTITY`, `PDB_INSTANCE`). Each
+tool takes an optional `fields` argument to override the default selection.
+
+| Tool | What it does |
+|------|--------------|
+| `seqcoord_alignments` | Map a sequence's coordinates from one reference system to another (e.g. UniProt `P69905` → PDB entities). |
+| `seqcoord_annotations` | Positional features for one sequence, from one or more annotation `sources` (`UNIPROT`, `PDB_ENTITY`, `PDB_INSTANCE`, `PDB_INTERFACE`). |
+| `seqcoord_group_alignments` | Alignments among members of a sequence group (`MATCHING_UNIPROT_ACCESSION` / `SEQUENCE_IDENTITY`). |
+| `seqcoord_group_annotations` | Annotations across a group; `summary=True` returns a positional summary. |
+| `seqcoord_graphql` | Escape hatch: run any GraphQL query against the Sequence Coordinates API. |
 
 ## Install
 
@@ -116,6 +131,8 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Tell me about the ligand HEM." → `get_chem_comps`
 - "What's the composition of the 4HHB biological assembly?" → `get_assemblies`
 - "Which PDB entries does P69905 map to?" → `get_uniprot`
+- "Which PDB entities align to UniProt P69905, and over what ranges?" → `seqcoord_alignments`
+- "Show UniProt features mapped onto PDB entity 4HHB_1." → `seqcoord_annotations`
 - "Pull a field GraphQL doesn't expose by default / combine objects." → `data_graphql`
 
 ## Notes
@@ -123,6 +140,8 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - Search endpoint: `https://search.rcsb.org/rcsbsearch/v2/query` (POST, JSON body).
 - Data endpoint: `https://data.rcsb.org/graphql` (POST, GraphQL). It returns
   HTTP 200 even for query errors, reporting them in an `errors` array.
+- Sequence Coordinates endpoint: `https://sequence-coordinates.rcsb.org/graphql`
+  (POST, GraphQL; same HTTP-200-with-`errors` behavior).
 - No API key required; the APIs are public. Be considerate with request volume.
 - A full list of searchable attributes for `search_by_attribute` is in the
   [Search API attribute reference](https://search.rcsb.org/structure-search-attributes.html);

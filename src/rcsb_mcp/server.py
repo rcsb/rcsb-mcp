@@ -21,6 +21,7 @@ from . import queries
 
 SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 DATA_GRAPHQL_URL = "https://data.rcsb.org/graphql"
+SEQCOORD_GRAPHQL_URL = "https://sequence-coordinates.rcsb.org/graphql"
 USER_AGENT = "rcsb-mcp/0.1 (https://github.com/your/repo)"
 TIMEOUT = httpx.Timeout(30.0)
 
@@ -41,25 +42,27 @@ async def _post_search(body: dict[str, Any]) -> dict[str, Any]:
     return resp.json()
 
 
-async def _post_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    """POST a GraphQL query to the Data API. Returns the raw {data, errors} payload.
+async def _post_graphql(
+    query: str, variables: dict[str, Any] | None = None, url: str = DATA_GRAPHQL_URL
+) -> dict[str, Any]:
+    """POST a GraphQL query to an RCSB GraphQL endpoint. Returns the raw {data, errors} payload.
 
-    The endpoint replies 200 even for query/validation errors, surfacing them in
+    These endpoints reply 200 even for query/validation errors, surfacing them in
     an ``errors`` array, so callers must inspect that rather than HTTP status.
     """
     body = {"query": query, "variables": variables or {}}
     async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
-        resp = await client.post(DATA_GRAPHQL_URL, json=body)
+        resp = await client.post(url, json=body)
     resp.raise_for_status()
     return resp.json()
 
 
-async def _graphql_field(body: dict[str, Any], field: str) -> Any:
+async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPHQL_URL) -> Any:
     """Run a builder's GraphQL body and return data[field] (dict/list/None), raising on errors."""
-    payload = await _post_graphql(body["query"], body.get("variables"))
+    payload = await _post_graphql(body["query"], body.get("variables"), url=url)
     if payload.get("errors"):
         msgs = "; ".join(e.get("message", "") for e in payload["errors"])
-        raise RuntimeError(f"RCSB Data API GraphQL error: {msgs}")
+        raise RuntimeError(f"RCSB GraphQL error: {msgs}")
     return (payload.get("data") or {}).get(field)
 
 
@@ -613,6 +616,140 @@ async def data_graphql(query: str, variables: dict[str, Any] | None = None) -> d
         variables: Optional dict of GraphQL variables referenced by the query.
     """
     return await _post_graphql(query, variables)
+
+
+# --------------------------------------------------------------------------- #
+# Sequence Coordinates API tools (https://sequence-coordinates.rcsb.org/graphql)
+# Map alignments and positional annotations between sequence reference systems
+# (UniProt, NCBI, PDB entity/instance). Each returns the raw selected GraphQL
+# node(s); pass `fields` to override the default selection.
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+async def seqcoord_alignments(
+    query_id: str,
+    from_ref: str,
+    to_ref: str,
+    seq_range: list[int] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Map a sequence's coordinates from one reference system to another.
+
+    Reference systems (from_ref/to_ref): NCBI_GENOME, NCBI_PROTEIN, PDB_ENTITY,
+    PDB_INSTANCE, UNIPROT.
+
+    Args:
+        query_id: The sequence id in the from_ref system, e.g. "P69905" (UNIPROT)
+            or "4HHB_1" (PDB_ENTITY).
+        from_ref: Reference system of query_id.
+        to_ref: Reference system to map onto.
+        seq_range: Optional [begin, end] (1-based) to restrict the query region.
+        fields: Optional GraphQL selection to override the default.
+    """
+    body = queries.build_sc_alignments_query(query_id, from_ref, to_ref, seq_range, fields)
+    data = await _graphql_field(body, "alignments", url=SEQCOORD_GRAPHQL_URL)
+    return data if data is not None else {"query_id": query_id, "error": "no alignment found"}
+
+
+@mcp.tool()
+async def seqcoord_annotations(
+    query_id: str,
+    reference: str,
+    sources: list[str],
+    seq_range: list[int] | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Fetch positional sequence annotations (features) for one sequence.
+
+    reference (the system query_id is given in): NCBI_GENOME, NCBI_PROTEIN,
+    PDB_ENTITY, PDB_INSTANCE, UNIPROT.
+    sources (annotation provenance, one or more): PDB_ENTITY, PDB_INSTANCE,
+    PDB_INTERFACE, UNIPROT.
+
+    Args:
+        query_id: The sequence id, e.g. "4HHB_1" (PDB_ENTITY) or "P69905" (UNIPROT).
+        reference: Reference system of query_id.
+        sources: Annotation source(s) to pull features from.
+        seq_range: Optional [begin, end] (1-based) to restrict the region.
+        filters: Optional list of {field, operation, source?, values} filter dicts,
+            where field is TARGET_ID or TYPE and operation is CONTAINS or EQUALS.
+        fields: Optional GraphQL selection to override the default.
+    """
+    body = queries.build_sc_annotations_query(
+        query_id, reference, sources, seq_range, filters, fields
+    )
+    data = await _graphql_field(body, "annotations", url=SEQCOORD_GRAPHQL_URL) or []
+    return {"count": len(data), "annotations": data}
+
+
+@mcp.tool()
+async def seqcoord_group_alignments(
+    group: str,
+    group_id: str,
+    filter_terms: list[str] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Fetch alignments among the members of a sequence group.
+
+    group: MATCHING_UNIPROT_ACCESSION or SEQUENCE_IDENTITY.
+
+    Args:
+        group: How the group is defined.
+        group_id: The group id, e.g. "P69905" (a UniProt accession) for
+            MATCHING_UNIPROT_ACCESSION.
+        filter_terms: Optional list of target ids to restrict the group members.
+        fields: Optional GraphQL selection to override the default.
+    """
+    body = queries.build_sc_group_alignments_query(group, group_id, filter_terms, fields)
+    data = await _graphql_field(body, "group_alignments", url=SEQCOORD_GRAPHQL_URL)
+    return data if data is not None else {"group_id": group_id, "error": "no alignment found"}
+
+
+@mcp.tool()
+async def seqcoord_group_annotations(
+    group: str,
+    group_id: str,
+    sources: list[str],
+    summary: bool = False,
+    filters: list[dict[str, Any]] | None = None,
+    fields: str | None = None,
+) -> dict[str, Any]:
+    """Fetch annotations across the members of a sequence group.
+
+    group: MATCHING_UNIPROT_ACCESSION or SEQUENCE_IDENTITY.
+    sources (one or more): PDB_ENTITY, PDB_INSTANCE, PDB_INTERFACE, UNIPROT.
+
+    Args:
+        group: How the group is defined.
+        group_id: The group id, e.g. "P69905" for MATCHING_UNIPROT_ACCESSION.
+        sources: Annotation source(s) to pull features from.
+        summary: If true, return a positional summary aggregated across the group
+            (group_annotations_summary) instead of per-member annotations.
+        filters: Optional filter dicts (see seqcoord_annotations).
+        fields: Optional GraphQL selection to override the default.
+    """
+    body = queries.build_sc_group_annotations_query(
+        group, group_id, sources, summary=summary, filters=filters, fields=fields
+    )
+    field = "group_annotations_summary" if summary else "group_annotations"
+    data = await _graphql_field(body, field, url=SEQCOORD_GRAPHQL_URL) or []
+    return {"count": len(data), "annotations": data}
+
+
+@mcp.tool()
+async def seqcoord_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Run an arbitrary GraphQL query against the RCSB Sequence Coordinates API.
+
+    Endpoint: https://sequence-coordinates.rcsb.org/graphql . Escape hatch for
+    fields/arguments the typed seqcoord_* tools don't expose. Root fields:
+    alignments, annotations, group_alignments, group_annotations,
+    group_annotations_summary. Returns the raw {"data": ..., "errors": ...} payload.
+
+    Args:
+        query: A GraphQL query string. Prefer $variables over inlining values.
+        variables: Optional dict of GraphQL variables referenced by the query.
+    """
+    return await _post_graphql(query, variables, url=SEQCOORD_GRAPHQL_URL)
 
 
 def main() -> None:
