@@ -12,7 +12,7 @@ Your task is to answer user queries by searching the Protein Data Bank using the
 
 ## Output Format
 
-Display search results as an HTML table.
+The search results should be presented as a table inside a fully rendered HTML page. 
 
 The table should include the following columns:
 
