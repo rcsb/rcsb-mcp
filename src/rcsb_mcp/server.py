@@ -6,6 +6,9 @@ similarity, and fetch metadata from the RCSB Data API
 (https://data.rcsb.org/graphql) for entries, polymer entities, and ligands.
 The Search API returns only identifiers, so the search tools optionally
 enrich results with titles/resolution/method pulled from the Data API.
+Additionally, the Sequence Coordinates API (https://sequence-coordinates.rcsb.org/graphql)
+is used to map alignments and positional annotations between sequence reference systems
+(`UNIPROT`, `NCBI_PROTEIN`, `NCBI_GENOME`, `PDB_ENTITY`, `PDB_INSTANCE`).
 
 Run locally (stdio, for Claude Desktop / MCP Inspector):
     python -m rcsb_mcp.server
