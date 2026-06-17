@@ -10,7 +10,9 @@ dependencies = [
 ]
 
 [project.scripts]
-rcsb-mcp = "rcsb_mcp.server:main"
+rcsb-search-api = "rcsb_mcp.server:main"
+rcsb-data-api = "rcsb_mcp.rcsb_data_api:main"
+rcsb-seq-coord-api = "rcsb_mcp.rcsb_seq_coord_api:main"
 
 [build-system]
 requires = ["hatchling"]
