@@ -476,7 +476,7 @@ async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 @mcp.tool()
 async def get_entries(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch metadata for one or more PDB entries (title, method, resolution, dates).
+    """Fetch metadata for one or more PDB entries (title, method, resolution, dates, publication abstract).
 
     IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]. Unknown IDs are
     listed under "not_found". For a single entry pass a one-element list.
