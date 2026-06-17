@@ -426,7 +426,8 @@ DATA_OBJECTS: dict[str, DataObject] = {
         "entries", "entry_ids", True, "String", 'entry IDs, e.g. "4HHB"',
         "rcsb_id struct{title} exptl{method} "
         "rcsb_entry_info{resolution_combined} "
-        "rcsb_accession_info{deposit_date initial_release_date}",
+        "rcsb_accession_info{deposit_date initial_release_date} "
+        "pubmed{rcsb_pubmed_abstract_text}",
     ),
     "polymer_entities": DataObject(
         "polymer_entities", "entity_ids", True, "String",
