@@ -56,7 +56,20 @@ Other capabilities:
   geometric motif); this is different from search_by_structure (whole-shape similarity).
 - To search chemical-component attributes (chem_comp.*, drugbank_info.*, rcsb_chem_comp_*),
   call list_pdb_search_attributes(schema="chemical") to find the path, then pass chemical=True
-  to search_by_attribute / search_combined (usually with return_type="mol_definition")."""
+  to search_by_attribute / search_combined (usually with return_type="mol_definition").
+
+Return types and fetching details:
+- Every search returns identifiers of ONE return_type. The six valid types — with an example
+  id and the Data API tool that fetches their full details — are:
+    entry              whole structure      "4HHB"     -> get_entries
+    polymer_entity     one molecule         "4HHB_1"   -> get_polymer_entities
+    non_polymer_entity ligand entity        "4HHB_3"   -> get_nonpolymer_entities
+    polymer_instance   one chain            "4HHB.A"   -> get_polymer_entity_instances
+    assembly           biological assembly  "4HHB-1"   -> get_assemblies
+    mol_definition     chemical component   "HEM"      -> get_chem_comps
+- The search tools' `enrich` flag auto-attaches entry metadata ONLY when return_type="entry".
+  For any other return_type, take the returned ids and call the matching get_* tool above
+  (batch all ids into a single call) to get details — do not loop one id at a time."""
 )
 
 
@@ -232,7 +245,9 @@ async def search_fulltext(
 
     Args:
         query: Free-text search terms. Quote multi-word phrases for exact match.
-        return_type: One of entry, polymer_entity, assembly, etc. (default "entry").
+        return_type: What to return (default "entry"); one of entry, polymer_entity,
+            non_polymer_entity, polymer_instance, assembly, mol_definition (see the
+            "Return types and fetching details" note in the server instructions).
         limit: Max number of hits to return (1-100).
         include_computed_models: Also search computed structure models (AlphaFold etc.).
         enrich: If true, attach title/method/resolution for each entry hit.
@@ -328,12 +343,19 @@ async def search_by_attribute(
 
     Args:
         attribute: A dotted RCSB attribute path (see the Search API attribute list: https://search.rcsb.org/structure-search-attributes.html). The `list_pdb_search_attributes` tool can be used to retrieve the list of all available attributes.
-        operator: One of exact_match, in, contains_words, contains_phrase,
-            greater, greater_or_equal, less, less_or_equal, equals, range, exists.
-        value: The comparison value (string, number, list, or a range object
-            {from, to, include_lower, include_upper} — bounds are EXCLUSIVE unless
-            include_lower/include_upper are true). Omit for the "exists" operator.
-        return_type: Result identifier type (default "entry").
+        operator: Operators are TYPE-SPECIFIC — use one of the operators that
+            list_pdb_search_attributes reports for this attribute. As a guide:
+            strings use contains_words/contains_phrase (free text) or exact_match/in
+            (enumerated values); numbers and dates use greater, greater_or_equal, less,
+            less_or_equal, equals, range; any type supports exists.
+        value: The comparison value — a string/number, a list (for the "in" operator),
+            or a range object {from, to, include_lower, include_upper} (bounds are
+            EXCLUSIVE unless include_lower/include_upper are true). Omit for "exists".
+            Dates take a full ISO-8601 timestamp, e.g. "2024-01-01T00:00:00Z".
+        return_type: What to return (default "entry"); one of entry, polymer_entity,
+            non_polymer_entity, polymer_instance, assembly, mol_definition (see the
+            server instructions). E.g. return_type="entry" with a ligand attribute
+            finds the structures that contain it.
         limit: Max hits (1-100).
         enrich: Attach entry metadata when return_type is "entry".
         negation: Invert the match (e.g. "not Homo sapiens").
@@ -394,10 +416,14 @@ async def search_combined(
         filters: List of {attribute, operator, value} dicts (see search_by_attribute
             for operators and attribute paths). Each may also carry optional
             "negation" and "case_sensitive" booleans.
-        logical_operator: Combine all conditions with "and" (default) or "or".
-        return_type: Result identifier type (default "entry").
+        logical_operator: Combine ALL conditions with a single "and" (default) or "or".
+            Nested logic like "(A or B) and C" is NOT expressible here — use
+            search_advanced with a nested group query for that.
+        return_type: What to return (default "entry"); one of entry, polymer_entity,
+            non_polymer_entity, polymer_instance, assembly, mol_definition (see the
+            server instructions).
         limit: Max hits (1-100).
-        enrich: Attach title/method/resolution for each entry hit.
+        enrich: Attach title/method/resolution for each entry hit (return_type="entry" only).
         sort_by: Attribute to sort by, e.g. "rcsb_entry_info.resolution_combined".
             Omit to sort by relevance score.
         sort_direction: "asc" or "desc" (default "asc").
@@ -441,7 +467,8 @@ async def search_by_sequence(
         sequence_type: "protein", "dna", or "rna".
         identity_cutoff: Minimum sequence identity as a fraction 0-1 (e.g. 0.3 = 30%).
         evalue_cutoff: Maximum E-value to report.
-        limit: Max hits (1-100). Returns polymer_entity IDs like "4HHB_1".
+        limit: Max hits (1-100). Returns polymer_entity IDs like "4HHB_1" — fetch their
+            details with get_polymer_entities.
     """
     limit = max(1, min(limit, 100))
     body = queries.build_sequence_query(
@@ -472,12 +499,16 @@ async def search_by_chemical(
             formula like "C8H9NO2" (query_type="formula").
         query_type: "descriptor" (default) or "formula".
         descriptor_type: "SMILES" or "InChI" (descriptor queries only).
-        match_type: Graph/fingerprint criterion for descriptor queries. Use
-            "graph-relaxed" for whole-molecule matches or "sub-struct-graph-relaxed"
-            for substructure search; "fingerprint-similarity" for similar molecules.
+        match_type: Graph/fingerprint criterion for descriptor queries, one of:
+            graph-exact, graph-strict, graph-relaxed (default), graph-relaxed-stereo
+            (whole-molecule matches, strict->relaxed = stricter->looser); the
+            sub-struct-graph-* variants of each (substructure search); or
+            fingerprint-similarity (similar molecules).
         match_subset: Formula queries only — match formulas that merely contain the
             requested atoms.
-        return_type: Result identifier type (default "mol_definition" = chem comp).
+        return_type: What to return (default "mol_definition" = the chemical component).
+            Use return_type="entry" to instead get the PDB structures that contain a
+            matching component. Other types from the server instructions also apply.
         limit: Max hits (1-100).
     """
     limit = max(1, min(limit, 100))
@@ -510,8 +541,9 @@ async def search_by_structure(
             Defaults to assembly "1" when neither assembly_id nor asym_id is given.
         asym_id: Use this single chain as the reference instead (mutually exclusive
             with assembly_id).
-        return_type: Result identifier type; defaults to "assembly" for an assembly
-            reference or "polymer_instance" for a chain reference.
+        return_type: What to return; defaults to "assembly" for an assembly reference or
+            "polymer_instance" for a chain reference. May be overridden with any of the
+            six types (see server instructions).
         limit: Max hits (1-100).
     """
     limit = max(1, min(limit, 100))
@@ -541,7 +573,8 @@ async def search_by_seqmotif(
             (prosite), "C..H[LIVF]" (regex), or "NXS" (simple wildcards).
         pattern_type: "prosite" (default), "regex", or "simple".
         sequence_type: "protein" (default), "dna", or "rna".
-        return_type: Result identifier type (default "polymer_entity").
+        return_type: What to return (default "polymer_entity"); one of the six types
+            (see server instructions). Default hits feed get_polymer_entities.
         limit: Max hits (1-100).
     """
     limit = max(1, min(limit, 100))
@@ -604,7 +637,8 @@ async def search_count(
         full_text: Optional free-text term.
         filters: List of {attribute, operator, value} dicts (see search_by_attribute).
         logical_operator: Combine conditions with "and" (default) or "or".
-        return_type: What to count — entry (default), polymer_entity, assembly, etc.
+        return_type: What to count (default "entry"); one of entry, polymer_entity,
+            non_polymer_entity, polymer_instance, assembly, mol_definition.
         chemical: Set True when filters target chemical-component attributes (text_chem).
         include_computed_models: Also count computed structure models (AlphaFold etc.).
     """
@@ -667,7 +701,8 @@ async def search_facets(
         full_text: Optional free-text term to narrow the set before aggregating.
         filters: Optional list of {attribute, operator, value} dicts.
         logical_operator: Combine conditions with "and" (default) or "or".
-        return_type: What to aggregate over (default "entry").
+        return_type: What to aggregate over (default "entry"); one of the six types
+            (see server instructions).
         chemical: Set True when filters target chemical-component attributes (text_chem).
         include_computed_models: Also include computed structure models (AlphaFold etc.).
     """
@@ -708,6 +743,10 @@ async def search_strucmotif(
         entry_id: Reference PDB entry defining the motif, e.g. "2MNR".
         residue_ids: 2-10 residues defining the motif, each a dict
             {"label_asym_id": <chain>, "label_seq_id": <int>, "struct_oper_id"?: <str>}.
+            IMPORTANT: these are the mmCIF *label* identifiers (the internal numbering),
+            which often DIFFER from the author residue numbers seen in papers/the PDB
+            site. If you only have author numbering, resolve the label_asym_id/label_seq_id
+            first (e.g. via get_polymer_entity_instances) — author numbers give wrong/no hits.
             Example (enolase catalytic residues):
             [{"label_asym_id":"A","label_seq_id":162},
              {"label_asym_id":"A","label_seq_id":193},
@@ -718,7 +757,8 @@ async def search_strucmotif(
         rmsd_cutoff: Maximum RMSD of accepted hits (default 2.0).
         atom_pairing_scheme: ALL, BACKBONE, SIDE_CHAIN (default), or PSEUDO_ATOMS.
         motif_pruning_strategy: NONE or KRUSKAL (default).
-        return_type: Result identifier type (default "polymer_entity").
+        return_type: What to return (default "polymer_entity"); one of the six types
+            (see server instructions).
         limit: Max hits (1-100).
     """
     limit = max(1, min(limit, 100))
