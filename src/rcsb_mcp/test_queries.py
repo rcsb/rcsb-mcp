@@ -138,6 +138,91 @@ def test_seqmotif():
     print("ok: seqmotif")
 
 
+def test_facet_query():
+    q = queries.build_facet_query(
+        facets=[
+            {"name": "Methods", "aggregation_type": "terms", "attribute": "exptl.method"},
+            {"name": "Res", "aggregation_type": "histogram",
+             "attribute": "rcsb_entry_info.resolution_combined", "interval": 0.5,
+             "min_interval_population": 1},
+        ],
+        full_text="hemoglobin",
+    )
+    opts = q["request_options"]
+    assert opts["paginate"] == {"start": 0, "rows": 0}  # hits suppressed
+    assert q["query"]["service"] == "full_text"
+    f = opts["facets"]
+    assert f[0] == {"name": "Methods", "aggregation_type": "terms", "attribute": "exptl.method"}
+    assert f[1]["interval"] == 0.5 and f[1]["min_interval_population"] == 1
+    # match-all when no full_text/filters: the query key is omitted entirely.
+    q2 = queries.build_facet_query(
+        facets=[{"name": "M", "aggregation_type": "terms", "attribute": "exptl.method"}]
+    )
+    assert "query" not in q2
+    # nested facets are recursively validated/normalized.
+    q3 = queries.build_facet_query(
+        facets=[{"name": "byMethod", "aggregation_type": "terms", "attribute": "exptl.method",
+                 "facets": [{"name": "byYear", "aggregation_type": "date_histogram",
+                             "attribute": "rcsb_accession_info.initial_release_date",
+                             "interval": "year"}]}]
+    )
+    assert q3["request_options"]["facets"][0]["facets"][0]["aggregation_type"] == "date_histogram"
+    print("ok: facet query")
+
+
+def test_count_query():
+    q = queries.build_count_query(full_text="hemoglobin")
+    assert q["request_options"]["return_counts"] is True
+    assert "paginate" not in q["request_options"]
+    assert q["query"]["service"] == "full_text"
+    # match-all count omits the query key.
+    q2 = queries.build_count_query()
+    assert "query" not in q2 and q2["request_options"]["return_counts"] is True
+    print("ok: count query")
+
+
+def test_strucmotif():
+    q = queries.build_strucmotif_query(
+        "2mnr",
+        residue_ids=[
+            {"label_asym_id": "A", "label_seq_id": 162},
+            {"label_asym_id": "A", "label_seq_id": 193},
+            {"label_asym_id": "A", "label_seq_id": 219, "struct_oper_id": "1"},
+        ],
+        rmsd_cutoff=1.5,
+    )
+    p = q["query"]["parameters"]
+    assert q["query"]["service"] == "strucmotif"
+    assert p["value"]["entry_id"] == "2MNR"  # upper-cased
+    assert len(p["value"]["residue_ids"]) == 3
+    assert p["value"]["residue_ids"][2]["struct_oper_id"] == "1"
+    assert p["rmsd_cutoff"] == 1.5
+    assert p["atom_pairing_scheme"] == "SIDE_CHAIN" and p["motif_pruning_strategy"] == "KRUSKAL"
+    assert q["return_type"] == "polymer_entity"
+    assert q["request_options"]["scoring_strategy"] == "strucmotif"
+    print("ok: strucmotif")
+
+
+def test_chemical_attribute_service():
+    # chemical=True switches the attribute terminal to the text_chem service.
+    q = queries.build_attribute_query(
+        "chem_comp.formula_weight", "less", 300, chemical=True, return_type="mol_definition"
+    )
+    assert q["query"]["service"] == "text_chem"
+    assert q["return_type"] == "mol_definition"
+    # structure attributes keep the default "text" service.
+    assert queries.build_attribute_query("a", "equals", 1)["query"]["service"] == "text"
+    # in a combined query, filters use text_chem but the full-text term stays full_text.
+    c = queries.build_combined_query(
+        full_text="aspirin",
+        filters=[{"attribute": "chem_comp.formula_weight", "operator": "less", "value": 300}],
+        chemical=True,
+    )
+    assert c["query"]["nodes"][0]["service"] == "full_text"
+    assert c["query"]["nodes"][1]["service"] == "text_chem"
+    print("ok: chemical text_chem service")
+
+
 def test_validation_errors():
     for bad in (
         lambda: queries.build_fulltext_query("x", return_type="bogus"),
@@ -159,6 +244,39 @@ def test_validation_errors():
         lambda: queries.build_chemical_query("x", query_type="bogus"),  # bad query type
         lambda: queries.build_structure_query("4HHB", assembly_id="1", asym_id="A"),  # both
         lambda: queries.build_seqmotif_query("X", pattern_type="bogus"),  # bad pattern
+        lambda: queries.build_facet_query(facets=[]),  # no facets
+        lambda: queries.build_facet_query(
+            facets=[{"name": "x", "aggregation_type": "bogus", "attribute": "a"}]
+        ),  # bad aggregation_type
+        lambda: queries.build_facet_query(
+            facets=[{"name": "x", "aggregation_type": "histogram", "attribute": "a"}]
+        ),  # histogram missing interval
+        lambda: queries.build_facet_query(
+            facets=[{"name": "x", "aggregation_type": "range", "attribute": "a"}]
+        ),  # range missing ranges
+        lambda: queries.build_facet_query(
+            facets=[{"aggregation_type": "terms", "attribute": "a"}]
+        ),  # missing name
+        lambda: queries.build_count_query(return_type="bogus"),  # bad return_type
+        lambda: queries.build_strucmotif_query(
+            "2MNR", [{"label_asym_id": "A", "label_seq_id": 1}]
+        ),  # only one residue
+        lambda: queries.build_strucmotif_query(
+            "2MNR", [{"label_asym_id": "A", "label_seq_id": i} for i in range(11)]
+        ),  # too many residues
+        lambda: queries.build_strucmotif_query(
+            "2MNR",
+            [{"label_asym_id": "A", "label_seq_id": 1}, {"label_asym_id": "A", "label_seq_id": 2}],
+            atom_pairing_scheme="BOGUS",
+        ),  # bad enum
+        lambda: queries.build_strucmotif_query(
+            "2MNR",
+            [{"label_asym_id": "A", "label_seq_id": 1}, {"label_asym_id": "A", "label_seq_id": 2}],
+            backbone_distance_tolerance=9,
+        ),  # tolerance out of range
+        lambda: queries.build_strucmotif_query(
+            "2MNR", [{"label_asym_id": "A"}, {"label_asym_id": "A", "label_seq_id": 2}]
+        ),  # residue missing label_seq_id
     ):
         try:
             bad()
@@ -205,10 +323,10 @@ def test_graphql_fields_override():
 
 def test_graphql_registry():
     # Every endpoint maps to a usable builder with a non-empty default selection.
-    assert len(queries.DATA_OBJECTS) == 16
+    assert len(queries.DATA_OBJECTS) == 18
     batch = [k for k, s in queries.DATA_OBJECTS.items() if s.batch]
     single = [k for k, s in queries.DATA_OBJECTS.items() if not s.batch]
-    assert len(batch) == 13 and len(single) == 3
+    assert len(batch) == 15 and len(single) == 3
     assert set(single) == {"uniprot", "pubmed", "group_provenance"}
     for key, spec in queries.DATA_OBJECTS.items():
         assert spec.default_fields.startswith("rcsb_id"), key
@@ -217,7 +335,7 @@ def test_graphql_registry():
         ids = sample if not spec.batch else [sample]
         body = queries.build_data_query(key, ids)
         assert f"{spec.root_field}({spec.arg}: $ids)" in body["query"], key
-    print("ok: graphql registry (16 endpoints)")
+    print("ok: graphql registry (18 endpoints)")
 
 
 def test_seqcoord_alignments():
@@ -282,6 +400,10 @@ if __name__ == "__main__":
     test_chemical()
     test_structure()
     test_seqmotif()
+    test_facet_query()
+    test_count_query()
+    test_strucmotif()
+    test_chemical_attribute_service()
     test_validation_errors()
     test_graphql_batch()
     test_graphql_single()

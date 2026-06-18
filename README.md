@@ -12,18 +12,27 @@ clients (Claude Desktop, MCP Inspector, Cursor, etc.).
 
 | Tool | What it does |
 |------|--------------|
+| `list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~677) or `schema="chemical"` (~57: `chem_comp.*`, `drugbank_info.*`, ...). |
 | `search_fulltext` | Free-text keyword search (e.g. `"CRISPR Cas9"`). |
-| `search_by_attribute` | Structured search on an indexed attribute (resolution, organism, release date, ...). Supports `exists`, `negation`, and `case_sensitive`. |
+| `search_by_attribute` | Structured search on an indexed attribute (resolution, organism, release date, ...). Supports `exists`, `negation`, `case_sensitive`, and `chemical=True` (text_chem). |
 | `search_combined` | Combine free text + multiple attribute filters (AND/OR) in one query, with optional sort. |
+| `search_count` | Return only the **number** of matches — for "how many ..." questions. |
+| `search_facets` | Aggregate matches into buckets/statistics (terms, histogram, date_histogram, range, cardinality) — for "distribution / breakdown / per X" questions. |
 | `search_by_sequence` | MMseqs2 sequence-similarity search (BLAST-like). |
 | `search_by_chemical` | Chemical search by SMILES/InChI descriptor (whole-molecule or substructure) or molecular formula. |
 | `search_by_structure` | 3D shape-similarity search against a reference PDB assembly or chain. |
-| `search_by_seqmotif` | Short sequence-motif search (PROSITE pattern, regex, or simple wildcards). |
-| `search_advanced` | Escape hatch: run a raw Search API query body (facets, `return_all_hits`, `return_counts`, grouped results, strucmotif, ...). |
+| `search_by_seqmotif` | Short **sequence**-motif search (PROSITE pattern, regex, or simple wildcards). |
+| `search_strucmotif` | 3D **structural**-motif search: structures sharing a geometric arrangement of specific residues (e.g. a catalytic triad). |
+| `search_advanced` | Escape hatch: run a raw Search API query body (`return_all_hits`, grouped results, deeply nested boolean queries, ...). |
 
 The three text tools (`search_fulltext`, `search_by_attribute`, `search_combined`)
 also take `group_by_identity` (100/95/90/70/50/30) to return one representative
-per sequence-identity cluster — i.e. non-redundant results.
+per sequence-identity cluster — i.e. non-redundant results. To search
+chemical-component attributes, find the path with
+`list_pdb_search_attributes(schema="chemical")`, then pass `chemical=True` to
+`search_by_attribute` / `search_combined` (usually with `return_type="mol_definition"`).
+The chemical catalog is generated from the live metadata schema by
+[`scripts/generate_chemical_attributes.py`](scripts/generate_chemical_attributes.py).
 
 ### Data (data.rcsb.org/graphql)
 
@@ -35,6 +44,8 @@ Unknown IDs are reported under `not_found`.
 | Tool | Object | Example ID                       |
 |------|--------|----------------------------------|
 | `get_entries` | PDB entries | `"4HHB"`                         |
+| `get_entry_annotations` | Entry biological/functional annotations (GO, domains, disease, ...) | `"4HHB"`                         |
+| `get_entry_exp_info` | Entry experimental conditions / determination metadata | `"4HHB"`                         |
 | `get_polymer_entities` | Polymer entities (protein/NA) | `"4HHB_1"`                       |
 | `get_nonpolymer_entities` | Ligand/cofactor entities | `"4HHB_3"`                       |
 | `get_branched_entities` | Carbohydrate entities | `"5FMB_2"`                       |
@@ -54,7 +65,7 @@ Unknown IDs are reported under `not_found`.
 
 The Search API only returns identifiers, so the search tools optionally
 **enrich** entry hits with metadata. Enrichment and all Data API tools query
-the GraphQL endpoint, batching every requested ID into one request. All 16
+the GraphQL endpoint, batching every requested ID into one request. All 18
 typed tools are generated from a single registry in
 [`queries.py`](src/rcsb_mcp/queries.py) (`DATA_OBJECTS`), so adding a field or
 endpoint is a one-line change.
@@ -92,7 +103,7 @@ uv pip install -e .
 
 ```bash
 # unit tests (no network)
-python tests/test_queries.py
+python src/rcsb_mcp/test_queries.py
 
 # run the server over stdio
 python -m rcsb_mcp.server
@@ -132,6 +143,10 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Which structures have a 3D fold similar to 4HHB?" → `search_by_structure`
 - "Find proteins with a zinc-finger motif." → `search_by_seqmotif`
 - "Non-redundant human kinase structures (90% identity clusters)." → `search_fulltext` / `search_combined` with `group_by_identity=90`
+- "How many human X-ray structures are there?" → `search_count`
+- "Break down ribosome structures by experimental method / by release year." → `search_facets`
+- "Find structures with the same catalytic-site geometry as residues 162/193/219 of 2MNR." → `search_strucmotif`
+- "Find chemical components under 150 Da." → `list_pdb_search_attributes(schema="chemical")` + `search_by_attribute` with `chemical=True`
 - "Summarize PDB entries 4HHB, 1MBN and 6VXX." → `get_entries`
 - "What's the sequence and organism of entity 4HHB_1?" → `get_polymer_entities`
 - "Tell me about the ligand HEM." → `get_chem_comps`

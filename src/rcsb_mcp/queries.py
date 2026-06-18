@@ -59,6 +59,13 @@ SEQMOTIF_PATTERN_TYPES = {"simple", "prosite", "regex"}
 # Allowed sequence-identity cluster cutoffs for group_by (spec enum).
 GROUP_BY_IDENTITY_CUTOFFS = {100, 95, 90, 70, 50, 30}
 
+# Facet (aggregation) types from the spec enum.
+FACET_AGG_TYPES = {"terms", "histogram", "date_histogram", "range", "date_range", "cardinality"}
+
+# Strucmotif tuning enums (spec).
+STRUCMOTIF_ATOM_PAIRING = {"ALL", "BACKBONE", "SIDE_CHAIN", "PSEUDO_ATOMS"}
+STRUCMOTIF_PRUNING = {"NONE", "KRUSKAL"}
+
 
 def _request_options(
     start: int,
@@ -98,13 +105,16 @@ def _text_node(
     operator: str,
     value: Any = None,
     *,
+    service: str = "text",
     negation: bool = False,
     case_sensitive: bool = False,
 ) -> dict[str, Any]:
-    """Build a terminal 'text' (attribute) query node.
+    """Build a terminal attribute query node.
 
-    The 'exists' operator takes no value; all others require one. `negation`
-    inverts the match and `case_sensitive` forces exact-case comparison.
+    `service` is "text" for structure attributes or "text_chem" for
+    chemical-component attributes. The 'exists' operator takes no value; all
+    others require one. `negation` inverts the match and `case_sensitive`
+    forces exact-case comparison.
     """
     if operator not in TEXT_OPERATORS:
         raise ValueError(f"operator must be one of {sorted(TEXT_OPERATORS)}")
@@ -115,7 +125,48 @@ def _text_node(
         params["negation"] = True
     if case_sensitive:
         params["case_sensitive"] = True
-    return {"type": "terminal", "service": "text", "parameters": params}
+    return {"type": "terminal", "service": service, "parameters": params}
+
+
+def _search_node(
+    full_text: str | None,
+    filters: list[dict[str, Any]] | None,
+    logical_operator: str = "and",
+    *,
+    service: str = "text",
+) -> dict[str, Any]:
+    """Build one query node from a full-text term and/or attribute filters.
+
+    The full-text term (if any) is always a 'full_text' terminal; each filter is
+    a `service` terminal ("text" or "text_chem"). A single condition collapses to
+    a plain terminal; several are wrapped in an AND/OR "group". Raises if neither
+    a term nor a filter is provided.
+    """
+    if logical_operator not in {"and", "or"}:
+        raise ValueError('logical_operator must be "and" or "or"')
+    nodes: list[dict[str, Any]] = []
+    if full_text:
+        nodes.append({
+            "type": "terminal",
+            "service": "full_text",
+            "parameters": {"value": full_text},
+        })
+    for f in filters or []:
+        nodes.append(
+            _text_node(
+                f["attribute"],
+                f.get("operator"),
+                f.get("value"),
+                service=service,
+                negation=f.get("negation", False),
+                case_sensitive=f.get("case_sensitive", False),
+            )
+        )
+    if not nodes:
+        raise ValueError("provide a full_text term and/or at least one filter")
+    if len(nodes) == 1:
+        return nodes[0]
+    return {"type": "group", "logical_operator": logical_operator, "nodes": nodes}
 
 
 def build_fulltext_query(
@@ -153,6 +204,7 @@ def build_attribute_query(
     negation: bool = False,
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
+    chemical: bool = False,
 ) -> dict[str, Any]:
     """Structured search against a specific indexed attribute.
 
@@ -160,13 +212,17 @@ def build_attribute_query(
              operator="less", value=2.0
 
     The "exists" operator takes no value. `negation` inverts the match;
-    `case_sensitive` forces case-sensitive value comparison.
+    `case_sensitive` forces case-sensitive value comparison. Set `chemical=True`
+    for chemical-component attributes (the "text_chem" service); structure
+    attributes use the default "text" service.
     """
     if return_type not in RETURN_TYPES:
         raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
     return {
         "query": _text_node(
-            attribute, operator, value, negation=negation, case_sensitive=case_sensitive
+            attribute, operator, value,
+            service="text_chem" if chemical else "text",
+            negation=negation, case_sensitive=case_sensitive,
         ),
         "return_type": return_type,
         "request_options": _request_options(
@@ -186,13 +242,16 @@ def build_combined_query(
     sort_by: str | None = None,
     sort_direction: str = "asc",
     group_by_identity: int | None = None,
+    chemical: bool = False,
 ) -> dict[str, Any]:
     """Combine a full-text term and/or several attribute filters with AND/OR.
 
     Each filter is a dict {"attribute", "operator", "value"} (same shape as
     build_attribute_query) and may also carry optional "negation" and
     "case_sensitive" booleans. A single condition collapses to a plain terminal
-    node; multiple conditions are wrapped in a "group" node.
+    node; multiple conditions are wrapped in a "group" node. Set `chemical=True`
+    when the filters target chemical-component attributes (the "text_chem"
+    service); the full-text term always uses the "full_text" service.
 
     Example ("human hemoglobin better than 2 A", sorted by resolution):
         build_combined_query(
@@ -208,33 +267,10 @@ def build_combined_query(
     """
     if return_type not in RETURN_TYPES:
         raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    if logical_operator not in {"and", "or"}:
-        raise ValueError('logical_operator must be "and" or "or"')
 
-    nodes: list[dict[str, Any]] = []
-    if full_text:
-        nodes.append({
-            "type": "terminal",
-            "service": "full_text",
-            "parameters": {"value": full_text},
-        })
-    for f in filters or []:
-        nodes.append(
-            _text_node(
-                f["attribute"],
-                f.get("operator"),
-                f.get("value"),
-                negation=f.get("negation", False),
-                case_sensitive=f.get("case_sensitive", False),
-            )
-        )
-    if not nodes:
-        raise ValueError("provide a full_text term and/or at least one filter")
-
-    query = (
-        nodes[0]
-        if len(nodes) == 1
-        else {"type": "group", "logical_operator": logical_operator, "nodes": nodes}
+    query = _search_node(
+        full_text, filters, logical_operator,
+        service="text_chem" if chemical else "text",
     )
 
     options = _request_options(
@@ -397,6 +433,193 @@ def build_seqmotif_query(
         },
         "return_type": return_type,
         "request_options": _request_options(start, rows, False),
+    }
+
+
+def _optional_search_node(
+    full_text: str | None,
+    filters: list[dict[str, Any]] | None,
+    logical_operator: str,
+    service: str,
+) -> dict[str, Any] | None:
+    """Like _search_node, but return None (match-all) when no condition is given."""
+    if not full_text and not filters:
+        return None
+    return _search_node(full_text, filters, logical_operator, service=service)
+
+
+def _build_facet(facet: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize one facet (aggregation) spec.
+
+    Every facet needs `name`, `aggregation_type`, `attribute`. Additionally:
+      histogram / date_histogram -> `interval`
+      range / date_range         -> `ranges` (non-empty list of {from?, to?})
+    Optional pass-through: `min_interval_population`, `max_num_intervals`,
+    `precision_threshold`, and a nested `facets` list (recursively validated).
+    """
+    if not isinstance(facet, dict):
+        raise ValueError("each facet must be a dict")
+    agg = facet.get("aggregation_type")
+    if agg not in FACET_AGG_TYPES:
+        raise ValueError(f"aggregation_type must be one of {sorted(FACET_AGG_TYPES)}")
+    name, attribute = facet.get("name"), facet.get("attribute")
+    if not name or not attribute:
+        raise ValueError("each facet requires 'name' and 'attribute'")
+    out: dict[str, Any] = {"name": name, "aggregation_type": agg, "attribute": attribute}
+    if agg in {"histogram", "date_histogram"}:
+        if facet.get("interval") is None:
+            raise ValueError(f"a {agg} facet requires 'interval'")
+        out["interval"] = facet["interval"]
+    if agg in {"range", "date_range"}:
+        if not facet.get("ranges"):
+            raise ValueError(f"a {agg} facet requires a non-empty 'ranges' list")
+        out["ranges"] = facet["ranges"]
+    for k in ("min_interval_population", "max_num_intervals", "precision_threshold"):
+        if facet.get(k) is not None:
+            out[k] = facet[k]
+    if facet.get("facets"):
+        out["facets"] = [_build_facet(f) for f in facet["facets"]]
+    return out
+
+
+def build_facet_query(
+    facets: list[dict[str, Any]],
+    full_text: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    logical_operator: str = "and",
+    return_type: str = "entry",
+    chemical: bool = False,
+    include_computed: bool = False,
+) -> dict[str, Any]:
+    """Aggregate matches into buckets/statistics instead of returning hits.
+
+    Builds the same query node as build_combined_query (full_text + filters),
+    attaches `facets`, and requests rows=0 so only aggregations + total_count
+    come back. Requires at least one facet. With no full_text/filters the facets
+    run over all structures.
+    """
+    if return_type not in RETURN_TYPES:
+        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
+    if not facets:
+        raise ValueError("provide at least one facet")
+    content = ["experimental"] + (["computational"] if include_computed else [])
+    body: dict[str, Any] = {
+        "return_type": return_type,
+        "request_options": {
+            "paginate": {"start": 0, "rows": 0},
+            "results_content_type": content,
+            "facets": [_build_facet(f) for f in facets],
+        },
+    }
+    node = _optional_search_node(
+        full_text, filters, logical_operator, "text_chem" if chemical else "text"
+    )
+    if node is not None:
+        body["query"] = node
+    return body
+
+
+def build_count_query(
+    full_text: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    logical_operator: str = "and",
+    return_type: str = "entry",
+    chemical: bool = False,
+    include_computed: bool = False,
+) -> dict[str, Any]:
+    """Count matches only (return_counts) — no hits are paged or returned.
+
+    Same query node as build_combined_query. With no full_text/filters the count
+    is over all structures of `return_type`.
+    """
+    if return_type not in RETURN_TYPES:
+        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
+    content = ["experimental"] + (["computational"] if include_computed else [])
+    body: dict[str, Any] = {
+        "return_type": return_type,
+        "request_options": {"return_counts": True, "results_content_type": content},
+    }
+    node = _optional_search_node(
+        full_text, filters, logical_operator, "text_chem" if chemical else "text"
+    )
+    if node is not None:
+        body["query"] = node
+    return body
+
+
+def _strucmotif_residue(r: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one strucmotif residue identifier."""
+    asym, seq = r.get("label_asym_id"), r.get("label_seq_id")
+    if asym is None or seq is None:
+        raise ValueError("each residue needs label_asym_id and label_seq_id")
+    out: dict[str, Any] = {"label_asym_id": str(asym), "label_seq_id": int(seq)}
+    if r.get("struct_oper_id") is not None:
+        out["struct_oper_id"] = str(r["struct_oper_id"])
+    return out
+
+
+def build_strucmotif_query(
+    entry_id: str,
+    residue_ids: list[dict[str, Any]],
+    backbone_distance_tolerance: int = 1,
+    side_chain_distance_tolerance: int = 1,
+    angle_tolerance: int = 1,
+    rmsd_cutoff: float = 2.0,
+    atom_pairing_scheme: str = "SIDE_CHAIN",
+    motif_pruning_strategy: str = "KRUSKAL",
+    exchanges: list[dict[str, Any]] | None = None,
+    limit: int | None = None,
+    return_type: str = "polymer_entity",
+    rows: int = 10,
+    start: int = 0,
+) -> dict[str, Any]:
+    """3D structural-motif search: find structures containing a geometric
+    arrangement of residues like the one in a reference structure.
+
+    Distinct from build_structure_query (whole-shape similarity). `residue_ids`
+    is a list of 2-10 dicts {label_asym_id, label_seq_id, struct_oper_id?}.
+    Tolerances are integers in 0..3.
+    """
+    if return_type not in RETURN_TYPES:
+        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
+    eid = str(entry_id).strip().upper()
+    if not eid:
+        raise ValueError("entry_id must be non-empty")
+    residues = [_strucmotif_residue(r) for r in (residue_ids or [])]
+    if not 2 <= len(residues) <= 10:
+        raise ValueError("provide between 2 and 10 residue_ids")
+    for nm, val in (
+        ("backbone_distance_tolerance", backbone_distance_tolerance),
+        ("side_chain_distance_tolerance", side_chain_distance_tolerance),
+        ("angle_tolerance", angle_tolerance),
+    ):
+        if not 0 <= val <= 3:
+            raise ValueError(f"{nm} must be an integer in 0..3")
+    if rmsd_cutoff < 0:
+        raise ValueError("rmsd_cutoff must be >= 0")
+    if atom_pairing_scheme not in STRUCMOTIF_ATOM_PAIRING:
+        raise ValueError(f"atom_pairing_scheme must be one of {sorted(STRUCMOTIF_ATOM_PAIRING)}")
+    if motif_pruning_strategy not in STRUCMOTIF_PRUNING:
+        raise ValueError(f"motif_pruning_strategy must be one of {sorted(STRUCMOTIF_PRUNING)}")
+    params: dict[str, Any] = {
+        "value": {"entry_id": eid, "residue_ids": residues},
+        "backbone_distance_tolerance": backbone_distance_tolerance,
+        "side_chain_distance_tolerance": side_chain_distance_tolerance,
+        "angle_tolerance": angle_tolerance,
+        "rmsd_cutoff": rmsd_cutoff,
+        "atom_pairing_scheme": atom_pairing_scheme,
+        "motif_pruning_strategy": motif_pruning_strategy,
+    }
+    if exchanges:
+        params["exchanges"] = exchanges
+    if limit is not None:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
+        params["limit"] = limit
+    return {
+        "query": {"type": "terminal", "service": "strucmotif", "parameters": params},
+        "return_type": return_type,
+        "request_options": _request_options(start, rows, False, scoring_strategy="strucmotif"),
     }
 
 

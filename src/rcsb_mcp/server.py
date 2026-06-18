@@ -21,6 +21,7 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from rcsb_mcp.search_attibutes import SEARCH_ATTRIBUTES
+from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 from rcsb_mcp import queries
 
 SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
@@ -28,6 +29,9 @@ DATA_GRAPHQL_URL = "https://data.rcsb.org/graphql"
 SEQCOORD_GRAPHQL_URL = "https://sequence-coordinates.rcsb.org/graphql"
 USER_AGENT = "rcsb-mcp/0.1 (https://github.com/rcsb/rcsb-mcp)"
 TIMEOUT = httpx.Timeout(30.0)
+
+# Attribute catalogs by schema name (see list_pdb_search_attributes).
+ATTRIBUTE_CATALOGS = {"structure": SEARCH_ATTRIBUTES, "chemical": CHEMICAL_SEARCH_ATTRIBUTES}
 
 mcp = FastMCP(
     name="rcsb-pdb",
@@ -40,7 +44,19 @@ Choosing a search tool:
   list_pdb_search_attributes to find it, then use search_by_attribute (or
   search_combined when several conditions apply). This is more precise than keyword search.
 - Use search_fulltext only for broad or exploratory keyword lookups where no specific
-  attribute and value apply, or when the right search terms aren't yet known."""
+  attribute and value apply, or when the right search terms aren't yet known.
+
+Other capabilities:
+- For "how many ..." questions, use search_count (count only) rather than fetching and
+  counting hits.
+- For "break down / distribution / per X" questions (e.g. structures per experimental
+  method, per release year, per organism), use search_facets to aggregate matches into
+  buckets instead of paging through results.
+- search_strucmotif finds structures sharing a 3D arrangement of specific residues (a
+  geometric motif); this is different from search_by_structure (whole-shape similarity).
+- To search chemical-component attributes (chem_comp.*, drugbank_info.*, rcsb_chem_comp_*),
+  call list_pdb_search_attributes(schema="chemical") to find the path, then pass chemical=True
+  to search_by_attribute / search_combined (usually with return_type="mol_definition")."""
 )
 
 
@@ -172,6 +188,27 @@ def _format(raw: dict[str, Any], enriched: list[dict[str, Any]] | None) -> dict[
     return result
 
 
+def _format_facet(facet: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one facet from a search response (bucket list or single metric)."""
+    if "buckets" in facet:
+        buckets = []
+        for b in facet.get("buckets") or []:
+            bucket = {"label": b.get("label"), "population": b.get("population")}
+            if b.get("facets"):  # nested sub-facets
+                bucket["facets"] = [_format_facet(f) for f in b["facets"]]
+            buckets.append(bucket)
+        return {"name": facet.get("name"), "buckets": buckets}
+    # cardinality / single-value metric facet
+    return {"name": facet.get("name"), "value": facet.get("value")}
+
+
+def _format_facets(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "total_count": raw.get("total_count", 0),
+        "facets": [_format_facet(f) for f in raw.get("facets", [])],
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Tools
 # --------------------------------------------------------------------------- #
@@ -218,7 +255,9 @@ async def search_fulltext(
     return _format(raw, enriched)
 
 @mcp.tool()
-async def list_pdb_search_attributes(query: str | None = None) -> list[dict[str, Any]]:
+async def list_pdb_search_attributes(
+    query: str | None = None, schema: str = "structure"
+) -> list[dict[str, Any]]:
     """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
 
     Call this FIRST whenever the request resolves to a clear attribute and value but
@@ -233,18 +272,28 @@ async def list_pdb_search_attributes(query: str | None = None) -> list[dict[str,
     - description: human-readable description
 
     Args:
-        query: Optional case-insensitive keyword to filter the large (~677-entry)
-            catalog, matched against the attribute path and description. Omit to
-            return everything. e.g. query="resolution", query="organism".
+        query: Optional case-insensitive keyword to filter the catalog, matched against
+            the attribute path and description. Omit to return everything.
+            e.g. query="resolution", query="organism".
+        schema: Which attribute catalog to search:
+            - "structure" (default, ~677 attrs): entry/entity/assembly/instance attributes
+              for structure searches. Use with search_by_attribute / search_combined.
+            - "chemical" (~57 attrs): chemical-component attributes (chem_comp.*,
+              drugbank_info.*, rcsb_chem_comp_*). To search these, pass chemical=True to
+              search_by_attribute / search_combined (usually return_type="mol_definition").
 
     Returns:
         Matching searchable attributes (all of them when query is omitted).
     """
+    try:
+        catalog = ATTRIBUTE_CATALOGS[schema]
+    except KeyError:
+        raise ValueError(f'schema must be one of {sorted(ATTRIBUTE_CATALOGS)}') from None
     if not query or not query.strip():
-        return SEARCH_ATTRIBUTES
+        return catalog
     q = query.strip().lower()
     return [
-        a for a in SEARCH_ATTRIBUTES
+        a for a in catalog
         if q in a["attribute"].lower() or q in (a.get("description") or "").lower()
     ]
 
@@ -259,6 +308,7 @@ async def search_by_attribute(
     negation: bool = False,
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
+    chemical: bool = False,
 ) -> dict[str, Any]:
     """Search by a specific structural attribute — preferred over search_fulltext
     whenever the request resolves to a clear attribute and value. If you don't know
@@ -290,6 +340,9 @@ async def search_by_attribute(
         case_sensitive: Match the value case-sensitively (default insensitive).
         group_by_identity: If set (100/95/90/70/50/30), return one representative per
             sequence-identity cluster; forces return_type to "polymer_entity".
+        chemical: Set True for a chemical-component attribute (a path from
+            list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
+            Switches to the text_chem service; usually pair with return_type="mol_definition".
     """
     limit = max(1, min(limit, 100))
     return_type = "polymer_entity" if group_by_identity else return_type
@@ -302,6 +355,7 @@ async def search_by_attribute(
         negation=negation,
         case_sensitive=case_sensitive,
         group_by_identity=group_by_identity,
+        chemical=chemical,
     )
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
@@ -320,6 +374,7 @@ async def search_combined(
     sort_by: str | None = None,
     sort_direction: str = "asc",
     group_by_identity: int | None = None,
+    chemical: bool = False,
 ) -> dict[str, Any]:
     """Search with several constraints at once (free text + attribute filters).
 
@@ -348,6 +403,9 @@ async def search_combined(
         sort_direction: "asc" or "desc" (default "asc").
         group_by_identity: If set (100/95/90/70/50/30), return one representative per
             sequence-identity cluster; forces return_type to "polymer_entity".
+        chemical: Set True when the filters target chemical-component attributes (paths
+            from list_pdb_search_attributes(schema="chemical")); switches them to the
+            text_chem service. The full_text term always uses full-text search.
     """
     limit = max(1, min(limit, 100))
     return_type = "polymer_entity" if group_by_identity else return_type
@@ -360,6 +418,7 @@ async def search_combined(
         sort_by=sort_by,
         sort_direction=sort_direction,
         group_by_identity=group_by_identity,
+        chemical=chemical,
     )
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
@@ -502,10 +561,10 @@ async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
     """Run a raw RCSB Search API query body (escape hatch).
 
     Endpoint: https://search.rcsb.org/rcsbsearch/v2/query . The typed search_*
-    tools cover the common cases; use this for features they don't expose —
-    facets, return_all_hits, return_counts, group_by "groups", strucmotif, or
-    deeply nested boolean queries. The body must follow the Search API query
-    language ({"query": ..., "return_type": ..., "request_options": ...}).
+    tools cover the common cases (including search_facets, search_count, and
+    search_strucmotif); use this for features they don't expose — return_all_hits,
+    group_by "groups", or deeply nested boolean queries. The body must follow the
+    Search API query language ({"query": ..., "return_type": ..., "request_options": ...}).
     Returns the normalized {total_count, returned, hits} result.
 
     Example:
@@ -517,6 +576,165 @@ async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
         }
     """
     raw = await _post_search(query_body)
+    return _format(raw, None)
+
+
+@mcp.tool()
+async def search_count(
+    full_text: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    logical_operator: str = "and",
+    return_type: str = "entry",
+    chemical: bool = False,
+    include_computed_models: bool = False,
+) -> dict[str, Any]:
+    """Return only the NUMBER of matches — use this for "how many ..." questions.
+
+    Far cheaper than fetching hits just to count them. Takes the same conditions as
+    search_combined (free text and/or attribute filters). With no conditions it counts
+    every structure of `return_type`.
+
+    Examples:
+        - "How many human structures?" full_text=None, filters=[{"attribute":
+          "rcsb_entity_source_organism.ncbi_scientific_name", "operator":"exact_match",
+          "value":"Homo sapiens"}]
+        - "How many entries mention CRISPR?" full_text="CRISPR"
+
+    Args:
+        full_text: Optional free-text term.
+        filters: List of {attribute, operator, value} dicts (see search_by_attribute).
+        logical_operator: Combine conditions with "and" (default) or "or".
+        return_type: What to count — entry (default), polymer_entity, assembly, etc.
+        chemical: Set True when filters target chemical-component attributes (text_chem).
+        include_computed_models: Also count computed structure models (AlphaFold etc.).
+    """
+    body = queries.build_count_query(
+        full_text=full_text,
+        filters=filters,
+        logical_operator=logical_operator,
+        return_type=return_type,
+        chemical=chemical,
+        include_computed=include_computed_models,
+    )
+    raw = await _post_search(body)
+    return {"total_count": raw.get("total_count", 0)}
+
+
+@mcp.tool()
+async def search_facets(
+    facets: list[dict[str, Any]],
+    full_text: str | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    logical_operator: str = "and",
+    return_type: str = "entry",
+    chemical: bool = False,
+    include_computed_models: bool = False,
+) -> dict[str, Any]:
+    """Aggregate matches into buckets/statistics — for "distribution / breakdown / per X"
+    questions (e.g. structures per experimental method, per release year, per organism).
+
+    Returns {total_count, facets:[{name, buckets:[{label, population}]}]} and NO hit list.
+    Takes the same optional conditions as search_combined to first narrow the set; with no
+    conditions the facets run over all structures.
+
+    Each entry in `facets` is a dict:
+        {"name": <label>, "aggregation_type": <type>, "attribute": <attribute path>, ...}
+    aggregation_type and its extra keys:
+        - "terms": count entries per distinct value. Optional: min_interval_population (drop
+          small buckets), max_num_intervals.
+        - "histogram": numeric buckets — requires "interval" (bucket width, a number).
+        - "date_histogram": calendar buckets — requires "interval": "year".
+        - "range" / "date_range": requires "ranges": [{"from": x, "to": y}, ...] (from
+          inclusive, to exclusive; dates as ISO strings).
+        - "cardinality": count of distinct values (returns {name, value}).
+    A facet may carry a nested "facets" list to sub-aggregate within each bucket.
+
+    Examples:
+        - Experimental methods breakdown of all entries:
+          facets=[{"name":"Methods","aggregation_type":"terms","attribute":"exptl.method"}]
+        - Human structures by release year:
+          full_text=None,
+          filters=[{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name",
+                    "operator":"exact_match","value":"Homo sapiens"}],
+          facets=[{"name":"ByYear","aggregation_type":"date_histogram",
+                   "attribute":"rcsb_accession_info.initial_release_date","interval":"year"}]
+        - Resolution distribution (0.5 Å bins):
+          facets=[{"name":"Res","aggregation_type":"histogram",
+                   "attribute":"rcsb_entry_info.resolution_combined","interval":0.5}]
+
+    Args:
+        facets: One or more facet specs (see above). At least one is required.
+        full_text: Optional free-text term to narrow the set before aggregating.
+        filters: Optional list of {attribute, operator, value} dicts.
+        logical_operator: Combine conditions with "and" (default) or "or".
+        return_type: What to aggregate over (default "entry").
+        chemical: Set True when filters target chemical-component attributes (text_chem).
+        include_computed_models: Also include computed structure models (AlphaFold etc.).
+    """
+    body = queries.build_facet_query(
+        facets,
+        full_text=full_text,
+        filters=filters,
+        logical_operator=logical_operator,
+        return_type=return_type,
+        chemical=chemical,
+        include_computed=include_computed_models,
+    )
+    raw = await _post_search(body)
+    return _format_facets(raw)
+
+
+@mcp.tool()
+async def search_strucmotif(
+    entry_id: str,
+    residue_ids: list[dict[str, Any]],
+    backbone_distance_tolerance: int = 1,
+    side_chain_distance_tolerance: int = 1,
+    angle_tolerance: int = 1,
+    rmsd_cutoff: float = 2.0,
+    atom_pairing_scheme: str = "SIDE_CHAIN",
+    motif_pruning_strategy: str = "KRUSKAL",
+    return_type: str = "polymer_entity",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Find structures containing a 3D STRUCTURAL MOTIF — a geometric arrangement of
+    specific residues — like the one in a reference structure.
+
+    This is geometry-based and DIFFERENT from search_by_structure (whole-shape similarity)
+    and from search_by_seqmotif (sequence pattern). Use it for catalytic triads, binding
+    sites, metal-coordination geometries, etc.
+
+    Args:
+        entry_id: Reference PDB entry defining the motif, e.g. "2MNR".
+        residue_ids: 2-10 residues defining the motif, each a dict
+            {"label_asym_id": <chain>, "label_seq_id": <int>, "struct_oper_id"?: <str>}.
+            Example (enolase catalytic residues):
+            [{"label_asym_id":"A","label_seq_id":162},
+             {"label_asym_id":"A","label_seq_id":193},
+             {"label_asym_id":"A","label_seq_id":219}]
+        backbone_distance_tolerance: Backbone distance tolerance in Å, integer 0-3 (default 1).
+        side_chain_distance_tolerance: Side-chain distance tolerance in Å, integer 0-3 (default 1).
+        angle_tolerance: Angle tolerance in multiples of 20°, integer 0-3 (default 1).
+        rmsd_cutoff: Maximum RMSD of accepted hits (default 2.0).
+        atom_pairing_scheme: ALL, BACKBONE, SIDE_CHAIN (default), or PSEUDO_ATOMS.
+        motif_pruning_strategy: NONE or KRUSKAL (default).
+        return_type: Result identifier type (default "polymer_entity").
+        limit: Max hits (1-100).
+    """
+    limit = max(1, min(limit, 100))
+    body = queries.build_strucmotif_query(
+        entry_id,
+        residue_ids,
+        backbone_distance_tolerance=backbone_distance_tolerance,
+        side_chain_distance_tolerance=side_chain_distance_tolerance,
+        angle_tolerance=angle_tolerance,
+        rmsd_cutoff=rmsd_cutoff,
+        atom_pairing_scheme=atom_pairing_scheme,
+        motif_pruning_strategy=motif_pruning_strategy,
+        return_type=return_type,
+        rows=limit,
+    )
+    raw = await _post_search(body)
     return _format(raw, None)
 
 
