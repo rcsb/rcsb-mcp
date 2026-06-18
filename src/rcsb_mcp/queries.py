@@ -650,16 +650,18 @@ DATA_OBJECTS: dict[str, DataObject] = {
     "entries": DataObject(
         "entries", "entry_ids", True, "String", 'entry IDs, e.g. "4HHB"',
         "rcsb_id struct{title} exptl{method} "
-        "rcsb_entry_info{resolution_combined} "
+        "rcsb_entry_info{resolution_combined experimental_method molecular_weight "
+        "deposited_polymer_entity_instance_count deposited_nonpolymer_entity_instance_count} "
         "rcsb_accession_info{deposit_date initial_release_date} "
+        "rcsb_primary_citation{title rcsb_journal_abbrev year pdbx_database_id_DOI} "
         "pubmed{rcsb_pubmed_abstract_text}",
     ),
     "polymer_entities": DataObject(
         "polymer_entities", "entity_ids", True, "String",
         'polymer entity IDs (entry_entity), e.g. "4HHB_1"',
-        "rcsb_id rcsb_polymer_entity{pdbx_description formula_weight} "
+        "rcsb_id rcsb_polymer_entity{pdbx_description formula_weight pdbx_number_of_molecules} "
         "entity_poly{type rcsb_sample_sequence_length pdbx_seq_one_letter_code_can} "
-        "rcsb_entity_source_organism{ncbi_scientific_name}",
+        "rcsb_entity_source_organism{ncbi_scientific_name ncbi_taxonomy_id}",
     ),
     "nonpolymer_entities": DataObject(
         "nonpolymer_entities", "entity_ids", True, "String",
@@ -748,7 +750,8 @@ DATA_OBJECTS: dict[str, DataObject] = {
     ),
     "pubmed": DataObject(
         "pubmed", "pubmed_id", False, "Int", "a PubMed integer ID, e.g. 6726807",
-        "rcsb_id rcsb_pubmed_central_id rcsb_pubmed_doi rcsb_pubmed_abstract_text",
+        "rcsb_id rcsb_pubmed_central_id rcsb_pubmed_doi rcsb_pubmed_abstract_text "
+        "rcsb_pubmed_mesh_descriptors",
     ),
     "group_provenance": DataObject(
         "group_provenance", "group_provenance_id", False, "String",

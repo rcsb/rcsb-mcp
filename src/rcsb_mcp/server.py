@@ -69,7 +69,10 @@ Return types and fetching details:
     mol_definition     chemical component   "HEM"      -> get_chem_comps
 - The search tools' `enrich` flag auto-attaches entry metadata ONLY when return_type="entry".
   For any other return_type, take the returned ids and call the matching get_* tool above
-  (batch all ids into a single call) to get details — do not loop one id at a time."""
+  (batch all ids into a single call) to get details — do not loop one id at a time.
+- The get_* tools return a compact default field set. If you need a property they don't
+  return, call describe_data_object(object_key[, into=, query=]) to find the exact field
+  path in the Data API schema, then pass it to the get_* tool's `fields=` argument."""
 )
 
 
@@ -109,6 +112,62 @@ async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPH
         msgs = "; ".join(e.get("message", "") for e in payload["errors"])
         raise RuntimeError(f"RCSB GraphQL error: {msgs}")
     return (payload.get("data") or {}).get(field)
+
+
+# --------------------------------------------------------------------------- #
+# Data API schema introspection (powers describe_data_object)
+# --------------------------------------------------------------------------- #
+# Cached results of GraphQL introspection so repeated describe_data_object calls
+# don't re-hit the endpoint. The schema is effectively static per process.
+_DATA_SCHEMA_CACHE: dict[str, Any] = {}
+_TYPE_REF = "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }"
+
+
+def _unwrap_type(type_ref: dict[str, Any] | None) -> tuple[str | None, str | None, bool]:
+    """Unwrap a GraphQL type reference to (named_type, named_kind, is_list)."""
+    is_list = False
+    while type_ref:
+        kind = type_ref.get("kind")
+        if kind == "LIST":
+            is_list = True
+        if kind not in ("LIST", "NON_NULL"):
+            return type_ref.get("name"), kind, is_list
+        type_ref = type_ref.get("ofType")
+    return None, None, is_list
+
+
+def _field_descriptor(f: dict[str, Any]) -> dict[str, Any]:
+    """Flatten one introspected field into {name, kind, type, list, description}."""
+    name, kind, is_list = _unwrap_type(f.get("type"))
+    return {
+        "name": f.get("name"),
+        "kind": "scalar" if kind in ("SCALAR", "ENUM") else "object",
+        "type": name,
+        "list": is_list,
+        "description": f.get("description") or None,
+    }
+
+
+async def _root_field_types() -> dict[str, str]:
+    """Map each Data API root Query field -> its (unwrapped) return type name. Cached."""
+    if "root_types" not in _DATA_SCHEMA_CACHE:
+        q = "{ __schema { queryType { fields { name %s } } } }" % _TYPE_REF
+        payload = await _post_graphql(q)
+        fields = (((payload.get("data") or {}).get("__schema") or {})
+                  .get("queryType") or {}).get("fields") or []
+        _DATA_SCHEMA_CACHE["root_types"] = {f["name"]: _unwrap_type(f["type"])[0] for f in fields}
+    return _DATA_SCHEMA_CACHE["root_types"]
+
+
+async def _type_fields(type_name: str) -> list[dict[str, Any]]:
+    """Introspect one Data API type's fields (name/type/description). Cached per type."""
+    cache = _DATA_SCHEMA_CACHE.setdefault("types", {})
+    if type_name not in cache:
+        q = '{ __type(name: "%s") { fields { name description %s } } }' % (type_name, _TYPE_REF)
+        payload = await _post_graphql(q)
+        t = (payload.get("data") or {}).get("__type")
+        cache[type_name] = (t or {}).get("fields") or []
+    return cache[type_name]
 
 
 async def _query_batch(
@@ -785,11 +844,82 @@ async def search_strucmotif(
 # selection with your own GraphQL sub-selection (omit the surrounding braces).
 # --------------------------------------------------------------------------- #
 @mcp.tool()
+async def describe_data_object(
+    object_key: str, into: str | None = None, query: str | None = None
+) -> dict[str, Any]:
+    """Discover the fields available on a Data API object, from the live GraphQL schema.
+
+    Use this to find exactly what to request in a get_* tool's `fields=` argument (or
+    in data_graphql). The get_* default selections are compact summaries, but the
+    underlying GraphQL types have far more (e.g. CoreEntry has ~100 fields). This tool
+    walks the schema so you can build a precise selection instead of guessing.
+
+    Workflow: describe_data_object("entries") -> spot a nested object field such as
+    "rcsb_entry_info" -> describe_data_object("entries", into="rcsb_entry_info") to list
+    its leaves -> call get_entries(ids, fields="rcsb_entry_info{ ... }").
+
+    Each returned field has:
+    - name: the GraphQL field name
+    - kind: "scalar" (a leaf you can select directly) or "object" (drill in with `into`)
+    - type: the field's GraphQL type name
+    - list: whether the field returns a list
+    - description: schema description, when present
+
+    Args:
+        object_key: Which object to describe — a key matching the get_* tools, e.g.
+            "entries", "polymer_entities", "assemblies", "chem_comps", "interfaces",
+            "uniprot", ... (entry_annotations/entry_exp_info also map to the entry type).
+        into: Optional dot-path of nested object field(s) to drill into, e.g.
+            "rcsb_entry_info" or "polymer_entities.rcsb_polymer_entity".
+        query: Optional case-insensitive keyword to filter fields by name/description.
+
+    Returns:
+        {object_key, graphql_type, path, field_count, fields:[...]}.
+    """
+    if object_key not in queries.DATA_OBJECTS:
+        raise ValueError(f"object_key must be one of {sorted(queries.DATA_OBJECTS)}")
+    root_types = await _root_field_types()
+    type_name = root_types.get(queries.DATA_OBJECTS[object_key].root_field)
+    if not type_name:
+        raise ValueError(f"could not resolve a GraphQL type for {object_key!r}")
+    path = [type_name]
+    for seg in (into.split(".") if into else []):
+        seg = seg.strip()
+        if not seg:
+            continue
+        match = next((f for f in await _type_fields(type_name) if f.get("name") == seg), None)
+        if match is None:
+            raise ValueError(f"field {seg!r} not found on type {type_name!r}")
+        nxt, kind, _ = _unwrap_type(match.get("type"))
+        if kind in ("SCALAR", "ENUM"):
+            raise ValueError(f"field {seg!r} is a scalar ({nxt}); nothing to drill into")
+        type_name = nxt
+        path.append(type_name)
+    fields = [_field_descriptor(f) for f in await _type_fields(type_name)]
+    if query and query.strip():
+        ql = query.strip().lower()
+        fields = [
+            d for d in fields
+            if ql in (d["name"] or "").lower() or ql in (d["description"] or "").lower()
+        ]
+    return {
+        "object_key": object_key,
+        "graphql_type": type_name,
+        "path": " -> ".join(path),
+        "field_count": len(fields),
+        "fields": fields,
+    }
+
+
+@mcp.tool()
 async def get_entries(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch metadata for one or more PDB entries (title, method, resolution, dates, publication abstract).
+    """Fetch metadata for one or more PDB entries (title, method, resolution, size,
+    dates, primary citation, and publication abstract).
 
     IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]. Unknown IDs are
-    listed under "not_found". For a single entry pass a one-element list.
+    listed under "not_found". For a single entry pass a one-element list. For fields
+    beyond this summary, use describe_data_object("entries") to find the path and
+    pass it via `fields`.
     """
     return await _query_batch("entries", entry_ids, fields)
 
