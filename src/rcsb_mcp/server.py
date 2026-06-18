@@ -31,9 +31,16 @@ TIMEOUT = httpx.Timeout(30.0)
 
 mcp = FastMCP(
     name="rcsb-pdb",
-    instructions="""You are a PDB search assistant. You have access to tools that allow you to retrieve the search schema attributes
-and execute search queries against the RCSB PDB APIs. Use these tools to help users find relevant information
-in the PDB database. Always make sure to understand the search schema before constructing queries."""
+    instructions="""You are a PDB search assistant for the RCSB Search, Data, and Sequence Coordinates APIs.
+
+Choosing a search tool:
+- When the request resolves to a clear attribute and value (e.g. resolution < 2 Å,
+  organism = Homo sapiens, method = X-RAY DIFFRACTION, released after a date), prefer a
+  STRUCTURED search: if you don't already know the exact attribute path, call
+  list_pdb_search_attributes to find it, then use search_by_attribute (or
+  search_combined when several conditions apply). This is more precise than keyword search.
+- Use search_fulltext only for broad or exploratory keyword lookups where no specific
+  attribute and value apply, or when the right search terms aren't yet known."""
 )
 
 
@@ -179,6 +186,13 @@ async def search_fulltext(
 ) -> dict[str, Any]:
     """Search the PDB by free-text keywords (e.g. "CRISPR Cas9", "hemoglobin").
 
+    Best for broad or exploratory keyword lookups. When the request resolves to a
+    clear attribute and value (resolution, organism, experimental method, ligand,
+    release date, sequence length, ...), prefer `search_by_attribute` (or
+    `search_combined`) instead — call `list_pdb_search_attributes` first to find the
+    exact attribute path and operators. Attribute search is more precise and avoids
+    spurious keyword matches.
+
     Args:
         query: Free-text search terms. Quote multi-word phrases for exact match.
         return_type: One of entry, polymer_entity, assembly, etc. (default "entry").
@@ -204,20 +218,35 @@ async def search_fulltext(
     return _format(raw, enriched)
 
 @mcp.tool()
-async def list_pdb_search_attributes() -> list[dict[str, Any]]:
-    """
-    List searchable RCSB PDB Search API attributes available for query construction.
+async def list_pdb_search_attributes(query: str | None = None) -> list[dict[str, Any]]:
+    """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
+
+    Call this FIRST whenever the request resolves to a clear attribute and value but
+    you don't already know the exact attribute path. Pick the matching attribute here,
+    then run `search_by_attribute` (or `search_combined`). Prefer this structured path
+    over `search_fulltext` whenever a specific attribute and value apply.
 
     Each returned attribute includes:
-    - attribute: RCSB/PDB attribute path, e.g. pdbx_entity_nonpoly.name
-    - type: attribute value type, e.g. string, number, integer, or date
-    - operators: supported query operators
-    - description: human-readable attribute description
+    - attribute: RCSB/PDB attribute path, e.g. "rcsb_entry_info.resolution_combined"
+    - type: value type — string, number, integer, or date
+    - operators: supported query operators (e.g. exact_match, greater, range, exists)
+    - description: human-readable description
+
+    Args:
+        query: Optional case-insensitive keyword to filter the large (~677-entry)
+            catalog, matched against the attribute path and description. Omit to
+            return everything. e.g. query="resolution", query="organism".
 
     Returns:
-        Matching searchable PDB attributes and summary metadata.
+        Matching searchable attributes (all of them when query is omitted).
     """
-    return SEARCH_ATTRIBUTES
+    if not query or not query.strip():
+        return SEARCH_ATTRIBUTES
+    q = query.strip().lower()
+    return [
+        a for a in SEARCH_ATTRIBUTES
+        if q in a["attribute"].lower() or q in (a.get("description") or "").lower()
+    ]
 
 @mcp.tool()
 async def search_by_attribute(
@@ -231,7 +260,9 @@ async def search_by_attribute(
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
 ) -> dict[str, Any]:
-    """Search by a specific structural attribute.
+    """Search by a specific structural attribute — preferred over search_fulltext
+    whenever the request resolves to a clear attribute and value. If you don't know
+    the exact attribute path or its operators, call `list_pdb_search_attributes` first.
 
     Examples:
         - High-resolution structures:
