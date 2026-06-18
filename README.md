@@ -79,7 +79,8 @@ endpoint is a one-line change.
 
 Maps alignments and positional annotations between sequence reference systems
 (`UNIPROT`, `NCBI_PROTEIN`, `NCBI_GENOME`, `PDB_ENTITY`, `PDB_INSTANCE`). Each
-tool takes an optional `fields` argument to override the default selection.
+tool takes an optional `fields` argument to override the default selection; use
+`describe_seqcoord_object` to discover what fields are available.
 
 This is the **only** RCSB API that cross-references **NCBI** (RefSeq protein /
 genome) — the Data API only knows UniProt. So "what NCBI proteins map to a PDB
@@ -94,6 +95,7 @@ entry, query each polymer entity.
 | `seqcoord_group_alignments` | Alignments among members of a sequence group (`MATCHING_UNIPROT_ACCESSION` / `SEQUENCE_IDENTITY`). |
 | `seqcoord_group_annotations` | Annotations across a group; `summary=True` returns a positional summary. |
 | `seqcoord_graphql` | Escape hatch: run any GraphQL query against the Sequence Coordinates API. |
+| `describe_seqcoord_object` | Introspect the live schema to discover fields available on a seqcoord object (for use with `fields=`). |
 
 ## Install
 

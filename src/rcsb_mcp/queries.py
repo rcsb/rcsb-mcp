@@ -849,13 +849,14 @@ SC_ALIGNMENTS_FIELDS = (
     "query_sequence alignment_length "
     "target_alignments{ target_id orientation "
     "coverage{ query_coverage query_length target_coverage target_length } "
-    "aligned_regions{ query_begin query_end target_begin target_end } }"
+    "aligned_regions{ query_begin query_end target_begin target_end exon_shift } }"
 )
 SC_ANNOTATIONS_FIELDS = (
     "source target_id "
-    "target_identifiers{ entry_id entity_id asym_id interface_id uniprot_id } "
+    "target_identifiers{ entry_id entity_id asym_id assembly_id interface_id "
+    "interface_partner_index uniprot_id } "
     "features{ type feature_id name description provenance_source value "
-    "feature_positions{ beg_seq_id end_seq_id value } }"
+    "feature_positions{ beg_seq_id end_seq_id beg_ori_id end_ori_id value } }"
 )
 
 

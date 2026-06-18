@@ -90,9 +90,10 @@ Return types and fetching details:
 - The search tools' `enrich` flag auto-attaches entry metadata ONLY when return_type="entry".
   For any other return_type, take the returned ids and call the matching get_* tool above
   (batch all ids into a single call) to get details — do not loop one id at a time.
-- The get_* tools return a compact default field set. If you need a property they don't
-  return, call describe_data_object(object_key[, into=, query=]) to find the exact field
-  path in the Data API schema, then pass it to the get_* tool's `fields=` argument."""
+- The get_* and seqcoord_* tools return a compact default field set. If you need a property
+  they don't return, call describe_data_object (Data API) or describe_seqcoord_object
+  (Sequence Coordinates) with [into=, query=] to find the exact field path, then pass it to
+  the tool's `fields=` argument."""
 )
 
 
@@ -135,11 +136,11 @@ async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPH
 
 
 # --------------------------------------------------------------------------- #
-# Data API schema introspection (powers describe_data_object)
+# GraphQL schema introspection (powers describe_data_object / describe_seqcoord_object)
 # --------------------------------------------------------------------------- #
-# Cached results of GraphQL introspection so repeated describe_data_object calls
-# don't re-hit the endpoint. The schema is effectively static per process.
-_DATA_SCHEMA_CACHE: dict[str, Any] = {}
+# Cached per endpoint so repeated describe_* calls don't re-hit the service. Each
+# schema is effectively static per process.
+_SCHEMA_CACHE: dict[str, dict[str, Any]] = {}
 _TYPE_REF = "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }"
 
 
@@ -168,26 +169,65 @@ def _field_descriptor(f: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _root_field_types() -> dict[str, str]:
-    """Map each Data API root Query field -> its (unwrapped) return type name. Cached."""
-    if "root_types" not in _DATA_SCHEMA_CACHE:
+async def _root_field_types(url: str = DATA_GRAPHQL_URL) -> dict[str, str]:
+    """Map each root Query field -> its (unwrapped) return type name, for one endpoint. Cached."""
+    cache = _SCHEMA_CACHE.setdefault(url, {})
+    if "root_types" not in cache:
         q = "{ __schema { queryType { fields { name %s } } } }" % _TYPE_REF
-        payload = await _post_graphql(q)
+        payload = await _post_graphql(q, url=url)
         fields = (((payload.get("data") or {}).get("__schema") or {})
                   .get("queryType") or {}).get("fields") or []
-        _DATA_SCHEMA_CACHE["root_types"] = {f["name"]: _unwrap_type(f["type"])[0] for f in fields}
-    return _DATA_SCHEMA_CACHE["root_types"]
+        cache["root_types"] = {f["name"]: _unwrap_type(f["type"])[0] for f in fields}
+    return cache["root_types"]
 
 
-async def _type_fields(type_name: str) -> list[dict[str, Any]]:
-    """Introspect one Data API type's fields (name/type/description). Cached per type."""
-    cache = _DATA_SCHEMA_CACHE.setdefault("types", {})
+async def _type_fields(type_name: str, url: str = DATA_GRAPHQL_URL) -> list[dict[str, Any]]:
+    """Introspect one type's fields (name/type/description) on one endpoint. Cached per type."""
+    cache = _SCHEMA_CACHE.setdefault(url, {}).setdefault("types", {})
     if type_name not in cache:
         q = '{ __type(name: "%s") { fields { name description %s } } }' % (type_name, _TYPE_REF)
-        payload = await _post_graphql(q)
+        payload = await _post_graphql(q, url=url)
         t = (payload.get("data") or {}).get("__type")
         cache[type_name] = (t or {}).get("fields") or []
     return cache[type_name]
+
+
+async def _describe_object(
+    root_field: str, url: str, into: str | None, query: str | None
+) -> dict[str, Any]:
+    """Introspect the type returned by `root_field` on `url`; walk `into`; filter by `query`.
+
+    Shared by describe_data_object and describe_seqcoord_object.
+    """
+    type_name = (await _root_field_types(url)).get(root_field)
+    if not type_name:
+        raise ValueError(f"could not resolve a GraphQL type for root field {root_field!r}")
+    path = [type_name]
+    for seg in (into.split(".") if into else []):
+        seg = seg.strip()
+        if not seg:
+            continue
+        match = next((f for f in await _type_fields(type_name, url) if f.get("name") == seg), None)
+        if match is None:
+            raise ValueError(f"field {seg!r} not found on type {type_name!r}")
+        nxt, kind, _ = _unwrap_type(match.get("type"))
+        if kind in ("SCALAR", "ENUM"):
+            raise ValueError(f"field {seg!r} is a scalar ({nxt}); nothing to drill into")
+        type_name = nxt
+        path.append(type_name)
+    fields = [_field_descriptor(f) for f in await _type_fields(type_name, url)]
+    if query and query.strip():
+        ql = query.strip().lower()
+        fields = [
+            d for d in fields
+            if ql in (d["name"] or "").lower() or ql in (d["description"] or "").lower()
+        ]
+    return {
+        "graphql_type": type_name,
+        "path": " -> ".join(path),
+        "field_count": len(fields),
+        "fields": fields,
+    }
 
 
 async def _query_batch(
@@ -898,36 +938,10 @@ async def describe_data_object(
     """
     if object_key not in queries.DATA_OBJECTS:
         raise ValueError(f"object_key must be one of {sorted(queries.DATA_OBJECTS)}")
-    root_types = await _root_field_types()
-    type_name = root_types.get(queries.DATA_OBJECTS[object_key].root_field)
-    if not type_name:
-        raise ValueError(f"could not resolve a GraphQL type for {object_key!r}")
-    path = [type_name]
-    for seg in (into.split(".") if into else []):
-        seg = seg.strip()
-        if not seg:
-            continue
-        match = next((f for f in await _type_fields(type_name) if f.get("name") == seg), None)
-        if match is None:
-            raise ValueError(f"field {seg!r} not found on type {type_name!r}")
-        nxt, kind, _ = _unwrap_type(match.get("type"))
-        if kind in ("SCALAR", "ENUM"):
-            raise ValueError(f"field {seg!r} is a scalar ({nxt}); nothing to drill into")
-        type_name = nxt
-        path.append(type_name)
-    fields = [_field_descriptor(f) for f in await _type_fields(type_name)]
-    if query and query.strip():
-        ql = query.strip().lower()
-        fields = [
-            d for d in fields
-            if ql in (d["name"] or "").lower() or ql in (d["description"] or "").lower()
-        ]
+    root_field = queries.DATA_OBJECTS[object_key].root_field
     return {
         "object_key": object_key,
-        "graphql_type": type_name,
-        "path": " -> ".join(path),
-        "field_count": len(fields),
-        "fields": fields,
+        **await _describe_object(root_field, DATA_GRAPHQL_URL, into, query),
     }
 
 
@@ -1110,8 +1124,53 @@ async def data_graphql(query: str, variables: dict[str, Any] | None = None) -> d
 # Sequence Coordinates API tools (https://sequence-coordinates.rcsb.org/graphql)
 # Map alignments and positional annotations between sequence reference systems
 # (UniProt, NCBI, PDB entity/instance). Each returns the raw selected GraphQL
-# node(s); pass `fields` to override the default selection.
+# node(s); pass `fields` to override the default selection (use
+# describe_seqcoord_object to discover what to request).
 # --------------------------------------------------------------------------- #
+# The five Sequence Coordinates root fields, for describe_seqcoord_object.
+SEQCOORD_OBJECTS = {
+    "alignments", "annotations",
+    "group_alignments", "group_annotations", "group_annotations_summary",
+}
+
+
+@mcp.tool()
+async def describe_seqcoord_object(
+    object_key: str, into: str | None = None, query: str | None = None
+) -> dict[str, Any]:
+    """Discover the fields available on a Sequence Coordinates object, from the live schema.
+
+    The Sequence Coordinates analogue of describe_data_object. The seqcoord_* tools
+    return a compact default selection; use this to find what else you can request via
+    their `fields=` argument (or via seqcoord_graphql).
+
+    Workflow: describe_seqcoord_object("alignments") -> spot a nested object such as
+    "target_alignments" -> describe_seqcoord_object("alignments", into="target_alignments")
+    to list its leaves -> call seqcoord_alignments(..., fields="target_alignments{ ... }").
+
+    Each returned field has name, kind ("scalar" leaf or "object" — drill in with `into`),
+    type, list (whether it's a list), and description (when present).
+
+    Args:
+        object_key: A Sequence Coordinates root field — one of: alignments, annotations,
+            group_alignments, group_annotations, group_annotations_summary. (alignments and
+            group_alignments share the SequenceAlignments type; the annotation roots share
+            SequenceAnnotations.)
+        into: Optional dot-path of nested object field(s) to drill into, e.g.
+            "target_alignments" or "features.feature_positions".
+        query: Optional case-insensitive keyword to filter fields by name/description.
+
+    Returns:
+        {object_key, graphql_type, path, field_count, fields:[...]}.
+    """
+    if object_key not in SEQCOORD_OBJECTS:
+        raise ValueError(f"object_key must be one of {sorted(SEQCOORD_OBJECTS)}")
+    return {
+        "object_key": object_key,
+        **await _describe_object(object_key, SEQCOORD_GRAPHQL_URL, into, query),
+    }
+
+
 @mcp.tool()
 async def seqcoord_alignments(
     query_id: str,
