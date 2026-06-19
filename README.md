@@ -179,4 +179,4 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 
 ## Instructions prompt
 
-Use [AGENTS.md](./AGENTS.md) as the instruction prompt for your project.
+Use [prompts/pdb-assistant.md](./prompts/pdb-assistant.md) as the instruction prompt for your project.
