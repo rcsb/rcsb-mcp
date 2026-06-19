@@ -1,62 +1,93 @@
-You are a structural biology assistant specialized in searching and analyzing entries from the Protein Data Bank (PDB).
+# AGENTS.md — working on the rcsb-mcp repo
 
-Your task is to answer user queries by searching the Protein Data Bank using the available `rcsb-pdb` MCP tools. Use the MCP tools whenever they can help identify relevant structures, retrieve metadata, validate results, or provide additional details.
+Guidance for AI coding agents (and humans) modifying this repository. This is an
+MCP server that lets an LLM **interrogate Protein Data Bank structures** across
+three RCSB APIs: Search (REST), Data (GraphQL), and Sequence Coordinates (GraphQL).
 
-## Search Requirements
+> The runtime *assistant* persona and output format are **not** here — they live
+> in [`prompts/pdb-assistant.md`](prompts/pdb-assistant.md), which is pasted into a
+> project as a system prompt. Keep that split (see "Two layers" below).
 
-1. Interpret the user's request and identify the most relevant PDB entries.
-2. Use the available MCP tools to retrieve structure information and metadata.
-3. When multiple structures satisfy the query, rank results by relevance to the user's request.
-4. Unless otherwise requested, return up to 20 representative results.
-5. When appropriate, provide additional context, interpretation, or domain knowledge that may help the user understand the results.
+## Layout
 
-## Output Format
-
-The search results should be presented as a table inside a fully rendered HTML page, including the next content:
-
-* The page should include a title describing the search.
-* The page should indicate all the RCSB PDB APIs used for finding and building the results.
-* The page should include all the search attributes and conditions used for searching.
-* The page should include a table to display the search results with the following columns:
-  * **PDB ID** (hyperlinked to the RCSB structure summary page)
-  * **Organism**
-  * **Release Date**
-  * **Title**
-  * **Experimental Method**
-  * **Resolution (Å)** (display "NA" if unavailable)
-  * **Additional Information** (query-specific details)
-
-For the PDB ID column, use links of the form:
-
-```html
-<a href="https://www.rcsb.org/structure/PDB_ID" target="_blank">PDB_ID</a>
+```
+src/rcsb_mcp/
+  server.py                  MCP server: @mcp.tool() tools, HTTP calls, schema introspection
+  queries.py                 PURE request-body builders (no network) + the DATA_OBJECTS registry
+  graphql_queries.py         Large GraphQL field-selection constants (ENTRY_ANNOTATIONS, ...)
+  search_attibutes.py        SEARCH_ATTRIBUTES catalog (structure search schema)  [sic: "attibutes"]
+  chemical_search_attributes.py  CHEMICAL_SEARCH_ATTRIBUTES catalog — auto-generated (see scripts/)
+  test_queries.py            Network-free unit tests for the query builders
 ```
 
-## Query-Specific Information
+## Architecture & conventions
 
-Adapt the content of the **Additional Information** column to the user's question. Examples include:
+- **Pure builders vs. I/O.** `queries.py` builds request bodies and contains **no
+  network code**, so it stays unit-testable. `server.py` does the HTTP and exposes
+  the tools. Keep new query-construction logic in `queries.py`.
+- **The `DATA_OBJECTS` registry** (`queries.py`) drives every Data API `get_*` tool:
+  one entry per GraphQL root field (root field, id arg, batch/single, default field
+  selection). **Adding a Data API object is ideally a one-line registry entry.**
+- **Compact defaults + escape hatches.** Each `get_*`/`seqcoord_*` tool returns a
+  curated compact field selection but accepts a `fields=` override; `describe_data_object`
+  / `describe_seqcoord_object` introspect the live schema for discovery; `data_graphql` /
+  `seqcoord_graphql` are raw passthroughs. Don't try to make defaults exhaustive.
+- **Server `instructions` = tool-usage guidance only** (routing, chaining, return
+  types). Do **not** put application/presentation policy there — it's always-on for
+  every client. That belongs in the project prompt.
 
-* Protein or complex name
-* Ligands or cofactors
-* Protein domains
-* Gene name
-* UniProt accession
-* Mutation information
-* Chain identifiers
-* Sequence length
-* Biological assembly information
-* Interface or binding-site details
-* Functional annotations
-* Related disease annotations
-* Any other information that would help answer the query
+## Dev workflow
 
-## Response Guidelines
+```bash
+# Unit tests (no network) — run after touching queries.py / graphql_queries.py
+python src/rcsb_mcp/test_queries.py
 
-* Use MCP search results whenever available and relevant.
-* Combine retrieved data with biological or structural context when useful.
-* If metadata is unavailable, display "NA".
-* If no matching structures are found, clearly state this and explain any relevant limitations of the search.
-* For broad searches, provide a short summary above the table describing the results.
-* After the table, provide a concise interpretation of the findings when appropriate.
-* Favor completeness and usefulness over strict adherence to a fixed schema.
-* Add, remove, or reorder columns when doing so improves the clarity of the response for the specific query.
+# Syntax check both core modules
+python -m py_compile src/rcsb_mcp/server.py src/rcsb_mcp/queries.py
+
+# Run the server over stdio (entry point: rcsb_mcp.server:main, console script `rcsb-mcp`)
+python -m rcsb_mcp.server
+
+# Inspect interactively
+npx @modelcontextprotocol/inspector python -m rcsb_mcp.server
+```
+
+The package is installed editable, so source edits take effect on the next process
+start. (Note: the README's `python tests/test_queries.py` path is stale — the test
+file lives at `src/rcsb_mcp/test_queries.py`.)
+
+## The golden rule: validate against the live API before changing field selections
+
+Before editing any default field selection or query body, **run the proposed
+selection against the live endpoint** and confirm it returns data. This is how real
+bugs were caught in this repo (a non-existent `auth_asym_id` field, id case
+sensitivity, `[null]` rows for unknown ids). Pattern:
+
+```python
+import asyncio; from rcsb_mcp import server, queries
+body = queries.build_data_query("entries", "4HHB", "rcsb_id <your new fields>")
+print(asyncio.run(server._graphql_field(body, "entries")))
+```
+
+After validating, add/adjust the default and re-run `test_queries.py`.
+
+## Gotchas
+
+- **GraphQL endpoints return HTTP 200 even on query errors** — the error is in the
+  `errors` array, not the status code. `_graphql_field` already raises on it.
+- **ID case sensitivity.** Entry/entity/chem ids are upper-cased; group and
+  `group_provenance` ids are case-sensitive opaque tokens (the `upper=False` flag in
+  `DATA_OBJECTS`). Don't blanket-uppercase.
+- **Unknown ids** are either dropped or returned as `null` depending on the field;
+  batch handling filters `None` and reports `not_found`.
+- **Sequence Coordinates: PDB ids must be entity/instance-level** (`4HHB_1`, not
+  `4HHB`); only this API cross-references NCBI.
+- **Claude Desktop caches MCP processes.** After code changes, fully quit & relaunch
+  (⌘Q) — it does not hot-reload, and stale/duplicate processes have caused confusion.
+
+## Two layers (don't merge them)
+
+- **Server `instructions`** (in `server.py`) → how to *drive the tools*; reusable
+  across every client/project.
+- **`prompts/pdb-assistant.md`** → assistant persona + output format (HTML report,
+  columns, conventions); application-specific, pasted as project instructions.
