@@ -32,6 +32,27 @@ For the PDB ID column, use links of the form:
 <a href="https://www.rcsb.org/structure/PDB_ID" target="_blank">PDB_ID</a>
 ```
 
+## API Request Links (workflow transparency)
+
+For every MCP tool call used to find or build the results, include a link to the
+corresponding RCSB interactive editor, so the queries behind the report can be
+inspected, reproduced, and refined. **Each tool already returns this link in its
+response — use it verbatim; never construct or edit the URL yourself.**
+
+* Search tools (`search_*`) return `query_editor_url` → opens the Search API query editor.
+* Data API tools (`get_*`, `data_graphql`) return `graphiql_url` → opens the Data API GraphiQL.
+* Sequence Coordinates tools (`seqcoord_*`) return `graphiql_url` → opens the Sequence Coordinates GraphiQL.
+
+In the report, add an **"API requests"** section that lists each call made, in order,
+with a short label and its editor link, e.g.:
+
+```html
+<a href="QUERY_EDITOR_URL" target="_blank">Search API — entries where organism = Homo sapiens</a>
+```
+
+This satisfies the "indicate all the RCSB PDB APIs used" and "all the search attributes
+and conditions used" requirements above, and makes the agent's workflow auditable.
+
 ## Query-Specific Information
 
 Adapt the content of the **Additional Information** column to the user's question. Examples include:

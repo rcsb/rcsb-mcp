@@ -18,7 +18,9 @@ Run locally (stdio, for Claude Desktop / MCP Inspector):
 """
 from __future__ import annotations
 
+import json
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -30,6 +32,11 @@ from rcsb_mcp import queries
 SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 DATA_GRAPHQL_URL = "https://data.rcsb.org/graphql"
 SEQCOORD_GRAPHQL_URL = "https://sequence-coordinates.rcsb.org/graphql"
+# Interactive editors — links surfaced in tool responses so a report can show the
+# exact query behind each API call (built server-side for correct URL-encoding).
+SEARCH_EDITOR_URL = "https://search.rcsb.org/query-editor.html"
+DATA_GRAPHIQL_URL = "https://data.rcsb.org/graphiql/index.html"
+SEQCOORD_GRAPHIQL_URL = "https://sequence-coordinates.rcsb.org/graphiql/index.html"
 USER_AGENT = "rcsb-mcp/0.1 (https://github.com/rcsb/rcsb-mcp)"
 TIMEOUT = httpx.Timeout(30.0)
 
@@ -93,7 +100,11 @@ Return types and fetching details:
 - The get_* and seqcoord_* tools return a compact default field set. If you need a property
   they don't return, call describe_data_object (Data API) or describe_seqcoord_object
   (Sequence Coordinates) with [into=, query=] to find the exact field path, then pass it to
-  the tool's `fields=` argument."""
+  the tool's `fields=` argument.
+- Every search/Data/Sequence-Coordinates tool response includes a link to the interactive
+  query editor for that exact request — `query_editor_url` (search) or `graphiql_url`
+  (GraphQL). When you show your work, surface that link verbatim; never construct these
+  URLs yourself."""
 )
 
 
@@ -133,6 +144,20 @@ async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPH
         msgs = "; ".join(e.get("message", "") for e in payload["errors"])
         raise RuntimeError(f"RCSB GraphQL error: {msgs}")
     return (payload.get("data") or {}).get(field)
+
+
+def _search_editor_url(body: dict[str, Any]) -> str:
+    """Link opening this Search API query body in the RCSB query editor."""
+    return f"{SEARCH_EDITOR_URL}?json=" + quote(json.dumps(body, separators=(",", ":")), safe="")
+
+
+def _graphiql_url(base: str, body: dict[str, Any]) -> str:
+    """Link opening this GraphQL query (+ variables) in a GraphiQL editor."""
+    url = f"{base}?query=" + quote(body["query"], safe="")
+    variables = body.get("variables")
+    if variables:
+        url += "&variables=" + quote(json.dumps(variables, separators=(",", ":")), safe="")
+    return url
 
 
 # --------------------------------------------------------------------------- #
@@ -239,7 +264,8 @@ async def _query_batch(
     not come back. Returned field selections are passed through as-is.
     """
     spec = queries.DATA_OBJECTS[object_key]
-    nodes = await _graphql_field(queries.build_data_query(object_key, ids, fields), spec.root_field)
+    body = queries.build_data_query(object_key, ids, fields)
+    nodes = await _graphql_field(body, spec.root_field)
     # Unknown ids are either dropped or returned as null depending on the field.
     nodes = [n for n in (nodes or []) if n is not None]
     returned = {str(n.get("rcsb_id", "")).upper() for n in nodes}
@@ -248,6 +274,7 @@ async def _query_batch(
     result: dict[str, Any] = {"count": len(nodes), spec.root_field: nodes}
     if missing:
         result["not_found"] = missing
+    result["graphiql_url"] = _graphiql_url(DATA_GRAPHIQL_URL, body)
     return result
 
 
@@ -256,8 +283,11 @@ async def _query_single(
 ) -> dict[str, Any]:
     """Fetch a singleton Data API object, or a not-found marker."""
     spec = queries.DATA_OBJECTS[object_key]
-    node = await _graphql_field(queries.build_data_query(object_key, id_value, fields), spec.root_field)
-    return node if node is not None else {"id": id_value, "error": "not found"}
+    body = queries.build_data_query(object_key, id_value, fields)
+    node = await _graphql_field(body, spec.root_field)
+    if node is None:
+        return {"id": id_value, "error": "not found"}
+    return {**node, "graphiql_url": _graphiql_url(DATA_GRAPHIQL_URL, body)}
 
 
 def _entry_summary(node: dict[str, Any]) -> dict[str, Any]:
@@ -309,7 +339,9 @@ async def _enrich(identifiers: list[str], limit: int = 25) -> list[dict[str, Any
         return [{"id": pid, "error": str(exc)} for pid in entry_ids]
 
 
-def _format(raw: dict[str, Any], enriched: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _format(
+    raw: dict[str, Any], enriched: list[dict[str, Any]] | None, body: dict[str, Any] | None = None
+) -> dict[str, Any]:
     hits = [
         {"id": r["identifier"], "score": round(r.get("score", 0.0), 3)}
         for r in raw.get("result_set", [])
@@ -317,6 +349,8 @@ def _format(raw: dict[str, Any], enriched: list[dict[str, Any]] | None) -> dict[
     result = {"total_count": raw.get("total_count", 0), "returned": len(hits), "hits": hits}
     if enriched is not None:
         result["details"] = enriched
+    if body is not None:
+        result["query_editor_url"] = _search_editor_url(body)
     return result
 
 
@@ -334,11 +368,14 @@ def _format_facet(facet: dict[str, Any]) -> dict[str, Any]:
     return {"name": facet.get("name"), "value": facet.get("value")}
 
 
-def _format_facets(raw: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _format_facets(raw: dict[str, Any], body: dict[str, Any] | None = None) -> dict[str, Any]:
+    result = {
         "total_count": raw.get("total_count", 0),
         "facets": [_format_facet(f) for f in raw.get("facets", [])],
     }
+    if body is not None:
+        result["query_editor_url"] = _search_editor_url(body)
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -386,7 +423,7 @@ async def search_fulltext(
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched)
+    return _format(raw, enriched, body)
 
 @mcp.tool()
 async def list_pdb_search_attributes(
@@ -501,7 +538,7 @@ async def search_by_attribute(
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched)
+    return _format(raw, enriched, body)
 
 
 @mcp.tool()
@@ -568,7 +605,7 @@ async def search_combined(
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched)
+    return _format(raw, enriched, body)
 
 
 @mcp.tool()
@@ -598,7 +635,7 @@ async def search_by_sequence(
         rows=limit,
     )
     raw = await _post_search(body)
-    return _format(raw, None)
+    return _format(raw, None, body)
 
 
 @mcp.tool()
@@ -641,7 +678,7 @@ async def search_by_chemical(
         rows=limit,
     )
     raw = await _post_search(body)
-    return _format(raw, None)
+    return _format(raw, None, body)
 
 
 @mcp.tool()
@@ -674,7 +711,7 @@ async def search_by_structure(
         rows=limit,
     )
     raw = await _post_search(body)
-    return _format(raw, None)
+    return _format(raw, None, body)
 
 
 @mcp.tool()
@@ -705,7 +742,7 @@ async def search_by_seqmotif(
         rows=limit,
     )
     raw = await _post_search(body)
-    return _format(raw, None)
+    return _format(raw, None, body)
 
 
 @mcp.tool()
@@ -728,7 +765,7 @@ async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
         }
     """
     raw = await _post_search(query_body)
-    return _format(raw, None)
+    return _format(raw, None, query_body)
 
 
 @mcp.tool()
@@ -770,7 +807,7 @@ async def search_count(
         include_computed=include_computed_models,
     )
     raw = await _post_search(body)
-    return {"total_count": raw.get("total_count", 0)}
+    return {"total_count": raw.get("total_count", 0), "query_editor_url": _search_editor_url(body)}
 
 
 @mcp.tool()
@@ -835,7 +872,7 @@ async def search_facets(
         include_computed=include_computed_models,
     )
     raw = await _post_search(body)
-    return _format_facets(raw)
+    return _format_facets(raw, body)
 
 
 @mcp.tool()
@@ -894,7 +931,7 @@ async def search_strucmotif(
         rows=limit,
     )
     raw = await _post_search(body)
-    return _format(raw, None)
+    return _format(raw, None, body)
 
 
 # --------------------------------------------------------------------------- #
@@ -1117,7 +1154,12 @@ async def data_graphql(query: str, variables: dict[str, Any] | None = None) -> d
         query: A GraphQL query string. Prefer $variables over inlining values.
         variables: Optional dict of GraphQL variables referenced by the query.
     """
-    return await _post_graphql(query, variables)
+    payload = await _post_graphql(query, variables)
+    if isinstance(payload, dict):
+        payload["graphiql_url"] = _graphiql_url(
+            DATA_GRAPHIQL_URL, {"query": query, "variables": variables}
+        )
+    return payload
 
 
 # --------------------------------------------------------------------------- #
@@ -1212,6 +1254,7 @@ async def seqcoord_alignments(
         fields: Optional GraphQL selection to override the default.
     """
     body = queries.build_sc_alignments_query(query_id, from_ref, to_ref, seq_range, fields)
+    graphiql_url = _graphiql_url(SEQCOORD_GRAPHIQL_URL, body)
     data = await _graphql_field(body, "alignments", url=SEQCOORD_GRAPHQL_URL)
     if not data or not (data.get("target_alignments")):
         return {
@@ -1225,8 +1268,9 @@ async def seqcoord_alignments(
                 if from_ref.startswith("PDB") and "_" not in query_id and "." not in query_id
                 else "No alignments found for this query."
             ),
+            "graphiql_url": graphiql_url,
         }
-    return data
+    return {**data, "graphiql_url": graphiql_url}
 
 
 @mcp.tool()
@@ -1258,7 +1302,11 @@ async def seqcoord_annotations(
         query_id, reference, sources, seq_range, filters, fields
     )
     data = await _graphql_field(body, "annotations", url=SEQCOORD_GRAPHQL_URL) or []
-    return {"count": len(data), "annotations": data}
+    return {
+        "count": len(data),
+        "annotations": data,
+        "graphiql_url": _graphiql_url(SEQCOORD_GRAPHIQL_URL, body),
+    }
 
 
 @mcp.tool()
@@ -1280,8 +1328,11 @@ async def seqcoord_group_alignments(
         fields: Optional GraphQL selection to override the default.
     """
     body = queries.build_sc_group_alignments_query(group, group_id, filter_terms, fields)
+    graphiql_url = _graphiql_url(SEQCOORD_GRAPHIQL_URL, body)
     data = await _graphql_field(body, "group_alignments", url=SEQCOORD_GRAPHQL_URL)
-    return data if data is not None else {"group_id": group_id, "error": "no alignment found"}
+    if data is None:
+        return {"group_id": group_id, "error": "no alignment found", "graphiql_url": graphiql_url}
+    return {**data, "graphiql_url": graphiql_url}
 
 
 @mcp.tool()
@@ -1312,7 +1363,11 @@ async def seqcoord_group_annotations(
     )
     field = "group_annotations_summary" if summary else "group_annotations"
     data = await _graphql_field(body, field, url=SEQCOORD_GRAPHQL_URL) or []
-    return {"count": len(data), "annotations": data}
+    return {
+        "count": len(data),
+        "annotations": data,
+        "graphiql_url": _graphiql_url(SEQCOORD_GRAPHIQL_URL, body),
+    }
 
 
 @mcp.tool()
@@ -1328,7 +1383,12 @@ async def seqcoord_graphql(query: str, variables: dict[str, Any] | None = None) 
         query: A GraphQL query string. Prefer $variables over inlining values.
         variables: Optional dict of GraphQL variables referenced by the query.
     """
-    return await _post_graphql(query, variables, url=SEQCOORD_GRAPHQL_URL)
+    payload = await _post_graphql(query, variables, url=SEQCOORD_GRAPHQL_URL)
+    if isinstance(payload, dict):
+        payload["graphiql_url"] = _graphiql_url(
+            SEQCOORD_GRAPHIQL_URL, {"query": query, "variables": variables}
+        )
+    return payload
 
 
 def main() -> None:
