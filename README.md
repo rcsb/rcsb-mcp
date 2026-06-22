@@ -20,6 +20,7 @@ Bank structures** — discover, inspect, and cross-reference — from LLM client
 | `list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~677) or `schema="chemical"` (~57: `chem_comp.*`, `drugbank_info.*`, ...). |
 | `find_go_terms` | Resolve a free-text molecular function / biological process / cellular component to Gene Ontology ids (via EBI QuickGO), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_lineage.id`. |
 | `find_interpro_domains` | Resolve a free-text protein domain / family / fold to InterPro ids (via EBI InterPro API), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_id`. |
+| `find_enzyme_classes` | Resolve a free-text enzyme / reaction to Enzyme Commission (EC) numbers (via EBI Search/IntEnz), annotated with PDB entry counts — then search by `rcsb_polymer_entity.rcsb_ec_lineage.id` (hierarchical). |
 | `search_fulltext` | Free-text keyword search (e.g. `"CRISPR Cas9"`). |
 | `search_by_attribute` | Structured search on an indexed attribute (resolution, organism, release date, ...). Supports `exists`, `negation`, `case_sensitive`, and `chemical=True` (text_chem). |
 | `search_combined` | Combine free text + multiple attribute filters (AND/OR) in one query, with optional sort. |
@@ -153,6 +154,7 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Find proteins with a zinc-finger motif." → `search_by_seqmotif`
 - "Structures of proteins with kinase activity / involved in DNA repair / in the mitochondrial membrane." → `find_go_terms` → `search_by_attribute` on `rcsb_polymer_entity_annotation.annotation_lineage.id`
 - "Structures containing an SH2 domain / immunoglobulin fold." → `find_interpro_domains` → `search_by_attribute` on `rcsb_polymer_entity_annotation.annotation_id`
+- "Alcohol dehydrogenase structures / any EC 3.4.21 serine protease." → `find_enzyme_classes` → `search_by_attribute` on `rcsb_polymer_entity.rcsb_ec_lineage.id`
 - "Non-redundant human kinase structures (90% identity clusters)." → `search_fulltext` / `search_combined` with `group_by_identity=90`
 - "How many human X-ray structures are there?" → `search_count`
 - "Break down ribosome structures by experimental method / by release year." → `search_facets`
@@ -175,10 +177,12 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
   HTTP 200 even for query errors, reporting them in an `errors` array.
 - Sequence Coordinates endpoint: `https://sequence-coordinates.rcsb.org/graphql`
   (POST, GraphQL; same HTTP-200-with-`errors` behavior).
-- `find_go_terms` and `find_interpro_domains` resolve ids via EBI services (QuickGO:
-  `https://www.ebi.ac.uk/QuickGO/services/ontology/go/search`; InterPro:
-  `https://www.ebi.ac.uk/interpro/api/entry/interpro/`) — the non-RCSB dependencies. The
-  resolved GO / InterPro ids then drive RCSB `rcsb_polymer_entity_annotation.*` searches.
+- `find_go_terms`, `find_interpro_domains`, and `find_enzyme_classes` resolve ids via EBI
+  services (QuickGO: `.../QuickGO/services/ontology/go/search`; InterPro:
+  `.../interpro/api/entry/interpro/`; EC via EBI Search/IntEnz:
+  `.../ebisearch/ws/rest/intenz`) — the non-RCSB dependencies. The resolved GO / InterPro /
+  EC ids then drive RCSB annotation searches (`rcsb_polymer_entity_annotation.*`,
+  `rcsb_polymer_entity.rcsb_ec_lineage.id`).
 - No API key required; the APIs are public. Be considerate with request volume.
 - A full list of searchable attributes for `search_by_attribute` is in the
   [Search API attribute reference](https://search.rcsb.org/structure-search-attributes.html);

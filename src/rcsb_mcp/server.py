@@ -62,6 +62,9 @@ INTERPRO_TYPES = {
     "binding_site": "binding_site", "active_site": "active_site", "ptm": "ptm",
 }
 
+# Enzyme Commission (EC) resolver — EBI Search over the IntEnz database (text -> EC number).
+INTENZ_SEARCH_URL = "https://www.ebi.ac.uk/ebisearch/ws/rest/intenz"
+
 mcp = FastMCP(
     name="rcsb-pdb",
     instructions="""You are an assistant for interrogating Protein Data Bank structures via the
@@ -114,6 +117,11 @@ Other capabilities:
   with rcsb_polymer_entity_annotation.annotation_id exact_match "IPR..." (add .type="InterPro" to be
   explicit; "in" with several IPR ids to broaden). Note: for InterPro use annotation_id (NOT
   annotation_lineage.id — its hierarchy is not expanded). Prefer higher pdb_entry_count.
+- For requests about an ENZYME activity / class ("alcohol dehydrogenase", "DNA polymerase", "EC
+  3.4.21"), first call find_enzyme_classes to resolve it to an EC number, then search with
+  rcsb_polymer_entity.rcsb_ec_lineage.id exact_match "<EC>" (hierarchical: a full EC finds that
+  enzyme, a partial EC like "3.4.21" finds the whole sub-subclass; "in" with several to broaden).
+  Prefer higher pdb_entry_count.
 
 Return types and fetching details:
 - Every search returns identifiers of ONE return_type. The six valid types — with an example
@@ -640,6 +648,61 @@ async def find_interpro_domains(
         for entry, count in zip(entries, counts):
             entry["pdb_entry_count"] = count
     return {"query": query, "entry_type": etype, "count": len(entries), "entries": entries}
+
+
+@mcp.tool()
+async def find_enzyme_classes(
+    query: str,
+    limit: int = 10,
+    with_pdb_counts: bool = True,
+) -> dict[str, Any]:
+    """Resolve a free-text enzyme / reaction description to Enzyme Commission (EC) numbers,
+    for precise EC-based PDB searches instead of keyword guessing.
+
+    Use this when a request references an enzyme activity or class (e.g. "alcohol dehydrogenase",
+    "protein tyrosine kinase", "DNA polymerase"). Resolve the phrase to an EC number here, then
+    search by it:
+    `rcsb_polymer_entity.rcsb_ec_lineage.id` exact_match "<EC>" — EC is hierarchical and this
+    matches the number AND its descendants, so a full EC ("1.1.1.1") finds that exact enzyme while
+    a partial EC ("3.4.21") finds the whole sub-subclass. Use the `in` operator with several EC
+    numbers to broaden.
+
+    Args:
+        query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
+        limit: Max EC numbers to return (1-25).
+        with_pdb_counts: If true (default), annotate each with pdb_entry_count (PDB entries carrying
+            it, via rcsb_ec_lineage.id) so you can prefer well-represented enzyme classes.
+
+    Returns:
+        {query, count, enzymes:[{ec, name, pdb_entry_count?}]}.
+    """
+    limit = max(1, min(limit, 25))
+    # Over-fetch a little so dropping transferred/deleted entries still fills `limit`.
+    fetch = min(limit + 5, 30)
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    ) as client:
+        resp = await client.get(
+            INTENZ_SEARCH_URL, params={"query": query, "format": "json", "size": fetch, "fields": "name"}
+        )
+    resp.raise_for_status()
+    enzymes: list[dict[str, Any]] = []
+    for e in resp.json().get("entries") or []:
+        names = (e.get("fields") or {}).get("name") or []
+        name = names[0] if names else None
+        if name and name.lower().startswith(("transferred entry", "deleted entry")):
+            continue
+        enzymes.append({"ec": e.get("id"), "name": name})
+        if len(enzymes) >= limit:
+            break
+    if with_pdb_counts and enzymes:
+        counts = await asyncio.gather(*(
+            _annotation_pdb_count("rcsb_polymer_entity.rcsb_ec_lineage.id", e["ec"])
+            for e in enzymes
+        ))
+        for enzyme, count in zip(enzymes, counts):
+            enzyme["pdb_entry_count"] = count
+    return {"query": query, "count": len(enzymes), "enzymes": enzymes}
 
 
 @mcp.tool()
