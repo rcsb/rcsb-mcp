@@ -25,6 +25,7 @@ from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from starlette.responses import PlainTextResponse
 
 from rcsb_mcp.search_attibutes import SEARCH_ATTRIBUTES
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
@@ -1628,12 +1629,18 @@ async def seqcoord_graphql(query: str, variables: dict[str, Any] | None = None) 
     return payload
 
 
+@mcp.custom_route("/healthz", methods=["GET"])
+async def healthz(_request):
+    """Liveness/readiness probe endpoint — 200 OK when the HTTP server is up."""
+    return PlainTextResponse("ok")
+
+
 def create_app():
     """ASGI app factory for HTTP deployment (the Docker image).
 
-    Serves the MCP over the streamable-HTTP transport at POST /mcp. Built only when
-    called, so importing this module for local stdio use (main() / the `rcsb-mcp`
-    console script) constructs nothing.
+    Serves the MCP over the streamable-HTTP transport at POST /mcp (plus GET /healthz
+    for Kubernetes probes). Built only when called, so importing this module for local
+    stdio use (main() / the `rcsb-mcp` console script) constructs nothing.
     Run with: uvicorn rcsb_mcp.server:create_app --factory
     """
     return mcp.streamable_http_app()

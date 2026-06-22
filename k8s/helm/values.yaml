@@ -1,0 +1,98 @@
+# This is a DEFAULT values file.
+# All the dynamic values in helm templates must be stated in this file.
+# Any environment specific values which needs to be overridden should be
+# specified in environment specific values file in values directory.
+
+replicaCount: 2
+revisionHistoryLimit: 3
+
+# Define container liveness and readiness checks.
+# The MCP server exposes GET /healthz (returns 200 OK) for probes; the MCP itself
+# is served at POST /mcp. The server starts in a couple of seconds (no model load).
+livenessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  failureThreshold: 3
+  http:
+    path: /healthz
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+  http:
+    path: /healthz
+
+
+image:
+  repository: "harbor.devops.k8s.rcsb.org/rcsb/rcsb-mcp"
+  pullPolicy: Always
+  tag: latest
+
+imagePullSecrets: "harbor-docker-registry-conf"
+
+deploymentStrategy:
+  #https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  #Type is either RollingUpdate or Recreate
+  type: "RollingUpdate"
+  #For rolling update, what percentage of total pods can be created above desired amount
+  maxSurge: 25%
+  #For rolling update, what percentage of total pods can be brought down to update
+  maxUnavailable: 25%
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  containerPort: 8080
+
+# Disabled by default; enabled with real hosts/TLS in the environment values
+# (see values/production.yaml). Clients reach the MCP at https://<host>/mcp.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+# The MCP is a lightweight, I/O-bound HTTP proxy to the public RCSB APIs — no GPU/ML.
+resources:
+  limits:
+    cpu: "1"
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# useSecretsVolume if your application will mount a secret from the Vault service as a file on the filesystem.
+# Not needed for this server: the RCSB/EBI APIs it calls are public and require no key.
+useSecretsVolume: false
+secretVolumes:
+  name: app-secret
+  mountPath: /app/secret
+  filename: secret.txt
+  secretName: app-generic-secret
+
+# Root filesystem is read-only; point HOME at the writable /tmp tmpfs to be safe.
+podEnvVars:
+  - name: HOME
+    value: /tmp
+
+arguments: null

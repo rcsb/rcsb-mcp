@@ -1,0 +1,69 @@
+# This file is specific to production environment.
+# Any of the values in K8s/helm/values.yaml can be overridden here specific to production environment.
+
+image:
+  tag: "production"
+
+# Lightweight, I/O-bound HTTP service — give it modest headroom, not GPU-class resources.
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# NOTE: hostnames below are placeholders following the RCSB naming pattern — confirm the
+# actual production URLs (and the TLS secret name) with DevOps before deploying.
+# Clients connect to the MCP at https://<host>/mcp ; /healthz is used by probes.
+ingress:
+  enabled: true
+  className: haproxy
+  annotations:
+    cert-manager.io/cluster-issuer: rutgers-acme
+    kubernetes.io/tls-acme: "true"
+    haproxy.org/allow-list: >-
+      128.6.158.0/23, 132.249.210.0/24, 132.249.213.0/24, 163.114.226.0/24, 163.114.225.0/24,
+      209.177.156.77/32, 147.75.68.120/29, 163.114.227.0/24, 163.114.228.0/24, 163.114.224.0/24, 147.75.66.200/29,
+      163.114.230.0/24, 163.114.232.0/24
+  hosts:
+    - host: rcsb-mcp.k8s.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+    - host: rcsb-mcp.east.k8s.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+    - host: rcsb-mcp.west.k8s.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+    - host: rcsb-mcp.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+    - host: rcsb-mcp-east.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+    - host: rcsb-mcp-west.rcsb.org
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - hosts:
+        - rcsb-mcp.k8s.rcsb.org
+        - rcsb-mcp.east.k8s.rcsb.org
+        - rcsb-mcp.west.k8s.rcsb.org
+        - rcsb-mcp.rcsb.org
+        - rcsb-mcp-east.rcsb.org
+        - rcsb-mcp-west.rcsb.org
+      secretName: rcsb-mcp.k8s.rcsb.org-tls
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80

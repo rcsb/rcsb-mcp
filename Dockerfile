@@ -6,8 +6,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Create an unprivileged user up front (kept separate from the install RUN layer).
-RUN useradd --create-home --uid 10001 appuser
+# Create an unprivileged user up front (uid/gid 1000 to match the Helm
+# podSecurityContext: runAsUser / runAsGroup / fsGroup = 1000).
+RUN groupadd --gid 1000 appuser \
+    && useradd --create-home --uid 1000 --gid 1000 appuser
 
 # Install the package and its dependencies. Copy build metadata + source only
 # (keeps the layer cache friendly and the image lean).

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helm_chart.fullname" . }}
+  labels:
+    {{- include "helm_chart.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit}}
+  selector:
+    matchLabels:
+      {{- include "helm_chart.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: {{ .Values.deploymentStrategy.type }}
+    {{- if eq .Values.deploymentStrategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deploymentStrategy.maxSurge }}
+      maxUnavailable: {{ .Values.deploymentStrategy.maxUnavailable }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "helm_chart.selectorLabels" . | nindent 8 }}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "helm_chart.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.arguments }}
+          args:
+            {{- toYaml .Values.arguments | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.service.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            httpGet:
+              path: {{ .Values.livenessProbe.http.path }}
+              port: {{ .Values.service.containerPort }}
+          readinessProbe:
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            httpGet:
+              path: {{ .Values.readinessProbe.http.path }}
+              port: {{ .Values.service.containerPort }}
+          {{- if .Values.podEnvVars }}
+          env:
+            {{- toYaml .Values.podEnvVars | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmpfs   # Writable scratch for /tmp while the root filesystem is read-only.
+              mountPath: /tmp
+            {{- if .Values.useSecretsVolume }}
+            - name: {{ include "helm_chart.fullname" . }}-secret
+              mountPath: "{{ .Values.secretVolumes.mountPath }}"
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmpfs
+          emptyDir:
+            medium: Memory
+        {{- if .Values.useSecretsVolume }}
+        - name: {{ include "helm_chart.fullname" . }}-secret
+          secret:
+            secretName: {{ .Values.secretVolumes.secretName }}
+        {{- end }}
