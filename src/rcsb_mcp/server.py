@@ -472,7 +472,7 @@ async def list_pdb_search_attributes(
 async def search_by_attribute(
     attribute: str,
     operator: str,
-    value: Any = None,
+    value: str | int | float | list | dict | None = None,
     return_type: str = "entry",
     limit: int = 10,
     enrich: bool = True,
