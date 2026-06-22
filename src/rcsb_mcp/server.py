@@ -18,6 +18,7 @@ Run locally (stdio, for Claude Desktop / MCP Inspector):
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from urllib.parse import quote
@@ -42,6 +43,24 @@ TIMEOUT = httpx.Timeout(30.0)
 
 # Attribute catalogs by schema name (see list_pdb_search_attributes).
 ATTRIBUTE_CATALOGS = {"structure": SEARCH_ATTRIBUTES, "chemical": CHEMICAL_SEARCH_ATTRIBUTES}
+
+# Gene Ontology resolver (EBI QuickGO) + friendly aspect/namespace aliases.
+QUICKGO_SEARCH_URL = "https://www.ebi.ac.uk/QuickGO/services/ontology/go/search"
+GO_ASPECTS = {
+    "molecular_function": "molecular_function", "function": "molecular_function", "mf": "molecular_function",
+    "biological_process": "biological_process", "process": "biological_process", "bp": "biological_process",
+    "cellular_component": "cellular_component", "component": "cellular_component",
+    "location": "cellular_component", "cc": "cellular_component",
+}
+
+# InterPro domain/family resolver (EBI InterPro REST API) + friendly type aliases.
+INTERPRO_SEARCH_URL = "https://www.ebi.ac.uk/interpro/api/entry/interpro/"
+INTERPRO_TYPES = {
+    "domain": "domain", "family": "family",
+    "homologous_superfamily": "homologous_superfamily", "superfamily": "homologous_superfamily",
+    "repeat": "repeat", "conserved_site": "conserved_site",
+    "binding_site": "binding_site", "active_site": "active_site", "ptm": "ptm",
+}
 
 mcp = FastMCP(
     name="rcsb-pdb",
@@ -84,6 +103,17 @@ Other capabilities:
 - To search chemical-component attributes (chem_comp.*, drugbank_info.*, rcsb_chem_comp_*),
   call list_pdb_search_attributes(schema="chemical") to find the path, then pass chemical=True
   to search_by_attribute / search_combined (usually with return_type="mol_definition").
+- For requests about a molecular FUNCTION ("kinase activity"), biological PROCESS ("DNA repair"),
+  or cellular COMPONENT / location ("mitochondrial membrane"), first call find_go_terms to resolve
+  the phrase to a Gene Ontology id, then search with
+  rcsb_polymer_entity_annotation.annotation_lineage.id exact_match "GO:..." (matches the term and
+  all its descendants). This is far more precise than keyword search. Prefer terms with a higher
+  pdb_entry_count; use the "in" operator with several GO ids to broaden.
+- For requests referencing a protein DOMAIN, FAMILY, or fold ("SH2 domain", "immunoglobulin fold",
+  "kinase domain"), first call find_interpro_domains to resolve it to an InterPro id, then search
+  with rcsb_polymer_entity_annotation.annotation_id exact_match "IPR..." (add .type="InterPro" to be
+  explicit; "in" with several IPR ids to broaden). Note: for InterPro use annotation_id (NOT
+  annotation_lineage.id — its hierarchy is not expanded). Prefer higher pdb_entry_count.
 
 Return types and fetching details:
 - Every search returns identifiers of ONE return_type. The six valid types — with an example
@@ -378,6 +408,19 @@ def _format_facets(raw: dict[str, Any], body: dict[str, Any] | None = None) -> d
     return result
 
 
+async def _annotation_pdb_count(attribute: str, value: str) -> int | None:
+    """Count PDB entries whose polymer-entity annotation `attribute` equals `value`. Best-effort."""
+    body = queries.build_count_query(
+        filters=[{"attribute": attribute, "operator": "exact_match", "value": value}],
+        return_type="entry",
+    )
+    try:
+        raw = await _post_search(body)
+        return raw.get("total_count", 0)
+    except httpx.HTTPError:
+        return None
+
+
 # --------------------------------------------------------------------------- #
 # Tools
 # --------------------------------------------------------------------------- #
@@ -467,6 +510,137 @@ async def list_pdb_search_attributes(
         a for a in catalog
         if q in a["attribute"].lower() or q in (a.get("description") or "").lower()
     ]
+
+
+@mcp.tool()
+async def find_go_terms(
+    query: str,
+    namespace: str | None = None,
+    limit: int = 10,
+    with_pdb_counts: bool = True,
+) -> dict[str, Any]:
+    """Resolve a free-text function / process / location to Gene Ontology (GO) terms,
+    so you can run precise GO-based PDB searches instead of keyword guessing.
+
+    Use this whenever a request involves a molecular FUNCTION (what a protein does, e.g.
+    "kinase activity"), a biological PROCESS (e.g. "DNA repair"), or a cellular
+    COMPONENT / location (e.g. "mitochondrial membrane"). Resolve the phrase to a GO id
+    here, then search by it.
+
+    To search by a resolved GO id (attributes are rcsb_polymer_entity_annotation.*;
+    return_type is usually "entry" or "polymer_entity"):
+    - PREFER `rcsb_polymer_entity_annotation.annotation_lineage.id` exact_match "GO:..." —
+      matches the term AND all of its more-specific descendants (e.g. "kinase activity"
+      also catches "protein serine/threonine kinase activity"). Best for functional queries.
+    - Use `rcsb_polymer_entity_annotation.annotation_id` exact_match "GO:..." for ONLY that
+      exact term. Optionally add a `.type` = "GO" filter to be explicit.
+
+    Args:
+        query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
+        namespace: Optional GO aspect to restrict to — "molecular_function" (aka "function"),
+            "biological_process" ("process"), or "cellular_component" ("location"/"component").
+        limit: Max GO terms to return (1-25).
+        with_pdb_counts: If true (default), annotate each term with pdb_entry_count (PDB
+            entries carrying it, via annotation_lineage.id) so you can prefer well-represented
+            terms and avoid empty searches.
+
+    Returns:
+        {query, namespace, count, terms:[{id, name, aspect, pdb_entry_count?}]}.
+    """
+    aspect = None
+    if namespace:
+        aspect = GO_ASPECTS.get(namespace.strip().lower())
+        if aspect is None:
+            raise ValueError(
+                "namespace must be molecular_function, biological_process, or cellular_component"
+            )
+    limit = max(1, min(limit, 25))
+    # Over-fetch when filtering by aspect so the post-filter still fills `limit`.
+    fetch = min(limit * 5, 50) if aspect else limit
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    ) as client:
+        resp = await client.get(QUICKGO_SEARCH_URL, params={"query": query, "limit": fetch, "page": 1})
+    resp.raise_for_status()
+    results = resp.json().get("results") or []
+    terms: list[dict[str, Any]] = []
+    for r in results:
+        if r.get("isObsolete"):
+            continue
+        if aspect and r.get("aspect") != aspect:
+            continue
+        terms.append({"id": r.get("id"), "name": r.get("name"), "aspect": r.get("aspect")})
+        if len(terms) >= limit:
+            break
+    if with_pdb_counts and terms:
+        counts = await asyncio.gather(*(
+            _annotation_pdb_count("rcsb_polymer_entity_annotation.annotation_lineage.id", t["id"])
+            for t in terms
+        ))
+        for term, count in zip(terms, counts):
+            term["pdb_entry_count"] = count
+    return {"query": query, "namespace": aspect, "count": len(terms), "terms": terms}
+
+
+@mcp.tool()
+async def find_interpro_domains(
+    query: str,
+    entry_type: str | None = None,
+    limit: int = 10,
+    with_pdb_counts: bool = True,
+) -> dict[str, Any]:
+    """Resolve a free-text protein domain / family description to InterPro entries, for
+    precise InterPro-based PDB searches instead of keyword guessing.
+
+    Use this when a request references a protein DOMAIN, FAMILY, or fold (e.g. "SH2 domain",
+    "immunoglobulin fold", "protein kinase domain", "Rossmann fold"). Resolve the phrase to an
+    InterPro accession (IPRxxxxxx) here, then search by it:
+    `rcsb_polymer_entity_annotation.annotation_id` exact_match "IPRxxxxxx" (add a
+    `.type` = "InterPro" filter to be explicit; use the `in` operator with several IPR ids to
+    broaden). Unlike GO, use annotation_id — InterPro's hierarchy is not expanded by lineage.
+
+    Args:
+        query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
+        entry_type: Optional InterPro type filter — one of domain, family,
+            homologous_superfamily (aka superfamily), repeat, conserved_site, binding_site,
+            active_site, ptm. Omit to return all types.
+        limit: Max entries to return (1-25).
+        with_pdb_counts: If true (default), annotate each entry with pdb_entry_count (PDB
+            entries carrying it) so you can prefer well-represented entries and avoid empty searches.
+
+    Returns:
+        {query, entry_type, count, entries:[{id, name, type, pdb_entry_count?}]}.
+    """
+    etype = None
+    if entry_type:
+        etype = INTERPRO_TYPES.get(entry_type.strip().lower())
+        if etype is None:
+            raise ValueError(f"entry_type must be one of {sorted(set(INTERPRO_TYPES.values()))}")
+    limit = max(1, min(limit, 25))
+    params: dict[str, Any] = {"search": query, "page_size": limit}
+    if etype:
+        params["type"] = etype
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    ) as client:
+        resp = await client.get(INTERPRO_SEARCH_URL, params=params)
+    resp.raise_for_status()
+    results = resp.json().get("results") or []
+    entries: list[dict[str, Any]] = []
+    for r in results:
+        meta = r.get("metadata") or {}
+        entries.append({"id": meta.get("accession"), "name": meta.get("name"), "type": meta.get("type")})
+        if len(entries) >= limit:
+            break
+    if with_pdb_counts and entries:
+        counts = await asyncio.gather(*(
+            _annotation_pdb_count("rcsb_polymer_entity_annotation.annotation_id", e["id"])
+            for e in entries
+        ))
+        for entry, count in zip(entries, counts):
+            entry["pdb_entry_count"] = count
+    return {"query": query, "entry_type": etype, "count": len(entries), "entries": entries}
+
 
 @mcp.tool()
 async def search_by_attribute(
