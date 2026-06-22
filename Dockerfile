@@ -6,14 +6,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Create an unprivileged user up front (kept separate from the install RUN layer).
+RUN useradd --create-home --uid 10001 appuser
+
 # Install the package and its dependencies. Copy build metadata + source only
 # (keeps the layer cache friendly and the image lean).
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install .
 
-# Run as an unprivileged user.
-RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
 EXPOSE 8080
