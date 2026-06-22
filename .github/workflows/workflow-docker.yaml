@@ -1,0 +1,22 @@
+# Docker build and push workflow
+
+name: Run CI/CD Docker Workflow
+
+on:
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - "k8s/**"
+  workflow_dispatch:
+
+jobs:
+  run-workflow:
+    name: "Run automated docker workflow"
+    if: github.event_name != 'pull_request'
+    uses: rcsb/devops-cicd-github-actions/.github/workflows/workflow-docker.yaml@master
+    with:
+      repo_project: "rcsb"  # REQUIRED. The name of the project or organization in the remote Docker image repository.
+      docker_image_name: "rcsb-mcp"  # REQUIRED. The name of the Docker image to create.
+      docker_build_context: "."  # The path location of the docker build context, relative to the project root. Defaults to the project root.
+      mainline_branch: "master"

@@ -1628,8 +1628,19 @@ async def seqcoord_graphql(query: str, variables: dict[str, Any] | None = None) 
     return payload
 
 
+def create_app():
+    """ASGI app factory for HTTP deployment (the Docker image).
+
+    Serves the MCP over the streamable-HTTP transport at POST /mcp. Built only when
+    called, so importing this module for local stdio use (main() / the `rcsb-mcp`
+    console script) constructs nothing.
+    Run with: uvicorn rcsb_mcp.server:create_app --factory
+    """
+    return mcp.streamable_http_app()
+
+
 def main() -> None:
-    mcp.run()  # stdio transport by default
+    mcp.run()  # stdio transport by default (local clients / console script)
 
 
 if __name__ == "__main__":
