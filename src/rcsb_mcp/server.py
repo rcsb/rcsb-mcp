@@ -536,13 +536,17 @@ async def find_go_terms(
     limit: int = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
-    """Resolve a free-text function / process / location to Gene Ontology (GO) terms,
-    so you can run precise GO-based PDB searches instead of keyword guessing.
+    """Resolve a free-text molecular function, biological process, or cellular component /
+    location (e.g. kinase activity, ATP binding, DNA repair, apoptosis, signal transduction,
+    mitochondrial membrane, nucleus) to Gene Ontology (GO) terms, so you can run precise
+    GO-based PDB searches instead of keyword guessing.
 
-    Use this whenever a request involves a molecular FUNCTION (what a protein does, e.g.
-    "kinase activity"), a biological PROCESS (e.g. "DNA repair"), or a cellular
-    COMPONENT / location (e.g. "mitochondrial membrane"). Resolve the phrase to a GO id
-    here, then search by it.
+    Use this whenever a request involves what a protein DOES or where it acts — including
+    "proteins that <do X> / are involved in / participate in / are responsible for ...",
+    or "localized to / located in ...". Covers a molecular FUNCTION ("kinase activity",
+    "ATP binding"), a biological PROCESS ("DNA repair", "apoptosis", "cell signaling"), or a
+    cellular COMPONENT / location ("mitochondrial membrane", "nucleus"). Resolve the phrase to
+    a GO id here, then search by it.
 
     To search by a resolved GO id (attributes are rcsb_polymer_entity_annotation.*;
     return_type is usually "entry" or "polymer_entity"):
@@ -606,12 +610,15 @@ async def find_interpro_domains(
     limit: int = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
-    """Resolve a free-text protein domain / family description to InterPro entries, for
+    """Resolve a free-text protein domain, family, or fold (e.g. SH2 domain, immunoglobulin
+    fold, zinc finger, beta-barrel, WD40 repeat, kinase domain) to InterPro entries, for
     precise InterPro-based PDB searches instead of keyword guessing.
 
-    Use this when a request references a protein DOMAIN, FAMILY, or fold (e.g. "SH2 domain",
-    "immunoglobulin fold", "protein kinase domain", "Rossmann fold"). Resolve the phrase to an
-    InterPro accession (IPRxxxxxx) here, then search by it:
+    Use this when a request references a protein DOMAIN, FAMILY, or fold — including
+    "structures containing / with a <domain>", "<domain>-containing proteins", or
+    "members of the <family> family" (e.g. "SH2 domain", "immunoglobulin fold", "protein
+    kinase domain", "Rossmann fold", "zinc finger"). Resolve the phrase to an InterPro
+    accession (IPRxxxxxx) here, then search by it:
     `rcsb_polymer_entity_annotation.annotation_id` exact_match "IPRxxxxxx" (add a
     `.type` = "InterPro" filter to be explicit; use the `in` operator with several IPR ids to
     broaden). Unlike GO, use annotation_id — InterPro's hierarchy is not expanded by lineage.
@@ -665,11 +672,14 @@ async def find_enzyme_classes(
     limit: int = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
-    """Resolve a free-text enzyme / reaction description to Enzyme Commission (EC) numbers,
-    for precise EC-based PDB searches instead of keyword guessing.
+    """Resolve a free-text enzyme, enzyme class, or catalyzed reaction (e.g. alcohol
+    dehydrogenase, protease, kinase, DNA polymerase, hydrolase, oxidoreductase) to Enzyme
+    Commission (EC) numbers, for precise EC-based PDB searches instead of keyword guessing.
 
-    Use this when a request references an enzyme activity or class (e.g. "alcohol dehydrogenase",
-    "protein tyrosine kinase", "DNA polymerase"). Resolve the phrase to an EC number here, then
+    Use this when a request references an enzyme, enzyme class, or reaction — including
+    "enzymes that catalyze / break down / degrade / synthesize / hydrolyze / phosphorylate ..."
+    (e.g. "alcohol dehydrogenase", "protein tyrosine kinase", "DNA polymerase", "serine
+    protease", "EC 3.4.21"). Resolve the phrase to an EC number here, then
     search by it:
     `rcsb_polymer_entity.rcsb_ec_lineage.id` exact_match "<EC>" — EC is hierarchical and this
     matches the number AND its descendants, so a full EC ("1.1.1.1") finds that exact enzyme while
@@ -720,12 +730,15 @@ async def find_disease_terms(
     limit: int = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
-    """Resolve a free-text disease / condition to MONDO ontology ids, for precise
-    disease-based PDB searches instead of keyword guessing.
+    """Resolve a free-text disease, disorder, syndrome, or condition (e.g. diabetes, cancer,
+    Alzheimer disease, cystic fibrosis) to MONDO ontology ids, for precise disease-based PDB
+    searches instead of keyword guessing.
 
-    Use this when a request references a disease or condition (e.g. "cystic fibrosis",
-    "breast cancer", "Parkinson disease"). Resolve the phrase to a MONDO id here, then
-    search by it:
+    Use this for ANY request that mentions a disease/disorder/syndrome/condition — including
+    "structures involved in / associated with / linked to <disease>", or "proteins implicated
+    in <disease>". Examples: "diabetes", "type 2 diabetes", "cancer", "breast cancer",
+    "Alzheimer disease", "Parkinson disease", "cystic fibrosis", "asthma". Resolve the phrase
+    to a MONDO id here, then search by it:
     `rcsb_uniprot_annotation.annotation_lineage.id` exact_match "MONDO:..." — disease
     annotations are UniProt-derived, and lineage matches the term AND its subtypes (e.g.
     "cancer" catches specific cancers). Use the `in` operator with several MONDO ids to broaden.
