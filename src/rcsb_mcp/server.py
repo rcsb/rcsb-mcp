@@ -929,7 +929,13 @@ async def search_combined(
     group_by_identity: int | None = None,
     chemical: bool = False,
 ) -> dict[str, Any]:
-    """Search with several constraints at once (free text + attribute filters).
+    """Combine a free-text term and/or several attribute filters under a single "and"/"or"
+    (a FLAT boolean over text/attribute conditions).
+
+    This expresses only a flat list of conditions under one operator. For NESTED boolean
+    logic (mixed and/or groups, e.g. "(organism=A OR organism=B) AND date>X") or to combine
+    DIFFERENT services (sequence, structure, chemical, seqmotif, strucmotif) in one query, use
+    search_advanced with a raw Search API query body (see https://search.rcsb.org/).
 
     For a biological concept among the constraints, resolve it to an ontology id first and add
     it as an annotation filter: disease -> find_disease_terms; function/process/location ->
@@ -952,9 +958,8 @@ async def search_combined(
         filters: List of {attribute, operator, value} dicts (see search_by_attribute
             for operators and attribute paths). Each may also carry optional
             "negation" and "case_sensitive" booleans.
-        logical_operator: Combine ALL conditions with a single "and" (default) or "or".
-            Nested logic like "(A or B) and C" is NOT expressible here — use
-            search_advanced with a nested group query for that.
+        logical_operator: Combine ALL conditions with a single "and" (default) or "or"
+            (flat only; for nested groups or multiple services see the note above).
         return_type: What to return (default "entry"); one of entry, polymer_entity,
             non_polymer_entity, polymer_instance, assembly, mol_definition (see the
             server instructions).
@@ -1129,20 +1134,29 @@ async def search_by_seqmotif(
 async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
     """Run a raw RCSB Search API query body (escape hatch).
 
-    Endpoint: https://search.rcsb.org/rcsbsearch/v2/query . The typed search_*
-    tools cover the common cases (including search_facets, search_count, and
-    search_strucmotif); use this for features they don't expose — return_all_hits,
-    group_by "groups", or deeply nested boolean queries. The body must follow the
-    Search API query language ({"query": ..., "return_type": ..., "request_options": ...}).
-    Returns the normalized {total_count, returned, hits} result.
+    Endpoint: https://search.rcsb.org/rcsbsearch/v2/query . The typed search_* tools cover
+    the common cases (including search_facets, search_count, search_strucmotif); use this for
+    anything they don't — return_all_hits, group_by "groups", arbitrarily NESTED and/or
+    boolean groups, and queries that COMBINE different services (text, full_text, sequence,
+    structure, chemical, seqmotif, strucmotif) under one group (e.g. organism AND a
+    sequence-similarity match AND a chemical-descriptor match). Build the query from "group"
+    nodes (logical_operator + nodes) and "terminal" nodes (service + parameters); full query
+    language: https://search.rcsb.org/ . The body is {"query", "return_type",
+    "request_options"} and returns the normalized {total_count, returned, hits} result.
 
-    Example:
-        query_body={
-          "query": {"type": "terminal", "service": "full_text",
-                    "parameters": {"value": "ribosome"}},
-          "return_type": "entry",
-          "request_options": {"paginate": {"start": 0, "rows": 5}},
-        }
+    Example — "(Homo sapiens OR Mus musculus) AND released after 2019-08-20":
+        query_body={"query": {"type": "group", "logical_operator": "and", "nodes": [
+          {"type": "group", "logical_operator": "or", "nodes": [
+            {"type": "terminal", "service": "text", "parameters": {
+              "attribute": "rcsb_entity_source_organism.taxonomy_lineage.name",
+              "operator": "exact_match", "value": "Homo sapiens"}},
+            {"type": "terminal", "service": "text", "parameters": {
+              "attribute": "rcsb_entity_source_organism.taxonomy_lineage.name",
+              "operator": "exact_match", "value": "Mus musculus"}}]},
+          {"type": "terminal", "service": "text", "parameters": {
+            "attribute": "rcsb_accession_info.initial_release_date",
+            "operator": "greater", "value": "2019-08-20"}}]},
+          "return_type": "polymer_entity"}
     """
     raw = await _post_search(query_body)
     return _format(raw, None, query_body)
