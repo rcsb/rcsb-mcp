@@ -66,6 +66,9 @@ INTERPRO_TYPES = {
 # Enzyme Commission (EC) resolver — EBI Search over the IntEnz database (text -> EC number).
 INTENZ_SEARCH_URL = "https://www.ebi.ac.uk/ebisearch/ws/rest/intenz"
 
+# Disease resolver — EBI Ontology Lookup Service (OLS4) over MONDO (text -> MONDO id).
+OLS_SEARCH_URL = "https://www.ebi.ac.uk/ols4/api/search"
+
 mcp = FastMCP(
     name="rcsb-pdb",
     instructions="""You are an assistant for interrogating Protein Data Bank structures via the
@@ -122,6 +125,11 @@ Other capabilities:
   3.4.21"), first call find_enzyme_classes to resolve it to an EC number, then search with
   rcsb_polymer_entity.rcsb_ec_lineage.id exact_match "<EC>" (hierarchical: a full EC finds that
   enzyme, a partial EC like "3.4.21" finds the whole sub-subclass; "in" with several to broaden).
+  Prefer higher pdb_entry_count.
+- For requests about a DISEASE or condition ("cystic fibrosis", "breast cancer"), first call
+  find_disease_terms to resolve it to a MONDO id, then search with
+  rcsb_uniprot_annotation.annotation_lineage.id exact_match "MONDO:..." (UniProt-based disease
+  annotation; lineage matches the disease and its subtypes; "in" with several to broaden).
   Prefer higher pdb_entry_count.
 
 Return types and fetching details:
@@ -704,6 +712,67 @@ async def find_enzyme_classes(
         for enzyme, count in zip(enzymes, counts):
             enzyme["pdb_entry_count"] = count
     return {"query": query, "count": len(enzymes), "enzymes": enzymes}
+
+
+@mcp.tool()
+async def find_disease_terms(
+    query: str,
+    limit: int = 10,
+    with_pdb_counts: bool = True,
+) -> dict[str, Any]:
+    """Resolve a free-text disease / condition to MONDO ontology ids, for precise
+    disease-based PDB searches instead of keyword guessing.
+
+    Use this when a request references a disease or condition (e.g. "cystic fibrosis",
+    "breast cancer", "Parkinson disease"). Resolve the phrase to a MONDO id here, then
+    search by it:
+    `rcsb_uniprot_annotation.annotation_lineage.id` exact_match "MONDO:..." — disease
+    annotations are UniProt-derived, and lineage matches the term AND its subtypes (e.g.
+    "cancer" catches specific cancers). Use the `in` operator with several MONDO ids to broaden.
+
+    Note this attribute is rcsb_uniprot_annotation.* (UniProt-based), unlike the GO/InterPro
+    resolvers which use rcsb_polymer_entity_annotation.*.
+
+    Args:
+        query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
+        limit: Max MONDO terms to return (1-25).
+        with_pdb_counts: If true (default), annotate each with pdb_entry_count (PDB entries
+            carrying it, via annotation_lineage.id) so you can prefer well-represented diseases.
+
+    Returns:
+        {query, count, diseases:[{id, name, pdb_entry_count?}]}.
+    """
+    limit = max(1, min(limit, 25))
+    # Over-fetch so de-duplication and obsolete-filtering still fill `limit`.
+    fetch = min(limit * 3, 50)
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
+    ) as client:
+        resp = await client.get(
+            OLS_SEARCH_URL,
+            params={"q": query, "ontology": "mondo", "rows": fetch,
+                    "fieldList": "obo_id,label,is_obsolete"},
+        )
+    resp.raise_for_status()
+    docs = ((resp.json().get("response") or {}).get("docs")) or []
+    diseases: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for d in docs:
+        oid = d.get("obo_id")
+        if not oid or not oid.startswith("MONDO:") or oid in seen or d.get("is_obsolete"):
+            continue
+        seen.add(oid)
+        diseases.append({"id": oid, "name": d.get("label")})
+        if len(diseases) >= limit:
+            break
+    if with_pdb_counts and diseases:
+        counts = await asyncio.gather(*(
+            _annotation_pdb_count("rcsb_uniprot_annotation.annotation_lineage.id", x["id"])
+            for x in diseases
+        ))
+        for disease, count in zip(diseases, counts):
+            disease["pdb_entry_count"] = count
+    return {"query": query, "count": len(diseases), "diseases": diseases}
 
 
 @mcp.tool()
