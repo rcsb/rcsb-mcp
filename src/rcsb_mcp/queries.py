@@ -74,6 +74,9 @@ def _request_options(
     *,
     scoring_strategy: str | None = None,
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
 ) -> dict[str, Any]:
     """Common request_options block: pagination, content type, sort, grouping."""
     content = ["experimental"]
@@ -86,16 +89,32 @@ def _request_options(
     }
     if scoring_strategy:
         options["scoring_strategy"] = scoring_strategy
+    if group_by_identity is not None and group_by_uniprot:
+        raise ValueError("set either group_by_identity or group_by_uniprot, not both")
+    grouped = group_by_identity is not None or group_by_uniprot
+    if group_by_ranking is not None and not grouped:
+        raise ValueError("group_by_ranking requires group_by_identity or group_by_uniprot")
+    # Collapse redundant hits into clusters and return one representative each.
+    group_by: dict[str, Any] | None = None
     if group_by_identity is not None:
         if group_by_identity not in GROUP_BY_IDENTITY_CUTOFFS:
             raise ValueError(
                 f"group_by_identity must be one of {sorted(GROUP_BY_IDENTITY_CUTOFFS)}"
             )
-        # Collapse redundant hits into sequence-identity clusters, one rep each.
-        options["group_by"] = {
-            "aggregation_method": "sequence_identity",
-            "similarity_cutoff": group_by_identity,
-        }
+        group_by = {"aggregation_method": "sequence_identity", "similarity_cutoff": group_by_identity}
+    elif group_by_uniprot:
+        group_by = {"aggregation_method": "matching_uniprot_accession"}
+    if group_by is not None:
+        # ranking_criteria_type chooses each cluster's representative; the API requires
+        # a direction, so we always emit one (default "desc" = RCSB's own default rep).
+        if group_by_ranking:
+            if group_by_ranking_direction not in {"asc", "desc"}:
+                raise ValueError('group_by_ranking_direction must be "asc" or "desc"')
+            group_by["ranking_criteria_type"] = {
+                "sort_by": group_by_ranking,
+                "direction": group_by_ranking_direction,
+            }
+        options["group_by"] = group_by
         options["group_by_return_type"] = "representatives"
     return options
 
@@ -176,6 +195,9 @@ def build_fulltext_query(
     start: int = 0,
     include_computed: bool = False,
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
 ) -> dict[str, Any]:
     """Unstructured keyword/full-text search across all annotations."""
     if return_type not in RETURN_TYPES:
@@ -188,7 +210,11 @@ def build_fulltext_query(
         },
         "return_type": return_type,
         "request_options": _request_options(
-            start, rows, include_computed, group_by_identity=group_by_identity
+            start, rows, include_computed,
+            group_by_identity=group_by_identity,
+            group_by_uniprot=group_by_uniprot,
+            group_by_ranking=group_by_ranking,
+            group_by_ranking_direction=group_by_ranking_direction,
         ),
     }
 
@@ -204,6 +230,9 @@ def build_attribute_query(
     negation: bool = False,
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Structured search against a specific indexed attribute.
@@ -226,7 +255,11 @@ def build_attribute_query(
         ),
         "return_type": return_type,
         "request_options": _request_options(
-            start, rows, include_computed, group_by_identity=group_by_identity
+            start, rows, include_computed,
+            group_by_identity=group_by_identity,
+            group_by_uniprot=group_by_uniprot,
+            group_by_ranking=group_by_ranking,
+            group_by_ranking_direction=group_by_ranking_direction,
         ),
     }
 
@@ -242,6 +275,9 @@ def build_combined_query(
     sort_by: str | None = None,
     sort_direction: str = "asc",
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Combine a full-text term and/or several attribute filters with AND/OR.
@@ -274,7 +310,11 @@ def build_combined_query(
     )
 
     options = _request_options(
-        start, rows, include_computed, group_by_identity=group_by_identity
+        start, rows, include_computed,
+        group_by_identity=group_by_identity,
+        group_by_uniprot=group_by_uniprot,
+        group_by_ranking=group_by_ranking,
+        group_by_ranking_direction=group_by_ranking_direction,
     )
     if sort_by:
         if sort_direction not in {"asc", "desc"}:

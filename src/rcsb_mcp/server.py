@@ -465,6 +465,9 @@ async def search_fulltext(
     include_computed_models: bool = False,
     enrich: bool = True,
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
 ) -> dict[str, Any]:
     """Search the PDB by free-text keywords (e.g. "CRISPR Cas9", "hemoglobin").
 
@@ -500,15 +503,28 @@ async def search_fulltext(
         group_by_identity: If set (100/95/90/70/50/30), collapse redundant hits into
             sequence-identity clusters and return one representative each; forces
             return_type to "polymer_entity".
+        group_by_uniprot: If True, collapse hits to one representative per UniProt accession
+            (non-redundant by protein); forces return_type to "polymer_entity". Mutually
+            exclusive with group_by_identity.
+        group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
+            each cluster's representative — an attribute path (e.g.
+            "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
+            or "score" (relevance). Omit for RCSB's default (highest score).
+        group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking —
+            e.g. resolution_combined + "asc" keeps the best-resolution structure per cluster;
+            initial_release_date + "desc" keeps the most recent.
     """
     limit = max(1, min(limit, 100))
-    return_type = "polymer_entity" if group_by_identity else return_type
+    return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_fulltext_query(
         query,
         return_type=return_type,
         rows=limit,
         include_computed=include_computed_models,
         group_by_identity=group_by_identity,
+        group_by_uniprot=group_by_uniprot,
+        group_by_ranking=group_by_ranking,
+        group_by_ranking_direction=group_by_ranking_direction,
     )
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
@@ -846,6 +862,9 @@ async def search_by_attribute(
     negation: bool = False,
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Search by a specific structural attribute — preferred over search_fulltext
@@ -893,12 +912,21 @@ async def search_by_attribute(
         case_sensitive: Match the value case-sensitively (default insensitive).
         group_by_identity: If set (100/95/90/70/50/30), return one representative per
             sequence-identity cluster; forces return_type to "polymer_entity".
+        group_by_uniprot: If True, return one representative per UniProt accession
+            (non-redundant by protein); forces return_type to "polymer_entity". Mutually
+            exclusive with group_by_identity.
+        group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
+            each cluster's representative — an attribute path (e.g.
+            "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
+            or "score". Omit for RCSB's default.
+        group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking
+            (e.g. resolution_combined + "asc" = best-resolution representative).
         chemical: Set True for a chemical-component attribute (a path from
             list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
             Switches to the text_chem service; usually pair with return_type="mol_definition".
     """
     limit = max(1, min(limit, 100))
-    return_type = "polymer_entity" if group_by_identity else return_type
+    return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_attribute_query(
         attribute,
         operator,
@@ -908,6 +936,9 @@ async def search_by_attribute(
         negation=negation,
         case_sensitive=case_sensitive,
         group_by_identity=group_by_identity,
+        group_by_uniprot=group_by_uniprot,
+        group_by_ranking=group_by_ranking,
+        group_by_ranking_direction=group_by_ranking_direction,
         chemical=chemical,
     )
     raw = await _post_search(body)
@@ -927,6 +958,9 @@ async def search_combined(
     sort_by: str | None = None,
     sort_direction: str = "asc",
     group_by_identity: int | None = None,
+    group_by_uniprot: bool = False,
+    group_by_ranking: str | None = None,
+    group_by_ranking_direction: str = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Combine a free-text term and/or several attribute filters under a single "and"/"or"
@@ -970,12 +1004,21 @@ async def search_combined(
         sort_direction: "asc" or "desc" (default "asc").
         group_by_identity: If set (100/95/90/70/50/30), return one representative per
             sequence-identity cluster; forces return_type to "polymer_entity".
+        group_by_uniprot: If True, return one representative per UniProt accession
+            (non-redundant by protein); forces return_type to "polymer_entity". Mutually
+            exclusive with group_by_identity.
+        group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
+            each cluster's representative — an attribute path (e.g.
+            "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
+            or "score". Omit for RCSB's default.
+        group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking
+            (e.g. resolution_combined + "asc" = best-resolution representative).
         chemical: Set True when the filters target chemical-component attributes (paths
             from list_pdb_search_attributes(schema="chemical")); switches them to the
             text_chem service. The full_text term always uses full-text search.
     """
     limit = max(1, min(limit, 100))
-    return_type = "polymer_entity" if group_by_identity else return_type
+    return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_combined_query(
         full_text=full_text,
         filters=filters,
@@ -985,6 +1028,9 @@ async def search_combined(
         sort_by=sort_by,
         sort_direction=sort_direction,
         group_by_identity=group_by_identity,
+        group_by_uniprot=group_by_uniprot,
+        group_by_ranking=group_by_ranking,
+        group_by_ranking_direction=group_by_ranking_direction,
         chemical=chemical,
     )
     raw = await _post_search(body)

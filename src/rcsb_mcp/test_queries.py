@@ -104,6 +104,59 @@ def test_group_by_identity():
     print("ok: group_by identity")
 
 
+def test_group_by_ranking():
+    # ranking_criteria_type picks the cluster representative; direction always emitted.
+    q = queries.build_fulltext_query(
+        "kinase", return_type="polymer_entity", group_by_identity=30,
+        group_by_ranking="rcsb_entry_info.resolution_combined", group_by_ranking_direction="asc",
+    )
+    assert q["request_options"]["group_by"]["ranking_criteria_type"] == {
+        "sort_by": "rcsb_entry_info.resolution_combined", "direction": "asc",
+    }
+    # "score" is a valid sort_by; default direction is "desc".
+    q2 = queries.build_combined_query(full_text="x", group_by_identity=90, group_by_ranking="score")
+    assert q2["request_options"]["group_by"]["ranking_criteria_type"] == {
+        "sort_by": "score", "direction": "desc",
+    }
+    # no ranking -> no ranking_criteria_type key (unchanged default behavior).
+    q3 = queries.build_attribute_query("a", "exists", group_by_identity=30)
+    assert "ranking_criteria_type" not in q3["request_options"]["group_by"]
+    # ranking without group_by_identity, and bad direction, both raise.
+    for bad in (
+        lambda: queries.build_fulltext_query("x", group_by_ranking="score"),
+        lambda: queries.build_fulltext_query(
+            "x", group_by_identity=30, group_by_ranking="score", group_by_ranking_direction="up"),
+    ):
+        try:
+            bad()
+        except ValueError:
+            continue
+        raise AssertionError("expected ValueError")
+    print("ok: group_by ranking")
+
+
+def test_group_by_uniprot():
+    q = queries.build_fulltext_query("kinase", return_type="polymer_entity", group_by_uniprot=True)
+    assert q["request_options"]["group_by"] == {"aggregation_method": "matching_uniprot_accession"}
+    assert q["request_options"]["group_by_return_type"] == "representatives"
+    # uniprot grouping honors ranking_criteria_type.
+    q2 = queries.build_combined_query(
+        full_text="x", group_by_uniprot=True,
+        group_by_ranking="rcsb_entry_info.resolution_combined", group_by_ranking_direction="asc",
+    )
+    assert q2["request_options"]["group_by"]["ranking_criteria_type"] == {
+        "sort_by": "rcsb_entry_info.resolution_combined", "direction": "asc",
+    }
+    # identity + uniprot together is rejected.
+    try:
+        queries.build_fulltext_query("x", group_by_identity=30, group_by_uniprot=True)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for identity+uniprot")
+    print("ok: group_by uniprot")
+
+
 def test_chemical():
     d = queries.build_chemical_query("c1ccccc1", match_type="sub-struct-graph-relaxed")
     p = d["query"]["parameters"]
@@ -397,6 +450,8 @@ if __name__ == "__main__":
     test_combined_single_collapses()
     test_attribute_exists_and_flags()
     test_group_by_identity()
+    test_group_by_ranking()
+    test_group_by_uniprot()
     test_chemical()
     test_structure()
     test_seqmotif()
