@@ -53,8 +53,7 @@ npx @modelcontextprotocol/inspector python -m rcsb_mcp.server
 ```
 
 The package is installed editable, so source edits take effect on the next process
-start. (Note: the README's `python tests/test_queries.py` path is stale — the test
-file lives at `src/rcsb_mcp/test_queries.py`.)
+start. The test file lives at `src/rcsb_mcp/test_queries.py`.
 
 ## The golden rule: validate against the live API before changing field selections
 

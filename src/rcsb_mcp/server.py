@@ -149,6 +149,9 @@ Choosing a search tool:
   rcsb_search_combined when several conditions apply). This is more precise than keyword search.
 - Use rcsb_search_fulltext only for broad or exploratory keyword lookups where no specific
   attribute and value apply, or when the right search terms aren't yet known.
+- Searches return up to `limit` hits (default 10, max 100) plus pagination fields
+  (offset/has_more/next_offset). For more results, re-issue the same query with offset set to
+  the response's next_offset — don't just raise limit past 100.
 
 Other capabilities:
 - For "how many ..." questions, use rcsb_search_count (count only) rather than fetching and

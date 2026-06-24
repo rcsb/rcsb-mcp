@@ -46,4 +46,16 @@
       <question>Using the disease-term resolver, resolve the genetic disease "cystic fibrosis" to its MONDO ontology identifier (the exact-match canonical term). What is the MONDO ID?</question>
       <answer>MONDO:0009061</answer>
    </qa_pair>
+   <qa_pair>
+      <question>Using the molecular-function ontology resolver, resolve the enzymatic activity "catalase activity" to its Gene Ontology identifier (the exact-match canonical term). What is the GO ID?</question>
+      <answer>GO:0004096</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Using the enzyme-classification resolver, resolve the enzyme "carbonic anhydrase" to its Enzyme Commission (EC) number (the exact-match canonical class). What is the EC number?</question>
+      <answer>4.2.1.1</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Using the Sequence Coordinates API, map the beta-globin polymer entity of PDB entry 4HHB (entity 4HHB_2) to the NCBI RefSeq protein database. What single NCBI protein accession does it correspond to?</question>
+      <answer>NP_000509</answer>
+   </qa_pair>
 </evaluation>
