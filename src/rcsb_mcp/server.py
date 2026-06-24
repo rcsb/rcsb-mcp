@@ -643,6 +643,10 @@ async def rcsb_search_fulltext(
         group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking —
             e.g. resolution_combined + "asc" keeps the best-resolution structure per cluster;
             initial_release_date + "desc" keeps the most recent.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_fulltext_query(
@@ -660,6 +664,7 @@ async def rcsb_search_fulltext(
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
     return _format(raw, enriched, body, offset)
+
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_list_pdb_search_attributes(
@@ -1007,7 +1012,9 @@ async def rcsb_search_by_attribute(
           attribute="rcsb_nonpolymer_entity.pdbx_description", operator="exists"
 
     Args:
-        attribute: A dotted RCSB attribute path (see the Search API attribute list: https://search.rcsb.org/structure-search-attributes.html). The `rcsb_list_pdb_search_attributes` tool can be used to retrieve the list of all available attributes.
+        attribute: A dotted RCSB attribute path. If you don't know the exact path, call
+            rcsb_list_pdb_search_attributes first; the full list is also at
+            https://search.rcsb.org/structure-search-attributes.html.
         operator: Operators are TYPE-SPECIFIC — use one of the operators that
             rcsb_list_pdb_search_attributes reports for this attribute. As a guide:
             strings use contains_words/contains_phrase (free text) or exact_match/in
@@ -1041,6 +1048,10 @@ async def rcsb_search_by_attribute(
         chemical: Set True for a chemical-component attribute (a path from
             rcsb_list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
             Switches to the text_chem service; usually pair with return_type="mol_definition".
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_attribute_query(
@@ -1136,6 +1147,10 @@ async def rcsb_search_combined(
         chemical: Set True when the filters target chemical-component attributes (paths
             from rcsb_list_pdb_search_attributes(schema="chemical")); switches them to the
             text_chem service. The full_text term always uses full-text search.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_combined_query(
@@ -1179,6 +1194,10 @@ async def rcsb_search_by_sequence(
             details with rcsb_get_polymer_entities.
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}.
     """
     body = queries.build_sequence_query(
         sequence,
@@ -1223,6 +1242,10 @@ async def rcsb_search_by_chemical(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}.
     """
     body = queries.build_chemical_query(
         value,
@@ -1261,6 +1284,10 @@ async def rcsb_search_by_structure(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}.
     """
     body = queries.build_structure_query(
         entry_id,
@@ -1295,6 +1322,10 @@ async def rcsb_search_by_seqmotif(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}.
     """
     body = queries.build_seqmotif_query(
         pattern,
@@ -1491,6 +1522,10 @@ async def rcsb_search_strucmotif(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+
+    Returns:
+        {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
+        query_editor_url}.
     """
     body = queries.build_strucmotif_query(
         entry_id,
@@ -1576,21 +1611,30 @@ async def rcsb_get_entries(entry_ids: list[str], fields: str | None = None) -> d
     """
     return await _query_batch("entries", entry_ids, fields)
 
+
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_entry_annotations(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch biological and functional annotations for one or more PDB entries, including Gene Ontology terms (molecular function, biological process, and cellular component), protein domain classifications, disease associations, antibody annotations, gene product information, and other biological annotations.
+    """Fetch biological and functional annotations for one or more PDB entries —
+    Gene Ontology terms (molecular function, biological process, cellular component),
+    protein-domain classifications, disease associations, antibody and gene-product
+    annotations, and more.
 
-    IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]. Unknown IDs are
-    listed under "not_found". For a single entry pass a one-element list.
+    IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]; for a single entry pass a
+    one-element list. Unknown IDs are returned under "not_found"; pass `fields` to
+    request other properties (paths via rcsb_describe_data_object).
     """
     return await _query_batch("entry_annotations", entry_ids, fields)
 
+
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_entry_exp_info(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch detailed experimental conditions and structure-determination metadata for one or more PDB entries, including sample temperature, pH, pressure, experimental method, diffraction data, and other reported experimental parameters.
+    """Fetch detailed experimental conditions and structure-determination metadata for
+    one or more PDB entries — sample temperature, pH, pressure, experimental method,
+    diffraction data, and other reported parameters.
 
-    IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]. Unknown IDs are
-    listed under "not_found". For a single entry pass a one-element list.
+    IDs are 4-character entry codes, e.g. ["4HHB", "1MBN"]; for a single entry pass a
+    one-element list. Unknown IDs are returned under "not_found"; pass `fields` to
+    request other properties (paths via rcsb_describe_data_object).
     """
     return await _query_batch("entry_exp_info", entry_ids, fields)
 
@@ -1601,7 +1645,8 @@ async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = 
 
     IDs combine entry + entity number, e.g. ["4HHB_1"] — exactly what
     rcsb_search_by_sequence returns. Default fields: description, sequence, length,
-    weight, and source organism.
+    weight, and source organism. Unknown IDs are returned under "not_found"; pass
+    `fields` to request other properties (paths via rcsb_describe_data_object).
     """
     return await _query_batch("polymer_entities", entity_ids, fields)
 
@@ -1612,31 +1657,53 @@ async def rcsb_get_nonpolymer_entities(entity_ids: list[str], fields: str | None
 
     Default fields: description, weight, copy count, and the bound chemical
     component ID. Use rcsb_get_chem_comps for the chemistry of that component.
+    Unknown IDs are returned under "not_found"; pass `fields` to request other
+    properties (paths via rcsb_describe_data_object).
     """
     return await _query_batch("nonpolymer_entities", entity_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_branched_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch branched (carbohydrate / oligosaccharide) entities, e.g. ["5FMB_2"]."""
+    """Fetch branched (carbohydrate / oligosaccharide) entities, e.g. ["5FMB_2"].
+
+    Default fields: description, weight, copy count, branch type, and component count.
+    Unknown IDs are returned under "not_found"; pass `fields` to request other
+    properties (paths via rcsb_describe_data_object).
+    """
     return await _query_batch("branched_entities", entity_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_polymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch polymer entity instances (individual chains), e.g. ["4HHB.A"] (entry.asym_id)."""
+    """Fetch polymer entity instances (individual chains), e.g. ["4HHB.A"] (entry.asym_id).
+
+    Default fields: the entry/entity/chain identifiers and modeled-residue count.
+    Unknown IDs are returned under "not_found"; pass `fields` to request other
+    properties (paths via rcsb_describe_data_object).
+    """
     return await _query_batch("polymer_entity_instances", instance_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_nonpolymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch non-polymer entity instances (individual bound ligands), e.g. ["4HHB.E"]."""
+    """Fetch non-polymer entity instances (individual bound ligands), e.g. ["4HHB.E"].
+
+    Default fields: the entry/entity/chain identifiers, bound component id, and author
+    seq id. Unknown IDs are returned under "not_found"; pass `fields` to request other
+    properties (paths via rcsb_describe_data_object).
+    """
     return await _query_batch("nonpolymer_entity_instances", instance_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_branched_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch branched entity instances (individual glycan chains), e.g. ["5FMB.C"]."""
+    """Fetch branched entity instances (individual glycan chains), e.g. ["5FMB.C"].
+
+    Default fields: the entry/entity/chain identifiers. Unknown IDs are returned under
+    "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
+    """
     return await _query_batch("branched_entity_instances", instance_ids, fields)
 
 
@@ -1644,7 +1711,9 @@ async def rcsb_get_branched_entity_instances(instance_ids: list[str], fields: st
 async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None) -> dict[str, Any]:
     """Fetch biological assemblies, e.g. ["4HHB-1"] (entry-assembly).
 
-    Default fields: composition counts and oligomeric state.
+    Default fields: composition counts and oligomeric state. Unknown IDs are returned
+    under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
     """
     return await _query_batch("assemblies", assembly_ids, fields)
 
@@ -1653,7 +1722,9 @@ async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None
 async def rcsb_get_interfaces(interface_ids: list[str], fields: str | None = None) -> dict[str, Any]:
     """Fetch assembly interfaces, e.g. ["1BMV-1.1"] (entry-assembly.interface).
 
-    Default fields: buried area, character, composition, residue count.
+    Default fields: buried area, character, composition, residue count. Unknown IDs are
+    returned under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
     """
     return await _query_batch("interfaces", interface_ids, fields)
 
@@ -1662,26 +1733,43 @@ async def rcsb_get_interfaces(interface_ids: list[str], fields: str | None = Non
 async def rcsb_get_chem_comps(comp_ids: list[str], fields: str | None = None) -> dict[str, Any]:
     """Fetch chemical components / ligands by their short codes, e.g. ["HEM", "ATP"].
 
-    Default fields: name, formula, weight, type, SMILES, InChIKey.
+    Default fields: name, formula, weight, type, SMILES, InChIKey. Unknown IDs are
+    returned under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
     """
     return await _query_batch("chem_comps", comp_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_entry_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch entry groups (clusters of related entries) by group ID."""
+    """Fetch entry groups (clusters of related entries) by group ID.
+
+    Default fields: group name, description, member count, and member ids. Unknown IDs
+    are returned under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
+    """
     return await _query_batch("entry_groups", group_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_polymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch polymer entity groups (e.g. sequence clusters), e.g. ["85_70"]."""
+    """Fetch polymer entity groups (e.g. sequence clusters), e.g. ["85_70"].
+
+    Default fields: group name, description, member count, and member ids. Unknown IDs
+    are returned under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
+    """
     return await _query_batch("polymer_entity_groups", group_ids, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_nonpolymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch non-polymer entity groups (clusters of related ligands) by group ID."""
+    """Fetch non-polymer entity groups (clusters of related ligands) by group ID.
+
+    Default fields: group name, description, member count, and member ids. Unknown IDs
+    are returned under "not_found"; pass `fields` to request other properties (paths via
+    rcsb_describe_data_object).
+    """
     return await _query_batch("nonpolymer_entity_groups", group_ids, fields)
 
 
@@ -1689,7 +1777,8 @@ async def rcsb_get_nonpolymer_entity_groups(group_ids: list[str], fields: str | 
 async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[str, Any]:
     """Fetch the UniProt record RCSB maps to an accession, e.g. "P69905".
 
-    Default fields: accession(s), entry name, protein name, source organism.
+    Default fields: accession(s), entry name, protein name, source organism. Pass
+    `fields` to request other properties (paths via rcsb_describe_data_object).
     """
     return await _query_single("uniprot", uniprot_id, fields)
 
@@ -1698,14 +1787,19 @@ async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[s
 async def rcsb_get_pubmed(pubmed_id: int, fields: str | None = None) -> dict[str, Any]:
     """Fetch the PubMed record for a citation by its integer ID, e.g. 6726807.
 
-    Default fields: PubMed Central ID, DOI, abstract text.
+    Default fields: PubMed Central ID, DOI, abstract text. Pass `fields` to request
+    other properties (paths via rcsb_describe_data_object).
     """
     return await _query_single("pubmed", pubmed_id, fields)
 
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_get_group_provenance(group_provenance_id: str, fields: str | None = None) -> dict[str, Any]:
-    """Fetch provenance/method metadata for a grouping, e.g. "provenance_sequence_identity"."""
+    """Fetch provenance/method metadata for a grouping, e.g. "provenance_sequence_identity".
+
+    Default fields: the aggregation method/type and provenance id. Pass `fields` to
+    request other properties (paths via rcsb_describe_data_object).
+    """
     return await _query_single("group_provenance", group_provenance_id, fields)
 
 
