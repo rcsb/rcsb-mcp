@@ -43,6 +43,11 @@ chemical-component attributes, find the path with
 The chemical catalog is generated from the live metadata schema by
 [`scripts/generate_chemical_attributes.py`](scripts/generate_chemical_attributes.py).
 
+**Paging.** Every search tool that returns hits accepts `limit` (1–100, default
+10) and `offset` (default 0). Each response reports `total_count`, `has_more`,
+and `next_offset`; to fetch the next page, call the tool again with the same
+query and `offset` set to the returned `next_offset`.
+
 ### Data (data.rcsb.org/graphql)
 
 There is one tool per Data API GraphQL root field. Each takes a **list of IDs**
