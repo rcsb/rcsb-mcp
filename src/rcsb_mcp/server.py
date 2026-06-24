@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from pydantic import Field
 from starlette.responses import PlainTextResponse
 
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
@@ -52,6 +53,45 @@ READ_ONLY = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=True,
 )
+
+# --------------------------------------------------------------------------- #
+# Parameter type aliases — closed value sets become JSON-schema enums and numeric
+# ranges become minimum/maximum, so each tool's inputSchema advertises its
+# constraints to the client. These mirror the validated sets in queries.py; the
+# builders keep their own checks as a backstop for direct (non-MCP) callers.
+# --------------------------------------------------------------------------- #
+ReturnType = Literal[
+    "entry", "polymer_entity", "non_polymer_entity",
+    "polymer_instance", "assembly", "mol_definition",
+]
+TextOperator = Literal[
+    "exact_match", "in", "contains_words", "contains_phrase", "greater",
+    "greater_or_equal", "less", "less_or_equal", "equals", "range", "exists",
+]
+SequenceType = Literal["protein", "dna", "rna"]
+ChemMatchType = Literal[
+    "graph-exact", "graph-strict", "graph-relaxed", "graph-relaxed-stereo",
+    "fingerprint-similarity", "sub-struct-graph-exact", "sub-struct-graph-strict",
+    "sub-struct-graph-relaxed", "sub-struct-graph-relaxed-stereo",
+]
+DescriptorType = Literal["SMILES", "InChI"]
+ChemQueryType = Literal["descriptor", "formula"]
+SeqmotifPatternType = Literal["simple", "prosite", "regex"]
+AtomPairingScheme = Literal["ALL", "BACKBONE", "SIDE_CHAIN", "PSEUDO_ATOMS"]
+MotifPruningStrategy = Literal["NONE", "KRUSKAL"]
+LogicalOperator = Literal["and", "or"]
+SortDirection = Literal["asc", "desc"]
+GroupByIdentity = Literal[100, 95, 90, 70, 50, 30]
+AttributeSchema = Literal["structure", "chemical"]
+SequenceRef = Literal["NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"]
+GroupRef = Literal["MATCHING_UNIPROT_ACCESSION", "SEQUENCE_IDENTITY"]
+AnnotationRef = Literal["PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"]
+
+# Numeric bounds (Annotated so the parameter default stays on the signature).
+Limit = Annotated[int, Field(ge=1, le=100)]
+Offset = Annotated[int, Field(ge=0)]
+ResolverLimit = Annotated[int, Field(ge=1, le=25)]
+Tolerance = Annotated[int, Field(ge=0, le=3)]
 
 # Attribute catalogs by schema name (see list_pdb_search_attributes).
 ATTRIBUTE_CATALOGS = {"structure": SEARCH_ATTRIBUTES, "chemical": CHEMICAL_SEARCH_ATTRIBUTES}
@@ -546,15 +586,15 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
 @mcp.tool(annotations=READ_ONLY)
 async def search_fulltext(
     query: str,
-    return_type: str = "entry",
-    limit: int = 10,
-    offset: int = 0,
+    return_type: ReturnType = "entry",
+    limit: Limit = 10,
+    offset: Offset = 0,
     include_computed_models: bool = False,
     enrich: bool = True,
-    group_by_identity: int | None = None,
+    group_by_identity: GroupByIdentity | None = None,
     group_by_uniprot: bool = False,
     group_by_ranking: str | None = None,
-    group_by_ranking_direction: str = "desc",
+    group_by_ranking_direction: SortDirection = "desc",
 ) -> dict[str, Any]:
     """Search the PDB by free-text keywords (e.g. "CRISPR Cas9", "hemoglobin").
 
@@ -604,8 +644,6 @@ async def search_fulltext(
             e.g. resolution_combined + "asc" keeps the best-resolution structure per cluster;
             initial_release_date + "desc" keeps the most recent.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_fulltext_query(
         query,
@@ -625,7 +663,7 @@ async def search_fulltext(
 
 @mcp.tool(annotations=READ_ONLY)
 async def list_pdb_search_attributes(
-    query: str | None = None, schema: str = "structure"
+    query: str | None = None, schema: AttributeSchema = "structure"
 ) -> list[dict[str, Any]]:
     """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
 
@@ -672,7 +710,7 @@ async def list_pdb_search_attributes(
 async def find_go_terms(
     query: str,
     namespace: str | None = None,
-    limit: int = 10,
+    limit: ResolverLimit = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
     """Resolve a free-text molecular function, biological process, or cellular component /
@@ -714,7 +752,6 @@ async def find_go_terms(
             raise ValueError(
                 "namespace must be molecular_function, biological_process, or cellular_component"
             )
-    limit = max(1, min(limit, 25))
     # Over-fetch when filtering by aspect so the post-filter still fills `limit`.
     fetch = min(limit * 5, 50) if aspect else limit
     data = await _get_json(
@@ -748,7 +785,7 @@ async def find_go_terms(
 async def find_interpro_domains(
     query: str,
     entry_type: str | None = None,
-    limit: int = 10,
+    limit: ResolverLimit = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
     """Resolve a free-text protein domain, family, or fold (e.g. SH2 domain, immunoglobulin
@@ -781,7 +818,6 @@ async def find_interpro_domains(
         etype = INTERPRO_TYPES.get(entry_type.strip().lower())
         if etype is None:
             raise ValueError(f"entry_type must be one of {sorted(set(INTERPRO_TYPES.values()))}")
-    limit = max(1, min(limit, 25))
     params: dict[str, Any] = {"search": query, "page_size": limit}
     if etype:
         params["type"] = etype
@@ -810,7 +846,7 @@ async def find_interpro_domains(
 @mcp.tool(annotations=READ_ONLY)
 async def find_enzyme_classes(
     query: str,
-    limit: int = 10,
+    limit: ResolverLimit = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
     """Resolve a free-text enzyme, enzyme class, or catalyzed reaction (e.g. alcohol
@@ -836,7 +872,6 @@ async def find_enzyme_classes(
     Returns:
         {query, count, enzymes:[{ec, name, pdb_entry_count?}]}.
     """
-    limit = max(1, min(limit, 25))
     # Over-fetch a little so dropping transferred/deleted entries still fills `limit`.
     fetch = min(limit + 5, 30)
     data = await _get_json(
@@ -870,7 +905,7 @@ async def find_enzyme_classes(
 @mcp.tool(annotations=READ_ONLY)
 async def find_disease_terms(
     query: str,
-    limit: int = 10,
+    limit: ResolverLimit = 10,
     with_pdb_counts: bool = True,
 ) -> dict[str, Any]:
     """Resolve a free-text disease, disorder, syndrome, or condition (e.g. diabetes, cancer,
@@ -898,7 +933,6 @@ async def find_disease_terms(
     Returns:
         {query, count, diseases:[{id, name, pdb_entry_count?}]}.
     """
-    limit = max(1, min(limit, 25))
     # Over-fetch so de-duplication and obsolete-filtering still fill `limit`.
     fetch = min(limit * 3, 50)
     data = await _get_json(
@@ -934,18 +968,18 @@ async def find_disease_terms(
 @mcp.tool(annotations=READ_ONLY)
 async def search_by_attribute(
     attribute: str,
-    operator: str,
+    operator: TextOperator,
     value: str | int | float | list | dict | None = None,
-    return_type: str = "entry",
-    limit: int = 10,
-    offset: int = 0,
+    return_type: ReturnType = "entry",
+    limit: Limit = 10,
+    offset: Offset = 0,
     enrich: bool = True,
     negation: bool = False,
     case_sensitive: bool = False,
-    group_by_identity: int | None = None,
+    group_by_identity: GroupByIdentity | None = None,
     group_by_uniprot: bool = False,
     group_by_ranking: str | None = None,
-    group_by_ranking_direction: str = "desc",
+    group_by_ranking_direction: SortDirection = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Search by a specific structural attribute — preferred over search_fulltext
@@ -1008,8 +1042,6 @@ async def search_by_attribute(
             list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
             Switches to the text_chem service; usually pair with return_type="mol_definition".
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_attribute_query(
         attribute,
@@ -1036,17 +1068,17 @@ async def search_by_attribute(
 async def search_combined(
     full_text: str | None = None,
     filters: list[dict[str, Any]] | None = None,
-    logical_operator: str = "and",
-    return_type: str = "entry",
-    limit: int = 10,
-    offset: int = 0,
+    logical_operator: LogicalOperator = "and",
+    return_type: ReturnType = "entry",
+    limit: Limit = 10,
+    offset: Offset = 0,
     enrich: bool = True,
     sort_by: str | None = None,
-    sort_direction: str = "asc",
-    group_by_identity: int | None = None,
+    sort_direction: SortDirection = "asc",
+    group_by_identity: GroupByIdentity | None = None,
     group_by_uniprot: bool = False,
     group_by_ranking: str | None = None,
-    group_by_ranking_direction: str = "desc",
+    group_by_ranking_direction: SortDirection = "desc",
     chemical: bool = False,
 ) -> dict[str, Any]:
     """Combine a free-text term and/or several attribute filters under a single "and"/"or"
@@ -1105,8 +1137,6 @@ async def search_combined(
             from list_pdb_search_attributes(schema="chemical")); switches them to the
             text_chem service. The full_text term always uses full-text search.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_combined_query(
         full_text=full_text,
@@ -1132,11 +1162,11 @@ async def search_combined(
 @mcp.tool(annotations=READ_ONLY)
 async def search_by_sequence(
     sequence: str,
-    sequence_type: str = "protein",
-    identity_cutoff: float = 0.3,
-    evalue_cutoff: float = 1.0,
-    limit: int = 10,
-    offset: int = 0,
+    sequence_type: SequenceType = "protein",
+    identity_cutoff: Annotated[float, Field(ge=0.0, le=1.0)] = 0.3,
+    evalue_cutoff: Annotated[float, Field(ge=0.0)] = 1.0,
+    limit: Limit = 10,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Find PDB polymer entities similar to a given sequence (MMseqs2, BLAST-like).
 
@@ -1150,8 +1180,6 @@ async def search_by_sequence(
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     body = queries.build_sequence_query(
         sequence,
         sequence_type=sequence_type,
@@ -1167,13 +1195,13 @@ async def search_by_sequence(
 @mcp.tool(annotations=READ_ONLY)
 async def search_by_chemical(
     value: str,
-    query_type: str = "descriptor",
-    descriptor_type: str = "SMILES",
-    match_type: str = "graph-relaxed",
+    query_type: ChemQueryType = "descriptor",
+    descriptor_type: DescriptorType = "SMILES",
+    match_type: ChemMatchType = "graph-relaxed",
     match_subset: bool = False,
-    return_type: str = "mol_definition",
-    limit: int = 10,
-    offset: int = 0,
+    return_type: ReturnType = "mol_definition",
+    limit: Limit = 10,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Search PDB chemical components by structure (SMILES/InChI) or formula.
 
@@ -1196,8 +1224,6 @@ async def search_by_chemical(
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     body = queries.build_chemical_query(
         value,
         query_type=query_type,
@@ -1217,9 +1243,9 @@ async def search_by_structure(
     entry_id: str,
     assembly_id: str | None = None,
     asym_id: str | None = None,
-    return_type: str | None = None,
-    limit: int = 10,
-    offset: int = 0,
+    return_type: ReturnType | None = None,
+    limit: Limit = 10,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Find structures with a similar 3D shape to a reference PDB structure.
 
@@ -1236,8 +1262,6 @@ async def search_by_structure(
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     body = queries.build_structure_query(
         entry_id,
         assembly_id=assembly_id,
@@ -1253,11 +1277,11 @@ async def search_by_structure(
 @mcp.tool(annotations=READ_ONLY)
 async def search_by_seqmotif(
     pattern: str,
-    pattern_type: str = "prosite",
-    sequence_type: str = "protein",
-    return_type: str = "polymer_entity",
-    limit: int = 10,
-    offset: int = 0,
+    pattern_type: SeqmotifPatternType = "prosite",
+    sequence_type: SequenceType = "protein",
+    return_type: ReturnType = "polymer_entity",
+    limit: Limit = 10,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Find polymers containing a short sequence motif (PROSITE / regex / simple).
 
@@ -1272,8 +1296,6 @@ async def search_by_seqmotif(
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     body = queries.build_seqmotif_query(
         pattern,
         pattern_type=pattern_type,
@@ -1322,8 +1344,8 @@ async def search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
 async def search_count(
     full_text: str | None = None,
     filters: list[dict[str, Any]] | None = None,
-    logical_operator: str = "and",
-    return_type: str = "entry",
+    logical_operator: LogicalOperator = "and",
+    return_type: ReturnType = "entry",
     chemical: bool = False,
     include_computed_models: bool = False,
 ) -> dict[str, Any]:
@@ -1365,8 +1387,8 @@ async def search_facets(
     facets: list[dict[str, Any]],
     full_text: str | None = None,
     filters: list[dict[str, Any]] | None = None,
-    logical_operator: str = "and",
-    return_type: str = "entry",
+    logical_operator: LogicalOperator = "and",
+    return_type: ReturnType = "entry",
     chemical: bool = False,
     include_computed_models: bool = False,
 ) -> dict[str, Any]:
@@ -1429,15 +1451,15 @@ async def search_facets(
 async def search_strucmotif(
     entry_id: str,
     residue_ids: list[dict[str, Any]],
-    backbone_distance_tolerance: int = 1,
-    side_chain_distance_tolerance: int = 1,
-    angle_tolerance: int = 1,
-    rmsd_cutoff: float = 2.0,
-    atom_pairing_scheme: str = "SIDE_CHAIN",
-    motif_pruning_strategy: str = "KRUSKAL",
-    return_type: str = "polymer_entity",
-    limit: int = 10,
-    offset: int = 0,
+    backbone_distance_tolerance: Tolerance = 1,
+    side_chain_distance_tolerance: Tolerance = 1,
+    angle_tolerance: Tolerance = 1,
+    rmsd_cutoff: Annotated[float, Field(ge=0.0)] = 2.0,
+    atom_pairing_scheme: AtomPairingScheme = "SIDE_CHAIN",
+    motif_pruning_strategy: MotifPruningStrategy = "KRUSKAL",
+    return_type: ReturnType = "polymer_entity",
+    limit: Limit = 10,
+    offset: Offset = 0,
 ) -> dict[str, Any]:
     """Find structures containing a 3D STRUCTURAL MOTIF — a geometric arrangement of
     specific residues — like the one in a reference structure.
@@ -1470,8 +1492,6 @@ async def search_strucmotif(
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
     """
-    limit = max(1, min(limit, 100))
-    offset = max(0, offset)
     body = queries.build_strucmotif_query(
         entry_id,
         residue_ids,
@@ -1771,8 +1791,8 @@ async def describe_seqcoord_object(
 @mcp.tool(annotations=READ_ONLY)
 async def seqcoord_alignments(
     query_id: str,
-    from_ref: str,
-    to_ref: str,
+    from_ref: SequenceRef,
+    to_ref: SequenceRef,
     seq_range: list[int] | None = None,
     fields: str | None = None,
 ) -> dict[str, Any]:
@@ -1831,8 +1851,8 @@ async def seqcoord_alignments(
 @mcp.tool(annotations=READ_ONLY)
 async def seqcoord_annotations(
     query_id: str,
-    reference: str,
-    sources: list[str],
+    reference: SequenceRef,
+    sources: list[AnnotationRef],
     seq_range: list[int] | None = None,
     filters: list[dict[str, Any]] | None = None,
     fields: str | None = None,
@@ -1866,7 +1886,7 @@ async def seqcoord_annotations(
 
 @mcp.tool(annotations=READ_ONLY)
 async def seqcoord_group_alignments(
-    group: str,
+    group: GroupRef,
     group_id: str,
     filter_terms: list[str] | None = None,
     fields: str | None = None,
@@ -1892,9 +1912,9 @@ async def seqcoord_group_alignments(
 
 @mcp.tool(annotations=READ_ONLY)
 async def seqcoord_group_annotations(
-    group: str,
+    group: GroupRef,
     group_id: str,
-    sources: list[str],
+    sources: list[AnnotationRef],
     summary: bool = False,
     filters: list[dict[str, Any]] | None = None,
     fields: str | None = None,
