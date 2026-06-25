@@ -17,6 +17,7 @@ src/rcsb_mcp/
   graphql_queries.py         Large GraphQL field-selection constants (ENTRY_ANNOTATIONS, ...)
   search_attributes.py       SEARCH_ATTRIBUTES catalog (structure search schema)
   chemical_search_attributes.py  CHEMICAL_SEARCH_ATTRIBUTES catalog — auto-generated (see scripts/)
+tests/
   test_queries.py            Network-free unit tests for the query builders
 ```
 
@@ -40,7 +41,7 @@ src/rcsb_mcp/
 
 ```bash
 # Unit tests (no network) — run after touching queries.py / graphql_queries.py
-python src/rcsb_mcp/test_queries.py
+hatch test                       # or: python tests/test_queries.py
 
 # Syntax check both core modules
 python -m py_compile src/rcsb_mcp/server.py src/rcsb_mcp/queries.py
@@ -53,7 +54,7 @@ npx @modelcontextprotocol/inspector python -m rcsb_mcp.server
 ```
 
 The package is installed editable, so source edits take effect on the next process
-start. The test file lives at `src/rcsb_mcp/test_queries.py`.
+start. The test file lives at `tests/test_queries.py`.
 
 ## The golden rule: validate against the live API before changing field selections
 

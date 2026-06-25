@@ -133,7 +133,7 @@ uv pip install -e .
 
 ```bash
 # unit tests (no network)
-python src/rcsb_mcp/test_queries.py
+hatch test          # or: python tests/test_queries.py
 
 # run the server over stdio
 python -m rcsb_mcp.server

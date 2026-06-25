@@ -87,3 +87,39 @@ jobs:
           path: dist/
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-to-registry:
+    name: Publish to MCP Registry
+    if: github.event_name == 'release'
+    needs:
+      # The PyPI package must exist first — the registry validates that the
+      # version in server.json is published and carries the mcp-name marker.
+      - publish-to-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # OIDC token for github-oidc auth to the registry
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify server.json version matches the package
+        run: |
+          server_version=$(jq -r .version server.json)
+          pkg_version=$(grep -E '^version *=' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "server.json=$server_version  pyproject.toml=$pkg_version"
+          if [ "$server_version" != "$pkg_version" ]; then
+            echo "::error::server.json version ($server_version) != pyproject.toml ($pkg_version). Bump both before releasing."
+            exit 1
+          fi
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish
