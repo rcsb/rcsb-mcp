@@ -1,0 +1,89 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  release:
+    types: [published]
+
+jobs:
+
+  hatch-test:
+    name: Test on Python ${{ matrix.python-version }}
+    runs-on: ["self-hosted", "buildchain"]
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Hatch
+        run: pip install hatch
+
+      - name: Run tests
+        run: hatch test
+
+  hatch-build:
+    name: Build to PyPI
+    needs:
+      - hatch-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Hatch
+        run: pip install hatch
+
+      - name: Build distribution
+        run: hatch build
+
+      - name: Store the distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  push-image:
+    needs:
+      - hatch-build
+    name: Push image to harbor
+    uses: ./.github/workflows/_workflow-docker.yaml
+    secrets: inherit
+
+  publish-to-pypi:
+    name: >-
+      Publish Python 🐍 distribution 📦 to PyPI
+    if: github.event_name == 'release'
+    needs:
+      - hatch-build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/rcsb-mcp
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download all the dists
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish distribution 📦 to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

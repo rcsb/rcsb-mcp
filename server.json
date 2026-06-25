@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.rcsb/rcsb-mcp",
+  "title": "RCSB PDB",
+  "description": "MCP server to search, inspect, and cross-reference RCSB Protein Data Bank structures",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/rcsb/rcsb-mcp",
+  "repository": {
+    "url": "https://github.com/rcsb/rcsb-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "rcsb-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

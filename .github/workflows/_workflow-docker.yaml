@@ -2,12 +2,10 @@
 
 name: Run CI/CD Docker Workflow
 
+# Reusable workflow — invoked by publish.yaml (and runnable manually). It does
+# not trigger on push directly; the release pipeline calls it via `uses:`.
 on:
-  push:
-    branches:
-      - '**'
-    paths-ignore:
-      - "k8s/**"
+  workflow_call:
   workflow_dispatch:
 
 jobs:

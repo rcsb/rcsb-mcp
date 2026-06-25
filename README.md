@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.rcsb/rcsb-mcp -->
+
 # rcsb-mcp
 
 An [MCP](https://modelcontextprotocol.io) server for **interrogating Protein Data
@@ -110,7 +112,18 @@ entry, query each polymer entity.
 ## Install
 
 ```bash
-# from the project root
+# run the published package without installing (recommended for clients)
+uvx rcsb-mcp
+# or install it
+pip install rcsb-mcp
+```
+
+`rcsb-mcp` is listed in the [Official MCP Registry](https://registry.modelcontextprotocol.io)
+as `io.github.rcsb/rcsb-mcp`, so registry-aware clients can discover it directly.
+
+For local development, install from the project root instead:
+
+```bash
 pip install -e .
 # or with uv
 uv pip install -e .
@@ -140,6 +153,19 @@ answer real PDB questions. See [`evals/README.md`](evals/README.md) to run it.
 Edit `claude_desktop_config.json`:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "rcsb-mcp": {
+      "command": "uvx",
+      "args": ["rcsb-mcp"]
+    }
+  }
+}
+```
+
+For a local source checkout, point at the module instead:
 
 ```json
 {
