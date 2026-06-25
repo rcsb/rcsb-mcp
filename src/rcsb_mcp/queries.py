@@ -105,9 +105,16 @@ def _request_options(
     elif group_by_uniprot:
         group_by = {"aggregation_method": "matching_uniprot_accession"}
     if group_by is not None:
-        # ranking_criteria_type chooses each cluster's representative; the API requires
-        # a direction, so we always emit one (default "desc" = RCSB's own default rep).
-        if group_by_ranking:
+        # ranking_criteria_type chooses each cluster's representative.
+        if group_by_ranking == "coverage":
+            # UniProt-only ranking: keep the candidate covering the most of the UniProt
+            # sequence. It takes NO direction (the API rejects extra keys).
+            if not group_by_uniprot:
+                raise ValueError('group_by_ranking="coverage" is only valid with group_by_uniprot')
+            group_by["ranking_criteria_type"] = {"sort_by": "coverage"}
+        elif group_by_ranking:
+            # Sort-attribute ranking; the API requires a direction, so always emit one
+            # (default "desc" = RCSB's own default representative).
             if group_by_ranking_direction not in {"asc", "desc"}:
                 raise ValueError('group_by_ranking_direction must be "asc" or "desc"')
             group_by["ranking_criteria_type"] = {

@@ -154,6 +154,16 @@ def test_group_by_uniprot():
         pass
     else:
         raise AssertionError("expected ValueError for identity+uniprot")
+    # "coverage" ranking: UniProt-only, emitted WITHOUT a direction.
+    cov = queries.build_fulltext_query("x", group_by_uniprot=True, group_by_ranking="coverage")
+    assert cov["request_options"]["group_by"]["ranking_criteria_type"] == {"sort_by": "coverage"}
+    # coverage without group_by_uniprot (e.g. with identity) is rejected.
+    try:
+        queries.build_fulltext_query("x", group_by_identity=30, group_by_ranking="coverage")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('expected ValueError for coverage without group_by_uniprot')
     print("ok: group_by uniprot")
 
 

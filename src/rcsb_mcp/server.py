@@ -653,7 +653,9 @@ async def rcsb_search_fulltext(
         group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
             each cluster's representative — an attribute path (e.g.
             "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
-            or "score" (relevance). Omit for RCSB's default (highest score).
+            or "score" (relevance), or "coverage" (group_by_uniprot only — keeps the
+            structure covering the most of the UniProt sequence; ignores direction).
+            Omit for RCSB's default (highest score).
         group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking —
             e.g. resolution_combined + "asc" keeps the best-resolution structure per cluster;
             initial_release_date + "desc" keeps the most recent.
@@ -1130,7 +1132,8 @@ async def rcsb_search_by_attribute(
         group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
             each cluster's representative — an attribute path (e.g.
             "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
-            or "score". Omit for RCSB's default.
+            or "score" (or "coverage" — group_by_uniprot only, the most complete structure
+            per accession; ignores direction). Omit for RCSB's default.
         group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking
             (e.g. resolution_combined + "asc" = best-resolution representative).
         chemical: Set True for a chemical-component attribute (a path from
@@ -1229,7 +1232,8 @@ async def rcsb_search_combined(
         group_by_ranking: With group_by_identity or group_by_uniprot, which member to keep as
             each cluster's representative — an attribute path (e.g.
             "rcsb_entry_info.resolution_combined", "rcsb_accession_info.initial_release_date")
-            or "score". Omit for RCSB's default.
+            or "score" (or "coverage" — group_by_uniprot only, the most complete structure
+            per accession; ignores direction). Omit for RCSB's default.
         group_by_ranking_direction: "asc" or "desc" (default "desc") for group_by_ranking
             (e.g. resolution_combined + "asc" = best-resolution representative).
         chemical: Set True when the filters target chemical-component attributes (paths
