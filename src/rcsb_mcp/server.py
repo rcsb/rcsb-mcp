@@ -1878,8 +1878,16 @@ async def rcsb_get_nonpolymer_entity_groups(group_ids: list[str], fields: str | 
 async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[str, Any]:
     """Fetch the UniProt record RCSB maps to an accession, e.g. "P69905".
 
-    Default fields: accession(s), entry name, protein name, source organism. Pass
-    `fields` to request other properties (paths via rcsb_describe_data_object).
+    Default fields give a functional snapshot: accession(s), entry name, protein and gene
+    names, EC number, the UniProt function comment, source organism, and keywords (which
+    often summarize biology directly, e.g. "ATP-binding", "Viral attachment to host entry
+    receptor").
+
+    RCSB's UniProt integration is rich — `fields` can also pull the heavier annotation sets
+    (kept out of the default because they can run to hundreds of entries):
+    `rcsb_uniprot_annotation` (GO terms, InterPro, disease associations),
+    `rcsb_uniprot_feature` (domains, sites, binding sites, sequence variants), and
+    `rcsb_uniprot_external_reference`. Discover exact paths with rcsb_describe_data_object.
     """
     return await _query_single("uniprot", uniprot_id, fields)
 

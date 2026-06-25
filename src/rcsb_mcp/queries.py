@@ -795,7 +795,9 @@ DATA_OBJECTS: dict[str, DataObject] = {
     "uniprot": DataObject(
         "uniprot", "uniprot_id", False, "String", 'a UniProt accession, e.g. "P69905"',
         "rcsb_id rcsb_uniprot_accession rcsb_uniprot_entry_name "
-        "rcsb_uniprot_protein{name{value} source_organism{scientific_name}}",
+        "rcsb_uniprot_protein{name{value} gene{name{value}} ec{number} function{details} "
+        "source_organism{scientific_name}} "
+        "rcsb_uniprot_keyword{id value}",
     ),
     "pubmed": DataObject(
         "pubmed", "pubmed_id", False, "Int", "a PubMed integer ID, e.g. 6726807",
