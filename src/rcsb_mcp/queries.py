@@ -72,21 +72,30 @@ def _request_options(
     rows: int,
     include_computed: bool,
     *,
+    all_hits: bool = False,
     scoring_strategy: str | None = None,
     group_by_identity: int | None = None,
     group_by_uniprot: bool = False,
     group_by_ranking: str | None = None,
     group_by_ranking_direction: str = "desc",
 ) -> dict[str, Any]:
-    """Common request_options block: pagination, content type, sort, grouping."""
+    """Common request_options block: pagination, content type, sort, grouping.
+
+    When `all_hits` is True the query returns the COMPLETE result set
+    (`return_all_hits`) and pagination is omitted; otherwise it pages with
+    start/rows.
+    """
     content = ["experimental"]
     if include_computed:
         content.append("computational")
     options: dict[str, Any] = {
-        "paginate": {"start": start, "rows": rows},
         "results_content_type": content,
         "sort": [{"sort_by": "score", "direction": "desc"}],
     }
+    if all_hits:
+        options["return_all_hits"] = True
+    else:
+        options["paginate"] = {"start": start, "rows": rows}
     if scoring_strategy:
         options["scoring_strategy"] = scoring_strategy
     if group_by_identity is not None and group_by_uniprot:
@@ -201,6 +210,7 @@ def build_fulltext_query(
     rows: int = 10,
     start: int = 0,
     include_computed: bool = False,
+    all_hits: bool = False,
     group_by_identity: int | None = None,
     group_by_uniprot: bool = False,
     group_by_ranking: str | None = None,
@@ -218,6 +228,7 @@ def build_fulltext_query(
         "return_type": return_type,
         "request_options": _request_options(
             start, rows, include_computed,
+            all_hits=all_hits,
             group_by_identity=group_by_identity,
             group_by_uniprot=group_by_uniprot,
             group_by_ranking=group_by_ranking,
@@ -234,6 +245,7 @@ def build_attribute_query(
     rows: int = 10,
     start: int = 0,
     include_computed: bool = False,
+    all_hits: bool = False,
     negation: bool = False,
     case_sensitive: bool = False,
     group_by_identity: int | None = None,
@@ -263,6 +275,7 @@ def build_attribute_query(
         "return_type": return_type,
         "request_options": _request_options(
             start, rows, include_computed,
+            all_hits=all_hits,
             group_by_identity=group_by_identity,
             group_by_uniprot=group_by_uniprot,
             group_by_ranking=group_by_ranking,
@@ -279,6 +292,7 @@ def build_combined_query(
     rows: int = 10,
     start: int = 0,
     include_computed: bool = False,
+    all_hits: bool = False,
     sort_by: str | None = None,
     sort_direction: str = "asc",
     group_by_identity: int | None = None,
@@ -318,6 +332,7 @@ def build_combined_query(
 
     options = _request_options(
         start, rows, include_computed,
+        all_hits=all_hits,
         group_by_identity=group_by_identity,
         group_by_uniprot=group_by_uniprot,
         group_by_ranking=group_by_ranking,

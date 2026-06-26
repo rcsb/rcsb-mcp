@@ -76,6 +76,27 @@ def test_combined_single_collapses():
     print("ok: combined single")
 
 
+def test_all_hits():
+    # all_hits=True swaps paginate for return_all_hits across the text builders;
+    # the default keeps paginate.
+    for build in (
+        lambda **k: queries.build_fulltext_query("baseplate", **k),
+        lambda **k: queries.build_attribute_query(
+            "rcsb_entity_source_organism.ncbi_scientific_name", "exact_match",
+            "Homo sapiens", **k),
+        lambda **k: queries.build_combined_query(full_text="baseplate", **k),
+    ):
+        opts = build(all_hits=True)["request_options"]
+        assert opts["return_all_hits"] is True
+        assert "paginate" not in opts
+        # score sort is preserved alongside return_all_hits
+        assert opts["sort"] == [{"sort_by": "score", "direction": "desc"}]
+        # default still pages
+        assert "return_all_hits" not in build()["request_options"]
+        assert "paginate" in build()["request_options"]
+    print("ok: all_hits")
+
+
 def test_attribute_exists_and_flags():
     # "exists" carries no value; negation/case_sensitive add the right flags.
     q = queries.build_attribute_query(
@@ -458,6 +479,7 @@ if __name__ == "__main__":
     test_sequence()
     test_combined()
     test_combined_single_collapses()
+    test_all_hits()
     test_attribute_exists_and_flags()
     test_group_by_identity()
     test_group_by_ranking()

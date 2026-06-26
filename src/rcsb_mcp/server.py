@@ -93,6 +93,10 @@ Offset = Annotated[int, Field(ge=0)]
 ResolverLimit = Annotated[int, Field(ge=1, le=25)]
 Tolerance = Annotated[int, Field(ge=0, le=3)]
 
+# Hard ceiling for all_hits searches: above this many matches the tool refuses and
+# steers to facets/paging, so a broad query can't dump a huge id list into context.
+ALL_HITS_MAX = 10000
+
 # Attribute catalogs by schema name (see rcsb_list_pdb_search_attributes).
 ATTRIBUTE_CATALOGS = {"structure": SEARCH_ATTRIBUTES, "chemical": CHEMICAL_SEARCH_ATTRIBUTES}
 
@@ -156,6 +160,10 @@ Choosing a search tool:
 - Searches return up to `limit` hits (default 10, max 100) plus pagination fields
   (offset/has_more/next_offset). For more results, re-issue the same query with offset set to
   the response's next_offset — don't just raise limit past 100.
+- When the user asks for ALL matches (to enumerate or batch-fetch a complete set), set
+  all_hits=True on rcsb_search_fulltext / rcsb_search_by_attribute / rcsb_search_combined to
+  get the whole set in one call instead of paging. It is capped at 10000 hits; above that,
+  narrow the query or summarize with rcsb_search_facets / rcsb_search_count instead.
 
 Other capabilities:
 - For "how many ..." questions, use rcsb_search_count (count only) rather than fetching and
@@ -546,6 +554,39 @@ def _format(
     return result
 
 
+async def _guard_all_hits(body: dict[str, Any], offset: int = 0) -> None:
+    """Validate an all_hits search before issuing it.
+
+    all_hits returns the COMPLETE set via return_all_hits, which the Search API
+    forbids combining with pagination — so reject a non-zero offset up front. Then
+    pre-count the query (cheap; return_counts only) so a broad keyword/attribute query
+    can't return a massive id list that would swamp the agent's context. Raises
+    ValueError with an actionable next step.
+    """
+    if offset:
+        raise ValueError(
+            "all_hits returns the complete result set and can't be combined with offset "
+            "paging (the Search API rejects it). Drop offset, or page with all_hits=False."
+        )
+    count_body = {
+        "query": body["query"],
+        "return_type": body["return_type"],
+        "request_options": {
+            "return_counts": True,
+            "results_content_type": body["request_options"].get(
+                "results_content_type", ["experimental"]
+            ),
+        },
+    }
+    total = (await _post_search(count_body)).get("total_count", 0)
+    if total > ALL_HITS_MAX:
+        raise ValueError(
+            f"all_hits would return {total} hits, above the {ALL_HITS_MAX} cap. "
+            "Narrow the query (add filters), aggregate with rcsb_search_facets, or "
+            "page through results with limit + offset."
+        )
+
+
 def _format_facet(facet: dict[str, Any]) -> dict[str, Any]:
     """Normalize one facet from a search response (bucket list or single metric)."""
     if "buckets" in facet:
@@ -603,6 +644,7 @@ async def rcsb_search_fulltext(
     return_type: ReturnType = "entry",
     limit: Limit = 10,
     offset: Offset = 0,
+    all_hits: bool = False,
     include_computed_models: bool = False,
     enrich: bool = True,
     group_by_identity: GroupByIdentity | None = None,
@@ -649,6 +691,11 @@ async def rcsb_search_fulltext(
         offset: Number of hits to skip, for paging (default 0). The response's
             next_offset/has_more report whether more pages remain; pass next_offset
             back here with the same query to fetch the next page.
+        all_hits: Return the COMPLETE result set in one call, for an explicit "ALL ..."
+            request. Ignores limit and omits the paging fields; can't be combined with
+            offset (the Search API rejects pagination here). Refused above 10000 hits —
+            narrow the query, aggregate with rcsb_search_facets, or page instead. enrich
+            still annotates only the first 25 hits.
         include_computed_models: Also search computed structure models (AlphaFold etc.).
         enrich: If true, attach title/method/resolution for each entry hit.
         group_by_identity: If set (100/95/90/70/50/30), collapse redundant hits into
@@ -670,6 +717,7 @@ async def rcsb_search_fulltext(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
+        With all_hits, the offset/has_more/next_offset paging fields are omitted.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_fulltext_query(
@@ -677,16 +725,19 @@ async def rcsb_search_fulltext(
         return_type=return_type,
         rows=limit,
         start=offset,
+        all_hits=all_hits,
         include_computed=include_computed_models,
         group_by_identity=group_by_identity,
         group_by_uniprot=group_by_uniprot,
         group_by_ranking=group_by_ranking,
         group_by_ranking_direction=group_by_ranking_direction,
     )
+    if all_hits:
+        await _guard_all_hits(body, offset)
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched, body, offset)
+    return _format(raw, enriched, body, None if all_hits else offset)
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -1075,6 +1126,7 @@ async def rcsb_search_by_attribute(
     return_type: ReturnType = "entry",
     limit: Limit = 10,
     offset: Offset = 0,
+    all_hits: bool = False,
     enrich: bool = True,
     negation: bool = False,
     case_sensitive: bool = False,
@@ -1128,6 +1180,11 @@ async def rcsb_search_by_attribute(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+        all_hits: Return the COMPLETE result set in one call, for an explicit "ALL ..."
+            request. Ignores limit and omits the paging fields; can't be combined with
+            offset (the Search API rejects pagination here). Refused above 10000 hits —
+            narrow the query, aggregate with rcsb_search_facets, or page instead. enrich
+            still annotates only the first 25 hits.
         enrich: Attach entry metadata when return_type is "entry".
         negation: Invert the match (e.g. "not Homo sapiens").
         case_sensitive: Match the value case-sensitively (default insensitive).
@@ -1150,6 +1207,7 @@ async def rcsb_search_by_attribute(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
+        With all_hits, the offset/has_more/next_offset paging fields are omitted.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_attribute_query(
@@ -1159,6 +1217,7 @@ async def rcsb_search_by_attribute(
         return_type=return_type,
         rows=limit,
         start=offset,
+        all_hits=all_hits,
         negation=negation,
         case_sensitive=case_sensitive,
         group_by_identity=group_by_identity,
@@ -1167,10 +1226,12 @@ async def rcsb_search_by_attribute(
         group_by_ranking_direction=group_by_ranking_direction,
         chemical=chemical,
     )
+    if all_hits:
+        await _guard_all_hits(body, offset)
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched, body, offset)
+    return _format(raw, enriched, body, None if all_hits else offset)
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -1181,6 +1242,7 @@ async def rcsb_search_combined(
     return_type: ReturnType = "entry",
     limit: Limit = 10,
     offset: Offset = 0,
+    all_hits: bool = False,
     enrich: bool = True,
     sort_by: str | None = None,
     sort_direction: SortDirection = "asc",
@@ -1229,6 +1291,11 @@ async def rcsb_search_combined(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
+        all_hits: Return the COMPLETE result set in one call, for an explicit "ALL ..."
+            request. Ignores limit and omits the paging fields; can't be combined with
+            offset (the Search API rejects pagination here). Refused above 10000 hits —
+            narrow the query, aggregate with rcsb_search_facets, or page instead. enrich
+            still annotates only the first 25 hits.
         enrich: Attach title/method/resolution for each entry hit (return_type="entry" only).
         sort_by: Attribute to sort by, e.g. "rcsb_entry_info.resolution_combined".
             Omit to sort by relevance score.
@@ -1252,6 +1319,7 @@ async def rcsb_search_combined(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
+        With all_hits, the offset/has_more/next_offset paging fields are omitted.
     """
     return_type = "polymer_entity" if (group_by_identity or group_by_uniprot) else return_type
     body = queries.build_combined_query(
@@ -1261,6 +1329,7 @@ async def rcsb_search_combined(
         return_type=return_type,
         rows=limit,
         start=offset,
+        all_hits=all_hits,
         sort_by=sort_by,
         sort_direction=sort_direction,
         group_by_identity=group_by_identity,
@@ -1269,10 +1338,12 @@ async def rcsb_search_combined(
         group_by_ranking_direction=group_by_ranking_direction,
         chemical=chemical,
     )
+    if all_hits:
+        await _guard_all_hits(body, offset)
     raw = await _post_search(body)
     ids = [r["identifier"] for r in raw.get("result_set", [])]
     enriched = await _enrich(ids) if (enrich and return_type == "entry" and ids) else None
-    return _format(raw, enriched, body, offset)
+    return _format(raw, enriched, body, None if all_hits else offset)
 
 
 @mcp.tool(annotations=READ_ONLY)
