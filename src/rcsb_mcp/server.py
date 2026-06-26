@@ -176,6 +176,15 @@ Other capabilities:
 - To search chemical-component attributes (chem_comp.*, drugbank_info.*, rcsb_chem_comp_*),
   call rcsb_list_pdb_search_attributes(schema="chemical") to find the path, then pass chemical=True
   to rcsb_search_by_attribute / rcsb_search_combined (usually with return_type="mol_definition").
+- For a request about an assembled COMPLEX / molecular machine / multi-subunit structure (e.g.
+  baseplate, ribosome, nucleosome, capsid, proteasome) there is usually no single attribute for
+  the whole complex — with rcsb_search_combined, pair a full_text keyword for the concept with
+  rcsb_assembly_info.* composition filters to keep assembled complexes and drop isolated
+  single-component structures: polymer_entity_instance_count_protein (total protein chains, e.g.
+  greater_or_equal 6), polymer_entity_count_protein (distinct subunits, e.g. greater 1 for
+  heteromeric), or polymer_composition exact_match "heteromeric protein". Set the threshold from
+  intent — a higher chain count favors the assembled machine, while a low or no filter also keeps
+  component structures. This refines the keyword; it is not a standalone complex-type filter.
 - For requests about a molecular FUNCTION ("kinase activity"), biological PROCESS ("DNA repair"),
   or cellular COMPONENT / location ("mitochondrial membrane"), first call rcsb_find_go_terms to resolve
   the phrase to a Gene Ontology id, then search with
@@ -671,6 +680,12 @@ async def rcsb_search_fulltext(
     Each returns ids to use with rcsb_search_by_attribute on the matching annotation attribute.
     If a resolver finds no usable match (count 0, or all pdb_entry_count 0), the concept isn't
     covered by that ontology — THEN fall back to a keyword search here for the concept.
+
+    If the CONCEPT is an assembled COMPLEX / multi-subunit machine (baseplate, ribosome, capsid,
+    ...), a plain keyword search also returns isolated single components — switch to
+    rcsb_search_combined and pair this keyword with rcsb_assembly_info.* composition filters (e.g.
+    polymer_entity_instance_count_protein >= 6, or polymer_composition = "heteromeric protein") to
+    keep the assembled complexes.
 
     Matching spans ALL text annotations, so a hit may be a spurious keyword match rather than a
     real answer. After searching, JUDGE each hit's relevance yourself: read its title (in
@@ -1264,6 +1279,12 @@ async def rcsb_search_combined(
     it as an annotation filter: disease -> rcsb_find_disease_terms; function/process/location ->
     rcsb_find_go_terms; domain/family/fold -> rcsb_find_interpro_domains; enzyme/reaction ->
     rcsb_find_enzyme_classes; organism common name/clade -> rcsb_find_organisms.
+
+    For an assembled COMPLEX / multi-subunit machine (baseplate, ribosome, capsid, ...) there is
+    usually no single attribute — pair a full_text keyword with rcsb_assembly_info.* composition
+    filters to drop isolated components: polymer_entity_instance_count_protein >= N (total protein
+    chains), polymer_entity_count_protein > 1 (distinct subunits), or polymer_composition exact_match
+    "heteromeric protein". A heuristic refinement on the keyword, not a complex-type filter.
 
     Use this when a request combines multiple conditions, e.g.
     "human hemoglobin structures better than 2 Angstrom resolution":
