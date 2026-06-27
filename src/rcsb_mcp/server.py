@@ -226,6 +226,13 @@ Other capabilities:
     - "cardinality": count of distinct values (returns {name, value}).
   A facet may carry a nested "facets" list to sub-aggregate within each bucket. Example:
   facets=[{"name":"Methods","aggregation_type":"terms","attribute":"exptl.method"}].
+- To DE-DUPLICATE redundant hits (one representative per cluster), set group_by on
+  rcsb_search_fulltext / rcsb_search_by_attribute (requires return_type="polymer_entity"):
+  "seqid_30"/"seqid_50"/"seqid_70"/"seqid_90"/"seqid_95" (cluster by sequence-identity %) or
+  "uniprot" (one per UniProt accession). Choose the representative with group_by_ranking
+  (resolution / released_date / entity_residue_count / score). When group_by="uniprot", PREFER
+  group_by_ranking="coverage" — it keeps the most relevant biological sequence 
+  covering the most of the UniProt protein (coverage is valid only with group_by="uniprot").
 - rcsb_search_strucmotif finds structures sharing a 3D arrangement of specific residues (a
   geometric motif); this is different from rcsb_search_by_structure (whole-shape similarity).
 - To search chemical-component attributes (chem_comp.*, drugbank_info.*, rcsb_chem_comp_*),
@@ -790,11 +797,10 @@ async def rcsb_search_fulltext(
             (cluster by that sequence-identity %) or "uniprot" (one per UniProt accession).
             Only available with return_type="polymer_entity".
         group_by_ranking: Which member to keep as each cluster's representative (each ranking
-            has a fixed direction): "resolution" (best first), "released_date" (most recent),
-            "entity_residue_count" (longest), "score" (most relevant), or "coverage" (most
-            complete vs. the UniProt sequence — requires group_by="uniprot"). Omit for RCSB's
-            default.
-
+            has a fixed direction): "resolution" (best resolution structure), "released_date" (most recent),
+            "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
+            relevant biological sequence — requires group_by="uniprot", and recommended
+            there). Omit for RCSB's default.
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; "details" (per-entry title/method/resolution) is added when enrich.
@@ -1275,10 +1281,10 @@ async def rcsb_search_by_attribute(
             (cluster by that sequence-identity %) or "uniprot" (one per UniProt accession).
             Only available with return_type="polymer_entity".
         group_by_ranking: Which member to keep as each cluster's representative (each ranking
-            has a fixed direction): "resolution" (best first), "released_date" (most recent),
-            "entity_residue_count" (longest), "score" (most relevant), or "coverage" (most
-            complete vs. the UniProt sequence — requires group_by="uniprot"). Omit for RCSB's
-            default.
+            has a fixed direction): "resolution" (best resolution structure), "released_date" (most recent),
+            "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
+            relevant biological sequence — requires group_by="uniprot", and recommended
+            there). Omit for RCSB's default.
         chemical: Set True for chemical-component attributes (paths from
             rcsb_list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
             Switches to the text_chem service; usually pair with return_type="mol_definition".
