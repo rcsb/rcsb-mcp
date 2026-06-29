@@ -5,18 +5,19 @@ MCP server that lets an LLM **interrogate Protein Data Bank structures** across
 three RCSB APIs: Search (REST), Data (GraphQL), and Sequence Coordinates (GraphQL).
 
 > The runtime *assistant* persona and output format are **not** here — they live
-> in [`prompts/pdb-assistant.md`](prompts/pdb-assistant.md), which is pasted into a
-> project as a system prompt. Keep that split (see "Two layers" below).
+> in [`src/rcsb_mcp/prompts/pdb_assistant.md`](src/rcsb_mcp/prompts/pdb_assistant.md),
+> served over MCP as the `pdb_assistant` prompt (see "Two layers" below). Keep that split.
 
 ## Layout
 
 ```
 src/rcsb_mcp/
-  server.py                  MCP server: @mcp.tool() tools, HTTP calls, schema introspection
+  server.py                  MCP server: @mcp.tool() tools, the @mcp.prompt() persona, HTTP calls, schema introspection
   queries.py                 PURE request-body builders (no network) + the DATA_OBJECTS registry
   graphql_queries.py         Large GraphQL field-selection constants (ENTRY_ANNOTATIONS, ...)
   search_attributes.py       SEARCH_ATTRIBUTES catalog (structure search schema)
   chemical_search_attributes.py  CHEMICAL_SEARCH_ATTRIBUTES catalog — auto-generated (see scripts/)
+  prompts/pdb_assistant.md   Assistant persona + HTML-report format; served as the `pdb_assistant` MCP prompt (package data)
 tests/
   test_queries.py            Network-free unit tests for the query builders
 ```
@@ -87,7 +88,14 @@ After validating, add/adjust the default and re-run `test_queries.py`.
 
 ## Two layers (don't merge them)
 
-- **Server `instructions`** (in `server.py`) → how to *drive the tools*; reusable
-  across every client/project.
-- **`prompts/pdb-assistant.md`** → assistant persona + output format (HTML report,
-  columns, conventions); application-specific, pasted as project instructions.
+- **Server `instructions`** (in `server.py`) → how to *drive the tools*; always-on,
+  reusable across every client/project.
+- **The `pdb_assistant` MCP prompt** (`@mcp.prompt()` in `server.py`, text in
+  [`prompts/pdb_assistant.md`](src/rcsb_mcp/prompts/pdb_assistant.md)) → assistant
+  persona + output format (HTML report, columns, conventions); application-specific,
+  **opt-in** (the user invokes it from their client's prompt menu), client-agnostic.
+
+The markdown file is the single source of truth — `@mcp.prompt() pdb_assistant`
+loads it via `Path(__file__).parent / "prompts"` and it ships as package data, so
+edit the `.md` to change the persona; no code change needed. Don't fold this into
+`instructions` (that would force presentation policy on every client, always).

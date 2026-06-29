@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
@@ -309,6 +310,33 @@ Return types and fetching details:
   (GraphQL). When you show your work, surface that link verbatim; never construct these
   URLs yourself."""
 )
+
+
+# --------------------------------------------------------------------------- #
+# Server prompt — the runtime assistant persona + HTML-report output format.
+# This is the client-agnostic counterpart to a pasted system prompt: any MCP
+# client can list and invoke it (the MCP `prompts` capability). Kept OUT of the
+# `instructions` above — those are always-on, tool-routing guidance for every
+# client — because this is opt-in application/presentation policy. The text is
+# package data (prompts/pdb_assistant.md), the single source of truth, so it
+# ships with the wheel and stays editable without touching code.
+# --------------------------------------------------------------------------- #
+_PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
+
+
+@mcp.prompt(
+    name="pdb_assistant",
+    title="PDB structure assistant",
+    description="Persona and HTML-report output format for answering Protein Data "
+    "Bank questions with the rcsb_* tools. Invoke to start a PDB analysis session.",
+)
+def pdb_assistant() -> str:
+    """Structural-biology assistant instructions: persona + report output format."""
+    return _load_prompt("pdb_assistant.md")
 
 
 # --------------------------------------------------------------------------- #

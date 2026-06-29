@@ -232,6 +232,16 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
   the Data API schema is documented at
   [data.rcsb.org/index.html#gql-api](https://data.rcsb.org/index.html#gql-api).
 
-## Instructions prompt
+## Prompt
 
-Use [prompts/pdb-assistant.md](./prompts/pdb-assistant.md) as the instruction prompt for your project.
+The server also exposes an MCP **prompt**, `pdb_assistant` ("PDB structure
+assistant") — the runtime assistant persona plus the HTML-report output format.
+Because it is served over the protocol's `prompts` capability, any MCP client can
+list and invoke it (e.g. Claude Desktop surfaces server prompts in the `+` / prompt
+menu); there's nothing to copy-paste. The text lives in
+[`src/rcsb_mcp/prompts/pdb_assistant.md`](src/rcsb_mcp/prompts/pdb_assistant.md)
+and ships with the package.
+
+This is deliberately separate from the always-on server `instructions` (tool
+routing/chaining guidance): the prompt is opt-in application/presentation policy,
+so invoke it when you want answers formatted as a PDB report.

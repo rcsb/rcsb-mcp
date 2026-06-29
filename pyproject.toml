@@ -1,6 +1,6 @@
 [project]
 name = "rcsb-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "An MCP server for interrogating PDB structures — search, inspect, and cross-reference across the RCSB Search, Data, and Sequence Coordinates APIs"
 readme = "README.md"
 requires-python = ">=3.10"
