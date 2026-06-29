@@ -194,6 +194,15 @@ Choosing a search tool:
   with rcsb_search_fulltext). This is more precise than a fulltext (keyword) search alone.
 - Use rcsb_search_fulltext only for broad or exploratory keyword lookups where no specific
   attribute and value apply, or when the right search terms aren't yet known.
+- A protein or gene NAME is a structured attribute, not a keyword — don't default to fulltext.
+  For a protein name use rcsb_polymer_entity.rcsb_macromolecular_names_combined.name
+  contains_phrase "<name>" (the deposited molecule name; broadest coverage), optionally OR'd with
+  rcsb_uniprot_protein.name.value (canonical UniProt name, UniProt-mapped entries only). For a gene
+  name/symbol use rcsb_entity_source_organism.rcsb_gene_name.value exact_match "<symbol>". These
+  match the actual molecule/gene, not every annotation that mentions the word (e.g. "hemoglobin"
+  -> ~750 real structures vs ~9000 fulltext hits). Combine with other attributes in one query; if
+  the attribute search returns nothing useful, first try broadening it (contains_words, the
+  UniProt name, a synonym) before resorting to fulltext.
 - The specialized searches are chosen by INTENT: rcsb_search_by_sequence (sequence similarity),
   rcsb_search_by_chemical (SMILES/InChI/formula), rcsb_search_by_structure (whole 3D shape),
   rcsb_search_by_seqmotif (sequence pattern), rcsb_search_strucmotif (residue geometry). Each also
