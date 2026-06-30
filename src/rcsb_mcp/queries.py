@@ -1026,6 +1026,8 @@ def build_data_query(
         fields: Optional selection set to use instead of the curated default (omit
             the surrounding braces). Accepts GraphQL braces ("rcsb_id struct{title}"),
             dotted paths ("rcsb_id struct.title"), or a mix — see _normalize_fields.
+            Top-level rcsb_id is always included (injected if your `fields` omits it)
+            so results stay identifiable and batch lookups can map them back to ids.
 
     Returns a {"query", "variables"} dict; ids ride in the "ids" variable.
     """
@@ -1037,6 +1039,14 @@ def build_data_query(
         ) from None
 
     selection = _normalize_fields(fields) or spec.default_fields
+    # Every Data API query MUST select top-level rcsb_id: batch results are mapped
+    # back to the requested ids by it (without it, every id wrongly reports as
+    # not_found — see _query_batch), and it makes each returned node identifiable.
+    # Curated defaults already lead with rcsb_id; a custom `fields` override might
+    # omit it, so inject it when the top-level selection lacks it. (A duplicate
+    # top-level field is harmless — GraphQL merges identically-named selections.)
+    if "rcsb_id" not in selection.split("{", 1)[0].split():
+        selection = f"rcsb_id {selection}"
     if spec.batch:
         var_type = f"[{spec.arg_type}!]!"
         id_list = ids if isinstance(ids, (list, tuple)) else [ids]

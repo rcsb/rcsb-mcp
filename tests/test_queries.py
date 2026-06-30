@@ -446,6 +446,20 @@ def test_graphql_fields_override():
     print("ok: graphql fields override")
 
 
+def test_graphql_rcsb_id_injected():
+    # A custom `fields` that omits top-level rcsb_id must still get it, or batch
+    # results can't be mapped back to ids and everything reports as not_found.
+    body = queries.build_data_query("entries", ["4HHB"], fields="struct{title} exptl{method}")
+    assert "{ rcsb_id struct{title} exptl{method} }" in body["query"]
+    # rcsb_id only nested (not top-level) still triggers injection at the top level
+    nested = queries.build_data_query("entries", ["4HHB"], fields="polymer_entities{rcsb_id}")
+    assert nested["query"].count("rcsb_id") == 2  # injected top-level + the nested one
+    # already-present top-level rcsb_id is not duplicated
+    once = queries.build_data_query("entries", ["4HHB"], fields="rcsb_id struct{title}")
+    assert once["query"].count("rcsb_id") == 1
+    print("ok: graphql rcsb_id injection")
+
+
 def test_normalize_fields():
     nf = queries._normalize_fields
     # dotted paths expand into nested GraphQL braces
@@ -610,6 +624,7 @@ if __name__ == "__main__":
     test_graphql_batch()
     test_graphql_single()
     test_graphql_fields_override()
+    test_graphql_rcsb_id_injected()
     test_normalize_fields()
     test_graphql_registry()
     test_seqcoord_alignments()
