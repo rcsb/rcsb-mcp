@@ -446,6 +446,42 @@ def test_graphql_fields_override():
     print("ok: graphql fields override")
 
 
+def test_normalize_fields():
+    nf = queries._normalize_fields
+    # dotted paths expand into nested GraphQL braces
+    assert nf("rcsb_polymer_entity.pdbx_description") == "rcsb_polymer_entity { pdbx_description }"
+    # shared prefixes merge into one block
+    assert nf("a.b a.c") == "a { b c }"
+    # deeper nesting
+    assert nf("a.b.c") == "a { b { c } }"
+    # mix of plain names, dotted paths, and existing braces all normalize together
+    assert nf("rcsb_id struct.title exptl{method}") == "rcsb_id struct { title } exptl { method }"
+    # no dots -> returned verbatim (valid GraphQL / plain names left untouched)
+    assert nf("rcsb_id struct{title}") == "rcsb_id struct{title}"
+    assert nf("rcsb_id") == "rcsb_id"
+    # advanced GraphQL (args/aliases/directives/fragments) passes through unchanged
+    assert nf("foo(first: 5){bar}") == "foo(first: 5){bar}"
+    assert nf("alias: field.sub") == "alias: field.sub"
+    # empty / None untouched
+    assert nf("") == "" and nf(None) is None
+    # the exact agent input that triggered the ANTLR error now yields valid GraphQL (no dots)
+    agent = ("rcsb_id rcsb_polymer_entity.pdbx_description "
+             "rcsb_entity_source_organism.ncbi_scientific_name "
+             "rcsb_polymer_entity_container_identifiers.uniprot_ids "
+             "entity_poly.rcsb_sample_sequence_length")
+    body = queries.build_data_query("polymer_entities", ["8ATC_1"], fields=agent)
+    selection = body["query"].split("polymer_entities(entity_ids: $ids) { ", 1)[1].rsplit(" }", 2)[0]
+    assert "." not in selection, selection
+    assert "rcsb_polymer_entity { pdbx_description }" in body["query"]
+    assert "entity_poly { rcsb_sample_sequence_length }" in body["query"]
+    # the override is applied via build_sc_alignments_query too (dotted -> braces)
+    sc = queries.build_sc_alignments_query(
+        "P69905", "UNIPROT", "PDB_ENTITY", fields="target_alignments.aligned_regions.query_begin"
+    )
+    assert "target_alignments { aligned_regions { query_begin } }" in sc["query"]
+    print("ok: normalize fields (dotted -> graphql)")
+
+
 def test_graphql_registry():
     # Every endpoint maps to a usable builder with a non-empty default selection.
     assert len(queries.DATA_OBJECTS) == 18
@@ -574,6 +610,7 @@ if __name__ == "__main__":
     test_graphql_batch()
     test_graphql_single()
     test_graphql_fields_override()
+    test_normalize_fields()
     test_graphql_registry()
     test_seqcoord_alignments()
     test_seqcoord_annotations()

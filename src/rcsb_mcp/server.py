@@ -304,7 +304,9 @@ Return types and fetching details:
 - The rcsb_get_* and rcsb_seqcoord_* tools return a compact default field set. If you need a property
   they don't return, call rcsb_describe_data_object (Data API) or rcsb_describe_seqcoord_object
   (Sequence Coordinates) with [into=, query=] to find the exact field path, then pass it to
-  the tool's `fields=` argument.
+  the tool's `fields=` argument. `fields=` accepts EITHER dotted attribute paths
+  (e.g. "rcsb_polymer_entity.pdbx_description") OR GraphQL nested-brace syntax
+  (e.g. "rcsb_polymer_entity { pdbx_description }"), and the two may be mixed.
 - Every search/Data/Sequence-Coordinates tool response includes a link to the interactive
   query editor for that exact request — `query_editor_url` (search) or `graphiql_url`
   (GraphQL). When you show your work, surface that link verbatim; never construct these
