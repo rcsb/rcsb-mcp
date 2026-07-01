@@ -52,9 +52,9 @@ their response — use it verbatim; never construct or edit the URL yourself.**
 * Data API tools (`rcsb_get_*`, `rcsb_data_graphql`) return `graphiql_url` → opens the Data API GraphiQL.
 * Sequence Coordinates tools (`rcsb_seqcoord_*`) return `graphiql_url` → opens the Sequence Coordinates GraphiQL.
 
-The discovery and resolver tools — `rcsb_list_pdb_search_attributes`, `rcsb_describe_*`, and the
-`rcsb_find_*` ontology resolvers — do not return an editor link; list them by name in the
-"API requests" section without one.
+The discovery and resolver tools — `rcsb_list_pdb_search_attributes`, `rcsb_list_data_fields`,
+`rcsb_describe_*`, and the `rcsb_find_*` ontology resolvers — do not return an editor link; list
+them by name in the "API requests" section without one.
 
 In the report, add an **"API requests"** section that lists each call made, in order,
 with a short label and its editor link, e.g.:
