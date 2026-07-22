@@ -1,0 +1,160 @@
+{#-
+  Invariant report chrome for rcsb-mcp structure-search reports.
+
+  Everything here is fixed: CSS, section order, headings, legend wording,
+  footer link. Only the {{ slots }} vary between reports. Change the look by
+  editing this file and bumping TEMPLATE_VERSION in render.py -- never by
+  asking the model to restyle.
+
+  Autoescape is ON. Every value interpolated below is escaped, which is what
+  satisfies the "escape tool-returned text before inserting it" requirement.
+-#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="rcsb-mcp report template {{ template_version }}">
+<title>{{ req.title }}</title>
+<style>
+ :root {
+   --rcsb-blue: #12507b;
+   --rcsb-rule: #cfd8dd;
+   --rcsb-zebra: #f6f9fb;
+   --model-source: #b45309;
+ }
+ body { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+        margin: 2rem auto; max-width: 1400px; padding: 0 1rem; color: #1c1c1c; line-height: 1.5; }
+ h1 { font-size: 1.6rem; border-bottom: 3px solid var(--rcsb-blue); padding-bottom: .4rem; }
+ h2 { font-size: 1.15rem; margin-top: 2rem; color: var(--rcsb-blue); }
+ table { border-collapse: collapse; width: 100%; font-size: .83rem; }
+ th, td { border: 1px solid var(--rcsb-rule); padding: .45rem .55rem; vertical-align: top; text-align: left; }
+ th { background: var(--rcsb-blue); color: #fff; position: sticky; top: 0; }
+ tr:nth-child(even) td { background: var(--rcsb-zebra); }
+ td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+ code { background: #eef2f5; padding: .05rem .25rem; border-radius: 3px; font-size: .9em; }
+ .non-tool-source { color: var(--model-source); }
+ .legend { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .6rem .8rem; font-size: .9rem; }
+ .params { background: #f0f4f7; border-left: 4px solid var(--rcsb-blue); padding: .6rem .9rem; font-size: .9rem; }
+ .empty { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .8rem 1rem; }
+ .final { display: inline-block; margin-top: 1rem; background: var(--rcsb-blue); color: #fff;
+          padding: .7rem 1.1rem; border-radius: 5px; text-decoration: none; font-weight: 600; }
+ .final:hover { background: #0d3d5e; }
+ ol li, ul li { margin-bottom: .35rem; }
+ footer { margin-top: 3rem; padding-top: .8rem; border-top: 1px solid var(--rcsb-rule);
+          font-size: .78rem; color: #667; }
+ @media print { th { position: static; } .final { color: #000; background: none; border: 1px solid #000; } }
+</style>
+</head>
+<body>
+
+<h1>{{ req.title }}</h1>
+
+<p class="legend">
+  <span class="non-tool-source">Text in this colour</span> is context supplied by the assistant,
+  not retrieved from the RCSB PDB MCP tools. All identifiers, titles, organisms, dates, methods,
+  resolutions and annotations shown in the default colour come from tool responses.
+</p>
+
+{% for block in req.summary %}
+<p>{{ fragments(block.body) }}</p>
+{% endfor %}
+
+<h2>Search attributes and conditions</h2>
+<div class="params">
+  <p style="margin-top:0">
+    <b>{{ req.query.service }} service</b> &mdash;
+    logical operator <code>{{ req.query.logical_operator }}</code>,
+    <code>return_type</code> = <code>{{ req.query.return_type }}</code>
+    {%- if req.query.total_count is not none %}, <code>total_count</code> = <b>{{ req.query.total_count }}</b>{% endif %}.
+  </p>
+  {% if req.query.keyword %}
+  <p>Full-text keyword: <code>{{ req.query.keyword }}</code></p>
+  {% endif %}
+  {% if req.query.conditions %}
+  <ul>
+    {% for c in req.query.conditions %}
+    <li><code>{{ c.attribute }}</code> <code>{{ c.operator }}</code>
+      {%- if c.value is not none %} <code>{{ c.value | to_json }}</code>{% endif %}
+      {%- if c.note %} &mdash; {{ c.note }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if req.query.post_filters %}
+  <p><b>Post-filters applied from Data API output:</b> {{ fragments(req.query.post_filters) }}</p>
+  {% endif %}
+</div>
+
+<h2>API requests</h2>
+{% if req.api_calls %}
+<ol>
+  {% for call in req.api_calls %}
+  <li>
+    {%- if call.editor_url -%}
+      <a href="{{ call.editor_url }}" target="_blank" rel="noopener">{{ call.label }}</a>
+    {%- else -%}
+      {{ call.label }}
+    {%- endif -%}
+    {%- if call.tool_name %} &mdash; <code>{{ call.tool_name }}</code>{% endif -%}
+    {%- if not call.editor_url %} <span class="non-tool-source">(no editor link for this tool)</span>{% endif -%}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}
+<p><span class="non-tool-source">No API calls were recorded for this report.</span></p>
+{% endif %}
+
+<h2>Results</h2>
+{% if req.rows %}
+{% if req.sort_note %}<p>{{ req.sort_note }}</p>{% endif %}
+<table>
+  <thead>
+    <tr>{% for col in req.columns %}<th>{{ col.label }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for row in req.rows %}
+    <tr>
+      {%- for col in req.columns -%}
+      <td{% if col.kind.value == 'numeric' %} class="numeric"{% endif %}>{{ cell(row.get(col.key), col.kind.value) }}</td>
+      {%- endfor -%}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p style="font-size:.85rem;color:#667">{{ req.rows | length }} result{{ '' if req.rows | length == 1 else 's' }} shown.</p>
+{% else %}
+<div class="empty">
+  <b>No matching structures were found.</b>
+  {% if req.no_results_note %}<p>{{ fragments(req.no_results_note) }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if req.data_usage %}
+<h2>Data usage summary</h2>
+<ol>
+  {% for item in req.data_usage %}
+  <li><b>{{ item.heading }}</b> {{ fragments(item.body) }}</li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+{% if req.interpretation %}
+<h2>Interpretation</h2>
+{% for block in req.interpretation %}
+<p>{{ fragments(block.body) }}</p>
+{% endfor %}
+{% endif %}
+
+{% if collection_url %}
+<h2>Explore the final collection in RCSB.org</h2>
+<a class="final" href="{{ collection_url }}" target="_blank" rel="noopener">
+  Open {{ collection_count }} result{{ '' if collection_count == 1 else 's' }} in RCSB.org Advanced Search &rarr;
+</a>
+{% endif %}
+
+<footer>
+  Generated by <code>rcsb-mcp</code> report template {{ template_version }} on {{ generated_at }}.
+</footer>
+
+</body>
+</html>

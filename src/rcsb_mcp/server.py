@@ -387,6 +387,9 @@ Return types and fetching details:
     transport_security=_transport_security(),
 )
 
+from rcsb_mcp.report.tools import register_report_tools
+register_report_tools(mcp)
+
 
 # --------------------------------------------------------------------------- #
 # Server prompt — the runtime assistant persona + HTML-report output format.
