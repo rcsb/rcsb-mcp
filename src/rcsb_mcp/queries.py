@@ -8,8 +8,9 @@ https://data.rcsb.org/graphql
 """
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, get_args
 
+from rcsb_mcp.attribute_types import TextOperator
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 
@@ -23,20 +24,10 @@ RETURN_TYPES = {
     "mol_definition",
 }
 
-# The full set of attribute/text comparison operators from the spec enum.
-TEXT_OPERATORS = {
-    "exact_match",
-    "in",
-    "contains_words",
-    "contains_phrase",
-    "greater",
-    "greater_or_equal",
-    "less",
-    "less_or_equal",
-    "equals",
-    "range",
-    "exists",
-}
+# The full set of attribute/text comparison operators from the spec enum. Derived from
+# the TextOperator Literal (rcsb_mcp.attribute_types) so the runtime membership check
+# and the tool-schema enum can never disagree.
+TEXT_OPERATORS = frozenset(get_args(TextOperator))
 
 # Sequence/seqmotif scope.
 SEQUENCE_TYPES = {"protein", "rna", "dna"}

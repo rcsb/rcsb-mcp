@@ -136,7 +136,8 @@ def render_module(catalog: list[dict]) -> str:
         f"{CHEMICAL_SCHEMA_URL}\n"
         "Do not edit by hand; re-run the generator to refresh.\n"
         '"""\n\n'
-        f"CHEMICAL_SEARCH_ATTRIBUTES = {body}\n"
+        "from rcsb_mcp.attribute_types import SearchAttribute\n\n"
+        f"CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = {body}\n"
     )
 
 

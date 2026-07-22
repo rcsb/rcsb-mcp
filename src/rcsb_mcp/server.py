@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import PlainTextResponse
 
+from rcsb_mcp.attribute_types import AttributeValueType, SearchAttribute, TextOperator
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 from rcsb_mcp import queries
@@ -70,10 +71,8 @@ ReturnType = Literal[
     "entry", "polymer_entity", "non_polymer_entity",
     "polymer_instance", "assembly", "mol_definition",
 ]
-TextOperator = Literal[
-    "exact_match", "in", "contains_words", "contains_phrase", "greater",
-    "greater_or_equal", "less", "less_or_equal", "equals", "range", "exists",
-]
+# TextOperator / AttributeValueType / SearchAttribute live in rcsb_mcp.attribute_types
+# so the catalog data modules can share them without an import cycle.
 SequenceType = Literal["protein", "dna", "rna"]
 ChemMatchType = Literal[
     "graph-exact", "graph-strict", "graph-relaxed", "graph-relaxed-stereo",
@@ -1007,10 +1006,25 @@ async def rcsb_search_fulltext(
     return _format(raw, body, None if all_hits else offset)
 
 
+class _AttributeListResult(BaseModel):
+    """Envelope for rcsb_list_pdb_search_attributes.
+
+    Built through pydantic so a malformed result cannot be emitted, then returned as a plain
+    dict: the tool annotates `-> dict[str, Any]`, which keeps the generated outputSchema at
+    ~18 tokens instead of ~110 for a typed one. The value is in `match_mode` + `note`, which
+    cost tokens only on the calls that need them.
+    """
+
+    count: int
+    match_mode: Literal["exact", "none", "all"]
+    attributes: list[SearchAttribute]
+    note: str | None = None
+
+
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_list_pdb_search_attributes(
     query: str | None = None, schema: AttributeSchema = "structure"
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
 
     Call this FIRST when a request resolves to a clear attribute and value but you don't know
@@ -1018,30 +1032,60 @@ async def rcsb_list_pdb_search_attributes(
     `attributes` entry on any `rcsb_search_*`).
 
     Args:
-        query: Optional case-insensitive keyword to filter the catalog, matched against the
-            attribute path and description (e.g. "resolution", "organism"). Omit to return
-            everything.
+        query: Optional case-insensitive keyword to filter the catalog. Matched as a LITERAL
+            SUBSTRING against the attribute path and description, so pass ONE keyword
+            ("resolution", "comp_id"), not a phrase — a multi-word query only matches where
+            those exact words are adjacent in a description. Omit to return everything.
         schema: Which catalog — "structure" (~677 attrs: entry/entity/assembly/instance) or
             "chemical" (~57 attrs: chemical-component). See the server instructions for how to
             search chemical attributes.
 
     Returns:
-        A list of {attribute, type, operators, description} dicts — the RCSB/PDB attribute path
-        (e.g. "rcsb_entry_info.resolution_combined"), its value type (string/number/integer/
-        date), the operators it supports (exact_match, greater, range, exists, ...), and a
-        human-readable description. All of them when query is omitted.
+        {count, match_mode, attributes, note?}. `attributes` holds {attribute, type, operators,
+        description} records — the RCSB/PDB attribute path (e.g.
+        "rcsb_entry_info.resolution_combined"), its value type (string/number/integer/date), the
+        operators it supports (exact_match, greater, range, exists, ...), and a human-readable
+        description. `match_mode` is "exact" (the query matched), "none" (nothing matched — read
+        `note`, the query shape is the usual cause), or "all" (query omitted, whole catalog).
     """
     try:
         catalog = ATTRIBUTE_CATALOGS[schema]
     except KeyError:
         raise ValueError(f'schema must be one of {sorted(ATTRIBUTE_CATALOGS)}') from None
+
     if not query or not query.strip():
-        return catalog
-    q = query.strip().lower()
-    return [
+        return _AttributeListResult(
+            count=len(catalog), match_mode="all", attributes=catalog,
+            note=(f"Full {schema} catalog ({len(catalog)} attributes) — large. Pass a `query` "
+                  "keyword to filter it down."),
+        ).model_dump(exclude_none=True)
+
+    raw = query.strip()
+    q = raw.lower()
+    hits = [
         a for a in catalog
         if q in a["attribute"].lower() or q in (a.get("description") or "").lower()
     ]
+    if hits:
+        return _AttributeListResult(
+            count=len(hits), match_mode="exact", attributes=hits,
+        ).model_dump(exclude_none=True)
+
+    # Nothing matched. Say WHY rather than asserting the attribute doesn't exist — a multi-word
+    # query is the common cause and is recoverable, but a bare empty result reads as "the PDB
+    # has no such attribute" and sends the model off to guess a path or fall back to full text.
+    if len(raw.split()) > 1:
+        note = (f'No attribute path or description contains the exact phrase "{raw}". This '
+                "filter is a literal substring match, so retry with a single keyword from it "
+                '(e.g. "comp_id" rather than "nonpolymer comp_id").')
+    else:
+        note = (f'No attribute path or description contains "{raw}". Retry with a shorter or '
+                "more general keyword, or omit `query` to browse the catalog.")
+    if schema == "structure":
+        note += ' If the property describes a chemical component itself, try schema="chemical".'
+    return _AttributeListResult(
+        count=0, match_mode="none", attributes=[], note=note,
+    ).model_dump(exclude_none=True)
 
 
 @mcp.tool(annotations=READ_ONLY)

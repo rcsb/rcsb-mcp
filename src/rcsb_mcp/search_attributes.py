@@ -1,5 +1,13 @@
+"""Searchable RCSB **structure** (text) attributes.
 
-SEARCH_ATTRIBUTES = [
+Curated catalog; see scripts/generate_chemical_attributes.py --verify-structure,
+which regenerates this from the live metadata schema and asserts it reproduces
+this file on attribute path, type, and operators.
+"""
+
+from rcsb_mcp.attribute_types import SearchAttribute
+
+SEARCH_ATTRIBUTES: list[SearchAttribute] = [
     {
         "attribute": "pdbx_entity_nonpoly.name",
         "type": "string",

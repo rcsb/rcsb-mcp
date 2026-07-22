@@ -5,7 +5,9 @@ https://search.rcsb.org/rcsbsearch/v2/metadata/chemical/schema
 Do not edit by hand; re-run the generator to refresh.
 """
 
-CHEMICAL_SEARCH_ATTRIBUTES = [
+from rcsb_mcp.attribute_types import SearchAttribute
+
+CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
     {
         "attribute": "chem_comp.formula_weight",
         "type": "number",

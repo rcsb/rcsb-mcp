@@ -9,10 +9,14 @@ import asyncio
 import inspect
 import sys
 import pathlib
+from typing import get_args
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from rcsb_mcp import server  # noqa: E402
+from rcsb_mcp import queries, server  # noqa: E402
+from rcsb_mcp.attribute_types import AttributeValueType, TextOperator  # noqa: E402
+from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES  # noqa: E402
+from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES  # noqa: E402
 
 
 # --- synthetic introspection shapes (what _field_descriptor/_unwrap_type expect) ---------- #
@@ -289,7 +293,87 @@ def test_interpro_no_match_graceful():
     print("ok: interpro no-match graceful")
 
 
+def test_attribute_catalogs_conform():
+    # No type checker runs in CI, so this is what actually pins the SearchAttribute
+    # shape — and it catches a bad regeneration of the auto-generated chemical file.
+    ops = set(get_args(TextOperator))
+    types = set(get_args(AttributeValueType))
+    assert ops == set(queries.TEXT_OPERATORS), "TEXT_OPERATORS must derive from TextOperator"
+    for name, catalog in (("structure", SEARCH_ATTRIBUTES), ("chemical", CHEMICAL_SEARCH_ATTRIBUTES)):
+        assert catalog, f"{name}: catalog is empty"
+        paths = [e["attribute"] for e in catalog]
+        assert len(paths) == len(set(paths)), f"{name}: duplicate attribute paths"
+        for e in catalog:
+            assert set(e) == {"attribute", "type", "operators", "description"}, \
+                f"{name}: unexpected keys on {e.get('attribute')!r}"
+            assert e["type"] in types, f"{name}: bad type on {e['attribute']!r}: {e['type']!r}"
+            unknown = set(e["operators"]) - ops
+            assert not unknown, f"{name}: unknown operators on {e['attribute']!r}: {sorted(unknown)}"
+            assert e["operators"], f"{name}: no operators on {e['attribute']!r}"
+            assert e["attribute"] and e["description"], f"{name}: empty field on {e!r}"
+    print(f"ok: attribute catalogs conform ({len(SEARCH_ATTRIBUTES)} structure, "
+          f"{len(CHEMICAL_SEARCH_ATTRIBUTES)} chemical)")
+
+
+def _list_attrs(**kw):
+    return asyncio.run(server.rcsb_list_pdb_search_attributes(**kw))
+
+
+def test_list_attributes_exact_match():
+    r = _list_attrs(query="comp_id")
+    assert r["match_mode"] == "exact"
+    assert r["count"] == len(r["attributes"]) > 0
+    assert "note" not in r, "a successful match should not spend tokens on a note"
+    assert all("comp_id" in a["attribute"].lower() or "comp_id" in a["description"].lower()
+               for a in r["attributes"])
+    print("ok: list attributes exact match")
+
+
+def test_list_attributes_multiword_explains_itself():
+    # The motivating bug: a multi-word query matches nothing, and the bare [] used to be
+    # indistinguishable from "the PDB has no such attribute" (and reached the model as ZERO
+    # content blocks). It must now say the query SHAPE is the likely cause.
+    r = _list_attrs(query="nonpolymer comp_id")
+    assert r["count"] == 0 and r["attributes"] == [] and r["match_mode"] == "none"
+    note = r["note"]
+    assert "single keyword" in note and "substring" in note
+    assert "nonpolymer comp_id" in note, "should quote the query back"
+    assert 'schema="chemical"' in note, "structure searches should mention the other catalog"
+    # single-word misses get the other wording, and no phrase advice
+    r1 = _list_attrs(query="zzz_no_such_attribute")
+    assert r1["match_mode"] == "none" and "single keyword" not in r1["note"]
+    # ...and the chemical catalog does not advertise itself
+    r2 = _list_attrs(query="nonpolymer comp_id", schema="chemical")
+    assert r2["match_mode"] == "none" and "chemical" not in r2["note"]
+    print("ok: list attributes multi-word explains itself")
+
+
+def test_list_attributes_full_catalog():
+    r = _list_attrs()
+    assert r["match_mode"] == "all"
+    assert r["count"] == len(SEARCH_ATTRIBUTES) == len(r["attributes"])
+    assert "large" in r["note"], "the 677-attribute dump should warn about its size"
+    assert _list_attrs(query="   ")["match_mode"] == "all", "blank query == omitted"
+    assert _list_attrs(schema="chemical")["count"] == len(CHEMICAL_SEARCH_ATTRIBUTES)
+    print("ok: list attributes full catalog")
+
+
+def test_list_attributes_bad_schema():
+    try:
+        _list_attrs(schema="nope")
+    except ValueError as e:
+        assert "structure" in str(e) and "chemical" in str(e)
+    else:
+        raise AssertionError("an unknown schema must raise")
+    print("ok: list attributes bad schema")
+
+
 if __name__ == "__main__":
+    test_attribute_catalogs_conform()
+    test_list_attributes_exact_match()
+    test_list_attributes_multiword_explains_itself()
+    test_list_attributes_full_catalog()
+    test_list_attributes_bad_schema()
     test_flatten_depth_and_traversal()
     test_flatten_cycle_guard()
     test_flatten_depth_one()
