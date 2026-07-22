@@ -20,13 +20,6 @@ from .render import TEMPLATE_VERSION, render_report
 
 __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
 
-# Where rendered reports are written when output_mode includes "file".
-# In Docker, mount a volume here so the host can read the output.
-REPORT_OUTPUT_DIR = Path(os.environ.get("RCSB_MCP_REPORT_DIR", "/tmp/rcsb-mcp-reports"))
-
-# Optional public base URL for served reports, e.g. "https://internal.example.org/reports".
-REPORT_BASE_URL = os.environ.get("RCSB_MCP_REPORT_BASE_URL")
-
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -38,29 +31,13 @@ class RenderReportInput(BaseModel):
     """Input for rcsb_render_report."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-
     report: ReportRequest = Field(..., description="Structured description of the report content.")
-    output_mode: Literal["html", "file", "both"] = Field(
-        default="both",
-        description=(
-            "'html' returns the markup inline (the client must render it); 'file' writes the "
-            "document to disk and returns only its path/URL; 'both' does each. Prefer 'file' or "
-            "'both' — re-emitting the returned HTML through the model reintroduces the drift this "
-            "tool exists to prevent."
-        ),
-    )
-    filename: str | None = Field(
-        default=None,
-        description="Optional output filename stem. Defaults to a slug of the report title plus a timestamp.",
-    )
 
 
 class RenderReportResult(BaseModel):
     """Structured result of rcsb_render_report."""
 
-    path: str | None = Field(default=None, description="Absolute path of the written file, if any.")
-    url: str | None = Field(default=None, description="Public URL of the report, if RCSB_MCP_REPORT_BASE_URL is set.")
-    html: str | None = Field(default=None, description="The rendered document, if output_mode included html.")
+    html: str | None = Field(default=None, description="The rendered document.")
     sha256: str = Field(..., description="Digest of the rendered document, for reproducibility checks.")
     row_count: int = Field(..., description="Number of result rows rendered.")
     template_version: str = Field(..., description="Version of the report template used.")
@@ -74,10 +51,10 @@ def register_report_tools(mcp: Any) -> None:
         name="rcsb_render_report",
         annotations={
             "title": "Render a PDB search report",
-            "readOnlyHint": False,  # writes a file when output_mode includes "file"
+            "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
-            "openWorldHint": False,
+            "openWorldHint": True,
         },
     )
     async def rcsb_render_report(params: RenderReportInput) -> RenderReportResult:
@@ -112,28 +89,14 @@ def register_report_tools(mcp: Any) -> None:
                 from the pdb_id/ligand_id column unless you set them explicitly.
 
         Returns:
-            RenderReportResult with the file path and/or html, plus sha256,
+            RenderReportResult with the html, plus sha256,
             row_count, bytes and template_version.
         """
         html = render_report(params.report)
         digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
 
-        path: Path | None = None
-        url: str | None = None
-        if params.output_mode in ("file", "both"):
-            REPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            stem = params.filename or (
-                f"{_slug(params.report.title)}-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}"
-            )
-            path = REPORT_OUTPUT_DIR / f"{Path(stem).name}.html"
-            path.write_text(html, encoding="utf-8")
-            if REPORT_BASE_URL:
-                url = f"{REPORT_BASE_URL.rstrip('/')}/{path.name}"
-
         return RenderReportResult(
-            path=str(path) if path else None,
-            url=url,
-            html=html if params.output_mode in ("html", "both") else None,
+            html=html,
             sha256=digest,
             row_count=len(params.report.rows),
             template_version=TEMPLATE_VERSION,
