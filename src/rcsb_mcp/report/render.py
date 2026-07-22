@@ -59,33 +59,24 @@ def build_collection_url(
             f"pass collection.attribute explicitly. Known: {sorted(_ID_ATTRIBUTE_FOR_RETURN_TYPE)}"
         )
 
+    # One group wrapping one terminal. The RCSB.org query builder needs the group
+    # to render the condition, but not the two further nested groups this used to
+    # emit -- and every byte here is paid for three times over once percent-encoded
+    # (the encoding tokenizes at ~2.2 chars/token against ~4.6 for prose).
     request = {
         "query": {
             "type": "group",
             "logical_operator": "and",
             "nodes": [
                 {
-                    "type": "group",
-                    "logical_operator": "and",
-                    "label": "text",
-                    "nodes": [
-                        {
-                            "type": "group",
-                            "logical_operator": "and",
-                            "nodes": [
-                                {
-                                    "type": "terminal",
-                                    "service": "text",
-                                    "parameters": {
-                                        "attribute": attr,
-                                        "operator": "in",
-                                        "negation": False,
-                                        "value": list(ids),
-                                    },
-                                }
-                            ],
-                        }
-                    ],
+                    "type": "terminal",
+                    "service": "text",
+                    "parameters": {
+                        "attribute": attr,
+                        "operator": "in",
+                        "negation": False,
+                        "value": list(ids),
+                    },
                 }
             ],
         },
@@ -94,8 +85,6 @@ def build_collection_url(
             # Always at least as many rows as ids, so the whole set is on page 1.
             "paginate": {"start": 0, "rows": max(25, len(ids))},
             "results_content_type": ["experimental"],
-            "sort": [{"sort_by": "score", "direction": "desc"}],
-            "scoring_strategy": "combined",
         },
     }
     payload = json.dumps(request, separators=(",", ":"))

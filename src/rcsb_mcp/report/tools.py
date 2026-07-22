@@ -7,11 +7,7 @@ decorated function into wherever your existing ``rcsb_*`` tools are defined.
 from __future__ import annotations
 
 import hashlib
-import os
-import re
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,12 +15,6 @@ from .models import ReportRequest
 from .render import TEMPLATE_VERSION, render_report
 
 __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
-
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
-
-def _slug(text: str, max_len: int = 60) -> str:
-    return _SLUG_RE.sub("-", text.lower()).strip("-")[:max_len] or "report"
 
 
 class RenderReportInput(BaseModel):
@@ -35,13 +25,24 @@ class RenderReportInput(BaseModel):
 
 
 class RenderReportResult(BaseModel):
-    """Structured result of rcsb_render_report."""
+    """Structured result of rcsb_render_report.
 
-    html: str | None = Field(default=None, description="The rendered document.")
+    The server is stateless: it renders and returns, storing nothing (any pod can
+    serve any request behind the load balancer). ``html`` is the whole document.
+
+    The client owns what happens next, and should lift ``html`` out of the result
+    to build the file/download rather than have the model reproduce it. FastMCP
+    emits every result twice -- once as a ``content[].text`` block and again as
+    ``structuredContent`` -- so a client that keeps this result in the model's
+    context must strip ``html`` from BOTH copies, or the document is paid for twice
+    on this turn and again on every later turn it stays in history.
+    """
+
+    html: str = Field(..., description="The rendered, self-contained HTML document.")
     sha256: str = Field(..., description="Digest of the rendered document, for reproducibility checks.")
     row_count: int = Field(..., description="Number of result rows rendered.")
     template_version: str = Field(..., description="Version of the report template used.")
-    bytes: int = Field(..., description="Size of the rendered document.")
+    bytes: int = Field(..., description="Size of the rendered document, in UTF-8 bytes.")
 
 
 def register_report_tools(mcp: Any) -> None:
@@ -89,16 +90,17 @@ def register_report_tools(mcp: Any) -> None:
                 from the pdb_id/ligand_id column unless you set them explicitly.
 
         Returns:
-            RenderReportResult with the html, plus sha256,
-            row_count, bytes and template_version.
+            RenderReportResult with the rendered ``html`` plus sha256, row_count,
+            bytes and template_version. Deliver the report as a file — see the
+            output instructions in the pdb_assistant prompt.
         """
         html = render_report(params.report)
-        digest = hashlib.sha256(html.encode("utf-8")).hexdigest()
+        encoded = html.encode("utf-8")
 
         return RenderReportResult(
             html=html,
-            sha256=digest,
+            sha256=hashlib.sha256(encoded).hexdigest(),
             row_count=len(params.report.rows),
             template_version=TEMPLATE_VERSION,
-            bytes=len(html.encode("utf-8")),
+            bytes=len(encoded),
         )

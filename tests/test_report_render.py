@@ -187,7 +187,7 @@ def test_collection_url_roundtrips_to_valid_json():
     payload = urllib.parse.unquote(url.split("request=", 1)[1])
     parsed = json.loads(payload)
     assert parsed["return_type"] == "entry"
-    terminal = parsed["query"]["nodes"][0]["nodes"][0]["nodes"][0]
+    terminal = parsed["query"]["nodes"][0]
     assert terminal["parameters"]["value"] == ["101M", "1ASH", "4HHB"]
     assert terminal["parameters"]["attribute"] == "rcsb_entry_container_identifiers.entry_id"
 
@@ -213,7 +213,7 @@ def test_collection_link_can_be_disabled():
 def test_mol_definition_uses_comp_id_attribute():
     url = build_collection_url(["ATP"], return_type="mol_definition")
     parsed = json.loads(urllib.parse.unquote(url.split("request=", 1)[1]))
-    terminal = parsed["query"]["nodes"][0]["nodes"][0]["nodes"][0]
+    terminal = parsed["query"]["nodes"][0]
     assert terminal["parameters"]["attribute"] == "rcsb_chem_comp_container_identifiers.comp_id"
 
 

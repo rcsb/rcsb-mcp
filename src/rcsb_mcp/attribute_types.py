@@ -11,7 +11,13 @@ schema guarantees and tests/test_server.py::test_attribute_catalogs_conform pins
 
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Literal
+
+# typing_extensions, not typing: pydantic refuses to build a schema from a
+# typing.TypedDict on Python < 3.12, and SearchAttribute is used as a field type
+# in server._AttributeListResult. That raises at IMPORT time, so on the 3.11 base
+# image the server dies before binding its port. See tests/test_python_support.py.
+from typing_extensions import TypedDict
 
 # The value type of a searchable attribute, from the Search API metadata schema.
 AttributeValueType = Literal["date", "integer", "number", "string"]

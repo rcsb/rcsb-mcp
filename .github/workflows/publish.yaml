@@ -16,7 +16,11 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        python-version: ["3.10"]
+        # 3.10 is the floor declared in pyproject; 3.11 is what the Docker image
+        # actually runs. Test both, or a break that only shows below 3.12 reaches
+        # production as a CrashLoopBackOff (the container never binds its port, so
+        # the only symptom is a readiness probe that never passes).
+        python-version: ["3.10", "3.11"]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

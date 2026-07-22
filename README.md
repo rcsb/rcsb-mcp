@@ -222,6 +222,26 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Show UniProt features mapped onto PDB entity 4HHB_1." → `rcsb_seqcoord_annotations`
 - "Pull a field GraphQL doesn't expose by default / combine objects." → `rcsb_data_graphql`
 
+## Report output
+
+`rcsb_render_report` is stateless: it renders the report and returns it as
+`html` (plus `sha256`, `row_count`, `bytes`, `template_version`), writing nothing
+to disk. Any replica can serve any request, which is what the load-balanced
+deployment needs.
+
+**The client owns the download.** The document must reach the user as a file, but
+how depends on the client:
+
+- A client with its own agent loop (the RCSB.org portal) should lift `html` out of
+  the tool result in code, build the file/download, and **strip `html` before the
+  result re-enters the model's context**. FastMCP emits every result twice — once
+  as a `content[].text` block and again as `structuredContent` — so strip both,
+  or the ~6.5k-token document (for a 20-row table) is paid for on this turn and
+  again on every later turn it lingers in history. The model never copies it.
+- A generic client (Claude Desktop, the test harness) has no such loop, so the
+  `pdb_assistant` prompt instead tells the model to write `html` verbatim to a
+  `.html` file and deliver it with `present_files`.
+
 ## Notes
 
 - Search endpoint: `https://search.rcsb.org/rcsbsearch/v2/query` (POST, JSON body).
