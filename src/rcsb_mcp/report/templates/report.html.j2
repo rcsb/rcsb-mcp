@@ -53,10 +53,6 @@
   resolutions and annotations shown in the default colour come from tool responses.
 </p>
 
-{% for block in req.summary %}
-<p>{{ fragments(block.body) }}</p>
-{% endfor %}
-
 <h2>API requests</h2>
 {% if req.api_calls %}
 <ol>
@@ -108,13 +104,6 @@
   <li><b>{{ item.heading }}</b> {{ fragments(item.body) }}</li>
   {% endfor %}
 </ol>
-{% endif %}
-
-{% if req.interpretation %}
-<h2>Interpretation</h2>
-{% for block in req.interpretation %}
-<p>{{ fragments(block.body) }}</p>
-{% endfor %}
 {% endif %}
 
 <footer>

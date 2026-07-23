@@ -92,10 +92,6 @@ def register_report_tools(mcp: Any) -> None:
 
         Key fields of ``report``:
             title: page heading describing the search.
-            summary / interpretation: paragraphs, each a list of provenance-tagged
-                fragments ``{"text": ..., "model_supplied": bool}``. Set
-                ``model_supplied`` true for your own domain knowledge, inference or
-                interpretation; false for values that came from a tool response.
             api_calls: one per Search/Data/Sequence-Coordinates call, using the
                 ``query_editor_url`` / ``graphiql_url`` the tool returned VERBATIM.
                 Resolver and discovery tools have no editor link — pass label and
@@ -106,7 +102,10 @@ def register_report_tools(mcp: Any) -> None:
             rows: one dict per result keyed by column key. A cell may be a plain
                 value, or a list of fragments for mixed provenance. Missing or null
                 values render as "NA".
-            data_usage: ordered narrative of how each call shaped the final set.
+            data_usage: ordered narrative of how each call shaped the final set;
+                each item's body is a list of provenance-tagged fragments
+                ``{"text": ..., "model_supplied": bool}`` — model_supplied true for
+                your own inference, false for tool-returned values.
 
         Returns:
             RenderReportResult with EITHER a `url` or `html` (never both), plus

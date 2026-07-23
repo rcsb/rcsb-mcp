@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from rcsb_mcp.report import (
     ApiCall,
-    Block,
     Column,
     ColumnKind,
     DataUsageItem,
@@ -70,7 +69,7 @@ def test_tool_text_is_escaped():
 
 def test_fragment_text_is_escaped_inside_provenance_span():
     req = _minimal(
-        interpretation=[Block(body=[Fragment(text="a < b & c", model_supplied=True)])]
+        data_usage=[DataUsageItem(heading="Note", body=[Fragment(text="a < b & c", model_supplied=True)])]
     )
     html = render_report(req, generated_at=FIXED)
     assert '<span class="non-tool-source">a &lt; b &amp; c</span>' in html
@@ -83,12 +82,13 @@ def test_fragment_text_is_escaped_inside_provenance_span():
 
 def test_model_supplied_fragments_are_wrapped_and_tool_ones_are_not():
     req = _minimal(
-        summary=[
-            Block(
+        data_usage=[
+            DataUsageItem(
+                heading="Discovery",
                 body=[
                     Fragment(text="32 entries matched."),
                     Fragment(text="Fe-type enzymes dominate.", model_supplied=True),
-                ]
+                ],
             )
         ]
     )
@@ -212,14 +212,12 @@ def test_all_required_sections_appear_in_fixed_order():
     req = _minimal(
         api_calls=[ApiCall(label="Search", editor_url="https://search.rcsb.org/query-editor.html?json=%7B%7D")],
         data_usage=[DataUsageItem(heading="Discovery", body=[Fragment(text="One structured query.")])],
-        interpretation=[Block(body=[Fragment(text="Interpretation.", model_supplied=True)])],
     )
     html = render_report(req, generated_at=FIXED)
     order = [
         "API requests",
         "Results",
         "Data usage summary",
-        "Interpretation",
     ]
     positions = [html.index(s) for s in order]
     assert positions == sorted(positions)

@@ -9,7 +9,6 @@ from __future__ import annotations
 from .link import LinkError, decode_report, encode_report
 from .models import (
     ApiCall,
-    Block,
     Cell,
     Column,
     ColumnKind,
@@ -21,7 +20,6 @@ from .render import TEMPLATE_VERSION, render_report
 
 __all__ = [
     "ApiCall",
-    "Block",
     "Cell",
     "Column",
     "ColumnKind",

@@ -19,7 +19,6 @@ __all__ = [
     "Column",
     "ApiCall",
     "DataUsageItem",
-    "Block",
     "ReportRequest",
 ]
 
@@ -124,12 +123,6 @@ class DataUsageItem(_Strict):
     body: list[Fragment] = Field(..., description="The explanation, split into provenance-tagged fragments.")
 
 
-class Block(_Strict):
-    """A paragraph in the summary or interpretation sections."""
-
-    body: list[Fragment] = Field(..., min_length=1)
-
-
 # --------------------------------------------------------------------------
 # Top-level request
 # --------------------------------------------------------------------------
@@ -139,10 +132,6 @@ class ReportRequest(_Strict):
     """Complete structured description of a PDB search report."""
 
     title: str = Field(..., description="Page title describing the search.", min_length=1)
-    summary: list[Block] = Field(
-        default_factory=list,
-        description="Short lead paragraphs above the table.",
-    )
     api_calls: list[ApiCall] = Field(default_factory=list)
     columns: list[Column] = Field(default_factory=list)
     rows: list[dict[str, Cell]] = Field(
@@ -151,7 +140,6 @@ class ReportRequest(_Strict):
     )
     sort_note: str | None = Field(default=None, description="How the table is ordered, e.g. 'Sorted by resolution, best first.'")
     data_usage: list[DataUsageItem] = Field(default_factory=list)
-    interpretation: list[Block] = Field(default_factory=list)
     no_results_note: list[Fragment] = Field(
         default_factory=list,
         description="Shown instead of the table when rows is empty; explain the search limitations here.",

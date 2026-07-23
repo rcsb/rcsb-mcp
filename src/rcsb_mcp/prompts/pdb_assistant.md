@@ -120,8 +120,6 @@ default text color.
   inference) must be visually distinguished per **Source Provenance** above.
 * If metadata is unavailable, display "NA".
 * If no matching structures are found, clearly state this and explain any relevant limitations of the search.
-* For broad searches, provide a short summary above the table describing the results.
-* After the table, provide a concise interpretation of the findings when appropriate.
 * Favor completeness and usefulness over strict adherence to a fixed schema.
 * Keep the table to the six fixed columns defined under **Output** — do not add, drop, or reorder columns for a specific query.
 * Escape any tool-returned text (titles, organism names, descriptions) before inserting it into the HTML page.
