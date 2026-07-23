@@ -1,18 +1,22 @@
 """The rcsb_render_report output contract.
 
-The server is stateless: it renders and returns ``html``, storing nothing. The
-client owns the download. A client that keeps the result in the model's context
-must strip ``html`` from BOTH copies FastMCP emits (``content[]`` and
-``structuredContent``), or the ~6.5k-token document is paid for twice this turn
-and again on every later turn it stays in history.
+The tool returns EITHER a ``url`` or ``html``, never both:
+
+* ``url`` — the preferred path. A self-contained link that renders the report on
+  demand from the data packed into it (see report/link.py); the server stores
+  nothing. The agent relays the link and never reproduces the document.
+* ``html`` — the fallback, returned only when no render endpoint is configured
+  (``RCSB_MCP_REPORT_BASE_URL`` unset) or the report is too big to pack into a URL.
+
+The codec and the /r endpoint are covered in test_report_link.py.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from rcsb_mcp.report import build_collection_url, tools as report_tools
@@ -24,6 +28,18 @@ MINIMAL = {
         "rows": [{"pdb_id": "4HHB"}, {"pdb_id": "1IRE"}],
     }
 }
+
+
+@pytest.fixture
+def no_base_url(monkeypatch):
+    """Force the html-fallback path regardless of the environment."""
+    monkeypatch.setattr(report_tools, "REPORT_BASE_URL", None)
+
+
+@pytest.fixture
+def with_base_url(monkeypatch):
+    monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
+    return "https://reports.example.org"
 
 
 def _invoke(**params):
@@ -38,55 +54,52 @@ def _structured(**params) -> dict:
 
 
 # --------------------------------------------------------------------------
-# Stateless: always returns the markup, writes nothing
+# Either a url or html, never both
 # --------------------------------------------------------------------------
 
 
-def test_always_returns_the_rendered_html():
+def test_returns_a_link_when_a_base_url_is_configured(with_base_url):
     res = _structured(**MINIMAL)
+    assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r?d=")
+    assert res["html"] is None, "must not also ship the markup when a link is returned"
+    assert res["row_count"] == 2
+
+
+def test_falls_back_to_html_when_no_base_url(no_base_url):
+    res = _structured(**MINIMAL)
+    assert res["url"] is None
     assert res["html"].startswith("<!DOCTYPE html>")
     assert res["row_count"] == 2
 
 
-def test_metadata_describes_the_returned_document():
+def test_result_surface_is_only_url_html_and_metadata(no_base_url):
     res = _structured(**MINIMAL)
-    encoded = res["html"].encode("utf-8")
-    assert hashlib.sha256(encoded).hexdigest() == res["sha256"]
-    assert res["bytes"] == len(encoded)
+    assert set(res) == {"url", "html", "row_count", "template_version"}
+    schema = report_tools.RenderReportInput.model_json_schema()
+    assert set(schema["properties"]) == {"report"}, "input must expose only `report`"
 
 
-def test_writes_nothing_to_disk(tmp_path, monkeypatch):
+def test_writes_nothing_to_disk(tmp_path, monkeypatch, with_base_url):
     monkeypatch.chdir(tmp_path)
     _structured(**MINIMAL)
     assert list(tmp_path.iterdir()) == []
 
 
-def test_result_carries_no_file_handles():
-    """The stateless contract exposes no path/url/filename surface at all."""
+def test_oversized_report_falls_back_to_html_even_with_a_base_url(with_base_url, monkeypatch):
+    """A report too big to pack into a URL must not silently drop to a broken link."""
+    monkeypatch.setattr(report_tools, "MAX_URL_BYTES", 200)  # force the ceiling
     res = _structured(**MINIMAL)
-    assert set(res) == {"html", "sha256", "row_count", "template_version", "bytes"}
-
-    schema = report_tools.RenderReportInput.model_json_schema()
-    assert set(schema["properties"]) == {"report"}, "input must expose only `report`"
-
-
-# Determinism (byte-identical renders apart from the timestamp) is covered at the
-# render_report level in test_report_render.py, which pins generated_at; the tool
-# wrapper cannot inject a fixed clock, so re-testing it here would only couple a
-# determinism claim to a wall-clock minute boundary.
+    assert res["url"] is None
+    assert res["html"].startswith("<!DOCTYPE html>")
 
 
 # --------------------------------------------------------------------------
-# The duplication the client has to strip
+# The fallback markup, when returned, is duplicated across both FastMCP copies
 # --------------------------------------------------------------------------
 
 
-def test_html_is_emitted_in_both_content_and_structured():
-    """Documents why a context-keeping client must strip BOTH copies.
-
-    If this ever stops being true, the portal's strip logic can be simplified;
-    until then, stripping only one copy leaves the full markup in context.
-    """
+def test_fallback_html_is_emitted_in_both_content_and_structured(no_base_url):
+    """When html IS returned, a context-keeping client must strip both copies."""
     content, structured = _invoke(**MINIMAL)
     in_content = any("<!DOCTYPE html>" in (getattr(c, "text", "") or "") for c in content)
     assert in_content, "html should appear in a content[] text block"
@@ -103,8 +116,7 @@ def test_collection_query_stays_flat():
 
     The RCSB.org query builder needs the group to render the condition but not
     the two further nested groups this used to emit; verified against the live
-    site. Re-nesting inflates the longest percent-encoded href in the document,
-    which tokenizes at ~2.2 chars/token.
+    site.
     """
     import urllib.parse
 

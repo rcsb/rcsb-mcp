@@ -31,9 +31,9 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import PlainTextResponse
+from starlette.responses import HTMLResponse, PlainTextResponse
 
 from rcsb_mcp.attribute_types import AttributeValueType, SearchAttribute, TextOperator
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
@@ -387,6 +387,8 @@ Return types and fetching details:
     transport_security=_transport_security(),
 )
 
+from rcsb_mcp.report import link as report_link, render_report
+from rcsb_mcp.report.models import ReportRequest
 from rcsb_mcp.report.tools import register_report_tools
 register_report_tools(mcp)
 
@@ -2593,6 +2595,47 @@ async def rcsb_seqcoord_graphql(query: str, variables: dict[str, Any] | None = N
 async def healthz(_request):
     """Liveness/readiness probe endpoint — 200 OK when the HTTP server is up."""
     return PlainTextResponse("ok")
+
+
+# The report render page is inert: fixed template, all values escaped, no scripts,
+# no external resources. Lock that down so a crafted link can only ever produce an
+# escaped report, and keep it out of search indexes since anyone can mint a link.
+_REPORT_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    # Content-addressed by `d`, so the same link always renders the same page.
+    "Cache-Control": "public, max-age=3600, immutable",
+}
+# Applied to the 400s too, so an error page is as inert as the report page.
+_REPORT_ERROR_HEADERS = {"X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow"}
+
+
+@mcp.custom_route("/r", methods=["GET"])
+async def render_report_link(request):
+    """Render a report packed into the ``d`` query param — stateless, nothing stored.
+
+    ``d`` is the gzip+base64url of a ReportRequest (see report/link.py). Decoding is
+    size-guarded against oversized and bomb inputs; the payload is validated against
+    the schema; the template escapes every value. Anything malformed — bad token,
+    wrong schema, or a value that render can't resolve — is a 400, never a 500.
+    """
+    token = request.query_params.get("d", "")
+    try:
+        report_json = report_link.decode_report(token)
+        report = ReportRequest.model_validate_json(report_json)
+        html = render_report(report)
+    except report_link.LinkError as exc:
+        # LinkError messages are static (from report/link.py), safe to surface.
+        return PlainTextResponse(f"Invalid report link: {exc}\n", status_code=400,
+                                 headers=_REPORT_ERROR_HEADERS)
+    except (ValidationError, ValueError):
+        # Schema mismatch, or a value render can't resolve. Static message — never
+        # reflect attacker-controlled detail.
+        return PlainTextResponse("Invalid report link: could not render this report\n",
+                                 status_code=400, headers=_REPORT_ERROR_HEADERS)
+    return HTMLResponse(html, headers=_REPORT_HEADERS)
 
 
 def create_app():

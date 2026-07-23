@@ -6,15 +6,29 @@ decorated function into wherever your existing ``rcsb_*`` tools are defined.
 
 from __future__ import annotations
 
-import hashlib
+import os
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from . import link
 from .models import ReportRequest
 from .render import TEMPLATE_VERSION, render_report
 
 __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
+
+# Public origin that serves the report render endpoint (GET /r?d=...). Set it in the
+# deployment (e.g. https://rcsb-mcp.rcsb.org) and the tool hands back a self-contained
+# link instead of the markup, so the agent never has to reproduce the document. Left
+# unset -- local stdio dev with no reachable endpoint -- the tool falls back to
+# returning `html`, and the client writes the file the old way.
+_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "").strip()
+REPORT_BASE_URL = _BASE_ENV.rstrip("/") or None
+
+# Above this the packed link is too long to be a safe URL (browsers and the ingress
+# cap the request line), so we fall back to returning `html`. Compressed reports are
+# ~1 KB even at 50 rows, so only a pathological report ever trips this.
+MAX_URL_BYTES = 8_000
 
 
 class RenderReportInput(BaseModel):
@@ -27,22 +41,30 @@ class RenderReportInput(BaseModel):
 class RenderReportResult(BaseModel):
     """Structured result of rcsb_render_report.
 
-    The server is stateless: it renders and returns, storing nothing (any pod can
-    serve any request behind the load balancer). ``html`` is the whole document.
-
-    The client owns what happens next, and should lift ``html`` out of the result
-    to build the file/download rather than have the model reproduce it. FastMCP
-    emits every result twice -- once as a ``content[].text`` block and again as
-    ``structuredContent`` -- so a client that keeps this result in the model's
-    context must strip ``html`` from BOTH copies, or the document is paid for twice
-    on this turn and again on every later turn it stays in history.
+    Returns EITHER ``url`` or ``html``, never both. ``url`` is a self-contained link
+    that renders the report on demand from the data packed into it — the server
+    stores nothing, so any replica serves any link. It is the deliverable: hand it to
+    the user, do not fetch or reproduce it. ``html`` is the fallback for when no
+    render endpoint is reachable (or the report is too large to pack into a URL).
     """
 
-    html: str = Field(..., description="The rendered, self-contained HTML document.")
-    sha256: str = Field(..., description="Digest of the rendered document, for reproducibility checks.")
+    url: str | None = Field(
+        default=None,
+        description=(
+            "Self-contained link to the rendered report. When set, THIS is the deliverable — "
+            "give it to the user as a clickable link. Do not open it, fetch it, or reproduce "
+            "anything from it."
+        ),
+    )
+    html: str | None = Field(
+        default=None,
+        description=(
+            "Fallback rendering, returned ONLY when a link could not be built. Write it verbatim "
+            "to a `.html` file and deliver that."
+        ),
+    )
     row_count: int = Field(..., description="Number of result rows rendered.")
     template_version: str = Field(..., description="Version of the report template used.")
-    bytes: int = Field(..., description="Size of the rendered document, in UTF-8 bytes.")
 
 
 def register_report_tools(mcp: Any) -> None:
@@ -55,7 +77,7 @@ def register_report_tools(mcp: Any) -> None:
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
-            "openWorldHint": True,
+            "openWorldHint": False,
         },
     )
     async def rcsb_render_report(params: RenderReportInput) -> RenderReportResult:
@@ -90,17 +112,33 @@ def register_report_tools(mcp: Any) -> None:
                 from the pdb_id/ligand_id column unless you set them explicitly.
 
         Returns:
-            RenderReportResult with the rendered ``html`` plus sha256, row_count,
-            bytes and template_version. Deliver the report as a file — see the
-            output instructions in the pdb_assistant prompt.
+            RenderReportResult with EITHER a `url` or `html` (never both), plus
+            row_count and template_version. Prefer `url` — it is a self-contained
+            link that renders the report on demand; deliver it to the user as-is.
+            `html` is only returned as a fallback; write it to a `.html` file. See
+            the output instructions in the pdb_assistant prompt.
         """
-        html = render_report(params.report)
-        encoded = html.encode("utf-8")
+        report = params.report
+        report_json = report.model_dump_json(exclude_defaults=True)
+
+        # Render up front: it is cheap, it surfaces a malformed report to the caller
+        # (rather than emitting a link that only fails later at the endpoint), and it
+        # is the fallback body. We WITHHOLD it only when we hand back a link instead.
+        html: str | None = render_report(report)
+
+        url: str | None = None
+        if REPORT_BASE_URL is not None and len(report_json) <= link.MAX_DECOMPRESSED:
+            # Both gates must match the /r endpoint's accept criteria so we never emit
+            # a link it would reject: it caps the DECOMPRESSED payload (checked above),
+            # and browsers/ingress cap the URL length (checked here).
+            candidate = f"{REPORT_BASE_URL}/r?d={link.encode_report(report_json)}"
+            if len(candidate) <= MAX_URL_BYTES:
+                url = candidate
+                html = None  # the link renders the document on demand instead
 
         return RenderReportResult(
+            url=url,
             html=html,
-            sha256=hashlib.sha256(encoded).hexdigest(),
-            row_count=len(params.report.rows),
+            row_count=len(report.rows),
             template_version=TEMPLATE_VERSION,
-            bytes=len(encoded),
         )

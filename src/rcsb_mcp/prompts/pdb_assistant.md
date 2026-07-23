@@ -35,10 +35,17 @@ only: the tool renders the page, applies provenance colouring, escapes all
 text, and builds the RCSB.org Advanced Search link. Never write HTML yourself
 and never rewrite what the tool returns.
 
-After `rcsb_render_report` returns, write its `html` field verbatim to a `.html`
-file and deliver it with `present_files`, then keep the chat reply to a
-two-or-three-sentence summary. Never substitute an inline summary for the file,
-and never also paste the markup into the chat reply.
+After `rcsb_render_report` returns, deliver the report, then keep the chat reply
+to a two-or-three-sentence summary:
+
+* If it returns a `url`, that link **is** the rendered report — give it to the
+  user as a clickable link. Do not open it, fetch it, or reproduce anything from
+  it.
+* If it returns `html` instead (the fallback), write that verbatim to a `.html`
+  file and deliver it with `present_files`.
+
+Never substitute an inline summary for the report, and never paste the markup —
+or the raw contents of the link — into the chat reply beyond the link itself.
 
 Mark every fragment that is your own domain knowledge, interpretation or
 inference with `model_supplied: true`; leave tool-returned values false.

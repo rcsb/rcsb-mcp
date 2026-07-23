@@ -94,5 +94,13 @@ secretVolumes:
 podEnvVars:
   - name: HOME
     value: /tmp
+  # Set to the public origin that serves this MCP to make rcsb_render_report return
+  # a self-contained report LINK (GET /r?d=...) instead of inline HTML, so the agent
+  # never reproduces the ~20 KB document. It must be an origin whose ingress routes
+  # to this service (any of the ingress hosts below). Confirm the real URL with
+  # DevOps before enabling — the hosts here are placeholders. Left unset, the tool
+  # falls back to returning html.
+  # - name: RCSB_MCP_REPORT_BASE_URL
+  #   value: "https://rcsb-mcp.rcsb.org"
 
 arguments: null

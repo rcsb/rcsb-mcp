@@ -222,25 +222,34 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Show UniProt features mapped onto PDB entity 4HHB_1." → `rcsb_seqcoord_annotations`
 - "Pull a field GraphQL doesn't expose by default / combine objects." → `rcsb_data_graphql`
 
-## Report output
+## Report output (`RCSB_MCP_REPORT_BASE_URL`)
 
-`rcsb_render_report` is stateless: it renders the report and returns it as
-`html` (plus `sha256`, `row_count`, `bytes`, `template_version`), writing nothing
-to disk. Any replica can serve any request, which is what the load-balanced
-deployment needs.
+`rcsb_render_report` returns a **self-contained link**, not the markup — so the
+agent never has to reproduce the ~20 KB document (the single most expensive step
+of a report turn). The whole report is gzip+base64url-packed into the URL, so the
+server stores nothing and any replica renders any link on demand.
 
-**The client owns the download.** The document must reach the user as a file, but
-how depends on the client:
+Set `RCSB_MCP_REPORT_BASE_URL` to the origin that serves this MCP (e.g.
+`https://rcsb-mcp.rcsb.org`) and the tool returns
+`{ url: "<base>/r?d=<packed report>", html: null }`. The agent hands the user that
+link; opening it hits the stateless render endpoint:
 
-- A client with its own agent loop (the RCSB.org portal) should lift `html` out of
-  the tool result in code, build the file/download, and **strip `html` before the
-  result re-enters the model's context**. FastMCP emits every result twice — once
-  as a `content[].text` block and again as `structuredContent` — so strip both,
-  or the ~6.5k-token document (for a 20-row table) is paid for on this turn and
-  again on every later turn it lingers in history. The model never copies it.
-- A generic client (Claude Desktop, the test harness) has no such loop, so the
-  `pdb_assistant` prompt instead tells the model to write `html` verbatim to a
-  `.html` file and deliver it with `present_files`.
+```
+GET /r?d=<gzip+base64url of the report JSON>   →   text/html
+```
+
+The endpoint decodes, validates against the report schema, and renders with the
+fixed template. It is hardened for a public route: the `d` token and its
+decompressed size are both capped (a gzip bomb is refused before it expands), the
+page carries `Content-Security-Policy: default-src 'none'` + `noindex`, and every
+value is escaped by the template — a crafted link can only ever produce an escaped
+report.
+
+**Fallback.** When `RCSB_MCP_REPORT_BASE_URL` is unset (e.g. local stdio dev with
+no reachable endpoint) or a report is too large to pack into a URL, the tool
+returns `html` instead of `url`, and the `pdb_assistant` prompt tells the model to
+write it to a `.html` file. Reports compress to ~1 KB even at 50 rows, so the
+size fallback is rare.
 
 ## Notes
 

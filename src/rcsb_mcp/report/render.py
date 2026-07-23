@@ -176,11 +176,18 @@ def render_report(req: ReportRequest, *, generated_at: datetime | None = None) -
 
     collection_url = None
     if req.collection.enabled and ids:
-        collection_url = build_collection_url(
-            ids,
-            return_type=req.collection.return_type,
-            attribute=req.collection.attribute,
-        )
+        try:
+            collection_url = build_collection_url(
+                ids,
+                return_type=req.collection.return_type,
+                attribute=req.collection.attribute,
+            )
+        except ValueError:
+            # An unresolvable return_type/attribute must not sink the whole report:
+            # omit the "explore in RCSB.org" link rather than raising, so rendering
+            # a (possibly untrusted) request can never crash. Direct callers of
+            # build_collection_url still get the loud error.
+            collection_url = None
 
     stamp = generated_at or datetime.now(timezone.utc)
 

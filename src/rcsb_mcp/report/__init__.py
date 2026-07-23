@@ -6,6 +6,7 @@ every byte of markup. Import the models and :func:`render_report` from here.
 
 from __future__ import annotations
 
+from .link import LinkError, decode_report, encode_report
 from .models import (
     ApiCall,
     AttributeCondition,
@@ -31,9 +32,12 @@ __all__ = [
     "ColumnKind",
     "DataUsageItem",
     "Fragment",
+    "LinkError",
     "QuerySummary",
     "ReportRequest",
     "TEMPLATE_VERSION",
     "build_collection_url",
+    "decode_report",
+    "encode_report",
     "render_report",
 ]

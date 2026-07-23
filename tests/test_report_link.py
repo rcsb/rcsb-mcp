@@ -1,0 +1,222 @@
+"""Self-contained report links: the codec (report/link.py) and the /r endpoint.
+
+The endpoint decodes attacker-supplied input on a public route, so the guards are
+tested as hard requirements, not nice-to-haves: oversized token, non-base64,
+non-gzip, gzip bomb, non-UTF-8, and schema-invalid payloads must all be refused.
+"""
+
+from __future__ import annotations
+
+import base64
+import gzip
+import json
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from starlette.testclient import TestClient
+
+from rcsb_mcp.report import link
+from rcsb_mcp.report.link import LinkError, MAX_DECOMPRESSED, MAX_ENCODED
+
+REPORT = {
+    "title": "Iron-type nitrile hydratases",
+    "columns": [
+        {"key": "pdb_id", "label": "PDB ID", "kind": "pdb_id"},
+        {"key": "title", "label": "Title"},
+    ],
+    "rows": [{"pdb_id": "2AHJ", "title": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}],
+}
+
+
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+# --------------------------------------------------------------------------
+# Codec
+# --------------------------------------------------------------------------
+
+
+def test_round_trips():
+    payload = json.dumps(REPORT)
+    assert link.decode_report(link.encode_report(payload)) == payload
+
+
+def test_encoding_is_deterministic():
+    """Same report -> same token, so the link is content-addressed and cacheable."""
+    payload = json.dumps(REPORT)
+    assert link.encode_report(payload) == link.encode_report(payload)
+
+
+def test_compression_actually_shrinks_a_repetitive_report():
+    payload = json.dumps({**REPORT, "rows": [{"pdb_id": f"{i:04d}", "title": "X-RAY DIFFRACTION structure"} for i in range(40)]})
+    token = link.encode_report(payload)
+    assert len(token) < len(payload), "encoded token should be smaller than the raw JSON"
+
+
+@pytest.mark.parametrize(
+    "bad, needle",
+    [
+        ("", "empty"),
+        ("x" * (MAX_ENCODED + 1), "exceeds"),
+        ("!!!not base64!!!", "base64url"),
+        (_b64(b"this is not gzip"), "gzip"),
+    ],
+)
+def test_decode_rejects_malformed(bad, needle):
+    with pytest.raises(LinkError, match=needle):
+        link.decode_report(bad)
+
+
+def test_decode_rejects_gzip_bomb():
+    """A tiny token that inflates past the cap is refused before it fills memory."""
+    bomb = _b64(gzip.compress(b"a" * (MAX_DECOMPRESSED * 40), mtime=0))
+    assert len(bomb) < 100_000  # the token itself is small...
+    with pytest.raises(LinkError, match="exceeds"):
+        link.decode_report(bomb)  # ...but decoding refuses to expand it
+
+
+def test_decode_rejects_non_utf8():
+    with pytest.raises(LinkError, match="UTF-8"):
+        link.decode_report(_b64(gzip.compress(b"\xff\xfe\xff", mtime=0)))
+
+
+def test_decode_accepts_just_under_the_cap():
+    payload = "a" * (MAX_DECOMPRESSED - 16)
+    assert link.decode_report(_b64(gzip.compress(payload.encode(), mtime=0))) == payload
+
+
+# --------------------------------------------------------------------------
+# /r endpoint
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def client():
+    # Module-scoped: create_app() wires the FastMCP session-manager lifespan to the
+    # module-level `mcp` singleton, which can only be run once per process. The /r
+    # route is stateless, so one client is shared across the endpoint tests.
+    from rcsb_mcp import server
+
+    with TestClient(server.create_app()) as c:
+        yield c
+
+
+def _token(report: dict) -> str:
+    return link.encode_report(json.dumps(report))
+
+
+def test_endpoint_renders_a_valid_link(client):
+    r = client.get("/r", params={"d": _token(REPORT)})
+    assert r.status_code == 200
+    assert r.text.startswith("<!DOCTYPE html>")
+    assert "NITRILE HYDRATASE" in r.text
+    assert r.headers["content-type"].startswith("text/html")
+
+
+def test_endpoint_sets_hardening_headers(client):
+    r = client.get("/r", params={"d": _token(REPORT)})
+    assert "default-src 'none'" in r.headers["content-security-policy"]
+    assert r.headers["x-robots-tag"].startswith("noindex")
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_endpoint_escapes_hostile_report_text(client):
+    """The template escapes every value, so crafted text can never become markup."""
+    hostile = {**REPORT, "title": "<script>alert(1)</script>"}
+    r = client.get("/r", params={"d": _token(hostile)})
+    assert r.status_code == 200
+    assert "<script>alert(1)</script>" not in r.text
+    assert "&lt;script&gt;" in r.text
+
+
+@pytest.mark.parametrize("d", ["", "!!!bad!!!", _b64(b"not gzip")])
+def test_endpoint_rejects_bad_tokens(client, d):
+    r = client.get("/r", params={"d": d}) if d else client.get("/r")
+    assert r.status_code == 400
+
+
+def test_endpoint_rejects_wellformed_but_wrong_schema(client):
+    r = client.get("/r", params={"d": link.encode_report('{"not": "a report"}')})
+    assert r.status_code == 400
+    assert "could not render" in r.text.lower()
+
+
+def test_endpoint_rejects_bomb(client):
+    bomb = _b64(gzip.compress(b"a" * (MAX_DECOMPRESSED * 40), mtime=0))
+    assert client.get("/r", params={"d": bomb}).status_code == 400
+
+
+def test_endpoint_does_not_500_on_unresolvable_collection_link(client):
+    """A schema-valid report whose collection link can't resolve renders (no link), not 500."""
+    token = link.encode_report(json.dumps({
+        "title": "x",
+        "columns": [{"key": "pdb_id", "label": "PDB ID", "kind": "pdb_id"}],
+        "rows": [{"pdb_id": "AAAA"}],
+        "collection": {"return_type": "zzz_bogus", "enabled": True},
+    }))
+    r = client.get("/r", params={"d": token})
+    assert r.status_code == 200, "unresolvable collection link must degrade, not crash"
+    assert "Explore the final collection" not in r.text  # the link is simply omitted
+
+
+def test_endpoint_error_responses_are_hardened(client):
+    r = client.get("/r", params={"d": "!!!bad!!!"})
+    assert r.status_code == 400
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-robots-tag"].startswith("noindex")
+
+
+# --------------------------------------------------------------------------
+# End-to-end: the tool's link resolves at the endpoint to the same document
+# --------------------------------------------------------------------------
+
+
+def test_tool_link_renders_at_endpoint(client, monkeypatch):
+    """The exact link the tool emits must render the report at /r."""
+    import asyncio
+
+    from mcp.server.fastmcp import FastMCP
+
+    from rcsb_mcp.report import tools as report_tools
+
+    monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
+    mcp = FastMCP("test")
+    report_tools.register_report_tools(mcp)
+    _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": REPORT}}))
+
+    d = parse_qs(urlparse(res["url"]).query)["d"][0]
+    r = client.get("/r", params={"d": d})
+    assert r.status_code == 200
+    assert "NITRILE HYDRATASE" in r.text
+
+
+def test_tool_never_emits_a_link_the_endpoint_would_reject(monkeypatch):
+    """The emit gate must match the endpoint's accept gate.
+
+    A low-entropy report compresses to a tiny URL but its JSON exceeds
+    MAX_DECOMPRESSED — which the endpoint refuses. The tool must fall back to html
+    rather than hand back a link that 400s (a dead report).
+    """
+    import asyncio
+
+    from mcp.server.fastmcp import FastMCP
+
+    from rcsb_mcp.report import ReportRequest, tools as report_tools
+
+    monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
+    big = {
+        "title": "probe",
+        "columns": [{"key": "pdb_id", "label": "P", "kind": "pdb_id"}, {"key": "t", "label": "T"}],
+        "rows": [{"pdb_id": "AAAA", "t": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"} for _ in range(3000)],
+    }
+    report_json = ReportRequest(**big).model_dump_json(exclude_defaults=True)
+    assert len(report_json) > MAX_DECOMPRESSED, "test setup: report must exceed the cap"
+    # ... and yet it compresses tiny, which is exactly the trap:
+    assert len(link.encode_report(report_json)) < 2000
+
+    mcp = FastMCP("test")
+    report_tools.register_report_tools(mcp)
+    _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": big}}))
+    assert res["url"] is None, "must not emit a link the endpoint would reject"
+    assert res["html"].startswith("<!DOCTYPE html>")
