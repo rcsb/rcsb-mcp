@@ -242,8 +242,8 @@ Interrogation is usually multi-step; chain tools rather than relying on a single
 Choosing a search tool:
 - When the request resolves to a clear attribute and value (e.g. resolution < 2 Å,
   organism = Homo sapiens, method = X-RAY DIFFRACTION, released after a date), prefer a
-  STRUCTURED search: if you don't already know the exact attribute path, call
-  rcsb_list_pdb_search_attributes to find it, then use rcsb_search_by_attribute (it takes one
+  STRUCTURED search: NEVER invent, guess, or infer attribute paths, if you don't already know the exact attribute path, 
+  call rcsb_list_pdb_search_attributes to find it, then use rcsb_search_by_attribute (it takes one
   or more attribute conditions combined with a single AND/OR; add a free-text keyword to them
   with rcsb_search_fulltext). This is more precise than a fulltext (keyword) search alone.
 - Use rcsb_search_fulltext only for broad or exploratory keyword lookups where no specific
