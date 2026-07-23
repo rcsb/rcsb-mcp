@@ -8,7 +8,7 @@ render time, which also satisfies the "escape tool-returned text" rule for free.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Union
+from typing import Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,8 +17,6 @@ __all__ = [
     "Cell",
     "ColumnKind",
     "Column",
-    "AttributeCondition",
-    "QuerySummary",
     "ApiCall",
     "DataUsageItem",
     "Block",
@@ -87,32 +85,8 @@ class Column(_Strict):
 
 
 # --------------------------------------------------------------------------
-# Query provenance
+# Provenance
 # --------------------------------------------------------------------------
-
-
-class AttributeCondition(_Strict):
-    """A single structured search condition, shown in the 'conditions' panel."""
-
-    attribute: str = Field(..., description="Dotted RCSB attribute path, e.g. 'exptl.method'.")
-    operator: str = Field(..., description="Operator used, e.g. 'exact_match', 'in', 'less'.")
-    value: Any = Field(default=None, description="Comparison value; omit for 'exists'.")
-    note: str | None = Field(default=None, description="Short explanation of why this condition was chosen.")
-
-
-class QuerySummary(_Strict):
-    """What was searched, and how many things matched."""
-
-    service: str = Field(default="text", description="Search service: text, sequence, chemical, strucmotif, ...")
-    logical_operator: str = Field(default="and", description="How the conditions were combined.")
-    return_type: str = Field(default="entry", description="Search API return_type used.")
-    conditions: list[AttributeCondition] = Field(default_factory=list)
-    keyword: str | None = Field(default=None, description="Full-text keyword, if rcsb_search_fulltext was used.")
-    total_count: int | None = Field(default=None, description="total_count reported by the search.", ge=0)
-    post_filters: list[Fragment] = Field(
-        default_factory=list,
-        description="Filters applied after the search from Data API output (e.g. abstract checks).",
-    )
 
 
 class ApiCall(_Strict):
@@ -169,7 +143,6 @@ class ReportRequest(_Strict):
         default_factory=list,
         description="Short lead paragraphs above the table.",
     )
-    query: QuerySummary = Field(default_factory=QuerySummary)
     api_calls: list[ApiCall] = Field(default_factory=list)
     columns: list[Column] = Field(default_factory=list)
     rows: list[dict[str, Cell]] = Field(

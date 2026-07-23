@@ -22,7 +22,7 @@ __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
 # link instead of the markup, so the agent never has to reproduce the document. Left
 # unset -- local stdio dev with no reachable endpoint -- the tool falls back to
 # returning `html`, and the client writes the file the old way.
-_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "").strip()
+_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "http://localhost:8080").strip()
 REPORT_BASE_URL = _BASE_ENV.rstrip("/") or None
 
 # Above this the packed link is too long to be a safe URL (browsers and the ingress
@@ -96,7 +96,6 @@ def register_report_tools(mcp: Any) -> None:
                 fragments ``{"text": ..., "model_supplied": bool}``. Set
                 ``model_supplied`` true for your own domain knowledge, inference or
                 interpretation; false for values that came from a tool response.
-            query: the service, conditions, total_count and any post-filters.
             api_calls: one per Search/Data/Sequence-Coordinates call, using the
                 ``query_editor_url`` / ``graphiql_url`` the tool returned VERBATIM.
                 Resolver and discovery tools have no editor link — pass label and

@@ -9,13 +9,11 @@ from pydantic import ValidationError
 
 from rcsb_mcp.report import (
     ApiCall,
-    AttributeCondition,
     Block,
     Column,
     ColumnKind,
     DataUsageItem,
     Fragment,
-    QuerySummary,
     ReportRequest,
     render_report,
 )
@@ -212,17 +210,12 @@ def test_empty_results_render_the_no_results_block():
 
 def test_all_required_sections_appear_in_fixed_order():
     req = _minimal(
-        query=QuerySummary(
-            total_count=32,
-            conditions=[AttributeCondition(attribute="exptl.method", operator="exact_match", value="X-RAY DIFFRACTION")],
-        ),
         api_calls=[ApiCall(label="Search", editor_url="https://search.rcsb.org/query-editor.html?json=%7B%7D")],
         data_usage=[DataUsageItem(heading="Discovery", body=[Fragment(text="One structured query.")])],
         interpretation=[Block(body=[Fragment(text="Interpretation.", model_supplied=True)])],
     )
     html = render_report(req, generated_at=FIXED)
     order = [
-        "Search attributes and conditions",
         "API requests",
         "Results",
         "Data usage summary",

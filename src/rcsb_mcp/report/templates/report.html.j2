@@ -57,31 +57,6 @@
 <p>{{ fragments(block.body) }}</p>
 {% endfor %}
 
-<h2>Search attributes and conditions</h2>
-<div class="params">
-  <p style="margin-top:0">
-    <b>{{ req.query.service }} service</b> &mdash;
-    logical operator <code>{{ req.query.logical_operator }}</code>,
-    <code>return_type</code> = <code>{{ req.query.return_type }}</code>
-    {%- if req.query.total_count is not none %}, <code>total_count</code> = <b>{{ req.query.total_count }}</b>{% endif %}.
-  </p>
-  {% if req.query.keyword %}
-  <p>Full-text keyword: <code>{{ req.query.keyword }}</code></p>
-  {% endif %}
-  {% if req.query.conditions %}
-  <ul>
-    {% for c in req.query.conditions %}
-    <li><code>{{ c.attribute }}</code> <code>{{ c.operator }}</code>
-      {%- if c.value is not none %} <code>{{ c.value | to_json }}</code>{% endif %}
-      {%- if c.note %} &mdash; {{ c.note }}{% endif %}</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% if req.query.post_filters %}
-  <p><b>Post-filters applied from Data API output:</b> {{ fragments(req.query.post_filters) }}</p>
-  {% endif %}
-</div>
-
 <h2>API requests</h2>
 {% if req.api_calls %}
 <ol>
