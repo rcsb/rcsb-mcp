@@ -1404,7 +1404,8 @@ async def rcsb_search_by_attribute(
 ) -> dict[str, Any]:
     """Search by one or more structured attribute conditions combined with a single AND/OR —
     preferred over rcsb_search_fulltext whenever the request resolves to clear attribute(s)
-    and value(s). If you don't know a path or its operators, call rcsb_list_pdb_search_attributes
+    and value(s). NEVER invent, guess, or infer attribute paths. 
+    If you don't know a path or its operators, call rcsb_list_pdb_search_attributes
     first. For NESTED boolean logic use rcsb_search_advanced.
 
     For a biological concept, resolve it to an ontology id first and filter on the matching
