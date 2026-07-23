@@ -79,8 +79,8 @@ def register_report_tools(mcp: Any) -> None:
                 ``query_editor_url`` / ``graphiql_url`` the tool returned VERBATIM.
                 Resolver and discovery tools have no editor link — pass label and
                 tool_name only.
-            columns: the table schema; add, drop or reorder these per query. Set
-                ``kind`` to "pdb_id" / "ligand_id" / "uniprot" to get links,
+            columns: the table schema — one entry per column, in display order.
+                Set ``kind`` to "pdb_id" / "ligand_id" / "uniprot" to get links,
                 "organism" for italics, "numeric" for right alignment.
             rows: one dict per result keyed by column key. A cell may be a plain
                 value, or a list of fragments for mixed provenance. Missing or null

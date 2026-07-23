@@ -109,7 +109,7 @@ def test_mixed_provenance_inside_a_table_cell():
         title="t",
         columns=[
             Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
-            Column(key="info", label="Additional Information"),
+            Column(key="info", label="Evidence"),
         ],
         rows=[
             {

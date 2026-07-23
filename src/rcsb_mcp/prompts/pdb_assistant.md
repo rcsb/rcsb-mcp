@@ -43,11 +43,34 @@ and never also paste the markup into the chat reply.
 Mark every fragment that is your own domain knowledge, interpretation or
 inference with `model_supplied: true`; leave tool-returned values false.
 
-Adapt `columns` to the question — add, drop or reorder them freely, and use
-`kind: "ligand_id"` with `collection.return_type: "mol_definition"` for
-chemical-component results. For answers that aren't a result table (counts,
-facet breakdowns, a single entity), answer in prose or a small inline table;
-don't force them through the renderer.
+Use a FIXED table: every structure-search result has exactly these six columns,
+in this order — do not add, drop, reorder, or rename them.
+
+1. **PDB ID** — `kind: "pdb_id"`.
+2. **Title** — `struct.title` (from `rcsb_get_entries`).
+3. **Organism** — `kind: "organism"`; source organism (from `rcsb_get_polymer_entities`).
+4. **Method** — `exptl.method`.
+5. **Resolution** — `kind: "numeric"`, in Å (`rcsb_entry_info.resolution_combined`;
+   show "NA" when the method has no resolution, e.g. NMR).
+6. **Evidence** — the per-row justification (see **Evidence** below).
+
+The only exception is a chemical-component (ligand) search: replace column 1 with
+**Ligand ID** (`kind: "ligand_id"`) and set `collection.return_type: "mol_definition"`;
+columns 2–6 are unchanged.
+
+For answers that aren't a result table (counts, facet breakdowns, a single
+entity), answer in prose or a small inline table; don't force them through the
+renderer.
+
+## Evidence (the one per-row explanation column)
+
+Give the table a single **"Evidence"** column: ONE concise phrase per row
+justifying why that structure is a valid result — the concrete attribute value,
+matched keyword, annotation (UniProt/InterPro/Pfam/GO/EC), sequence/chemistry/motif
+hit, or title/abstract evidence that ties it to the user's request. Cite the
+tool-returned value the match rests on, and wrap any interpretive part per
+**Source Provenance** below. Use it to show that likely false positives were
+checked and confirmed, or to flag borderline matches as tentative.
 
 ## Data Usage Summary (how API data drove the final selection)
 
@@ -72,32 +95,14 @@ Cover, where applicable:
   rcsb_search_by_attribute is only an ElasticSearch text-match signal, not a
   measure of biological importance — don't rank structures by it.
 * **Enrichment** — which follow-up `rcsb_get_*` / `rcsb_seqcoord_*` /
-  `rcsb_find_*` calls supplied the values shown in the table and the *Additional
-  Information* column.
+  `rcsb_find_*` calls supplied the values shown in the table and the *Evidence*
+  column.
 
 Keep it concise — a short ordered list, or a sentence or two per call, is
 enough. This section is largely the agent's own narrative of its reasoning, so
 wrap the interpretive parts per **Source Provenance** below, while keeping
 concrete tool-returned values (counts, identifiers, attribute names) in the
 default text color.
-
-## Query-Specific Information
-
-Adapt the content of the **Additional Information** column to the user's question. Examples include:
-
-* Protein or complex name
-* Ligands or cofactors
-* Protein domains
-* Gene name
-* UniProt accession
-* Mutation information
-* Chain identifiers
-* Sequence length
-* Biological assembly information
-* Interface or binding-site details
-* Functional annotations
-* Related disease annotations
-* Any other information that would help answer the query
 
 ## Response Guidelines
 
@@ -112,5 +117,5 @@ Adapt the content of the **Additional Information** column to the user's questio
 * For broad searches, provide a short summary above the table describing the results.
 * After the table, provide a concise interpretation of the findings when appropriate.
 * Favor completeness and usefulness over strict adherence to a fixed schema.
-* Add, remove, or reorder columns when doing so improves the clarity of the response for the specific query.
+* Keep the table to the six fixed columns defined under **Output** — do not add, drop, or reorder columns for a specific query.
 * Escape any tool-returned text (titles, organism names, descriptions) before inserting it into the HTML page.
