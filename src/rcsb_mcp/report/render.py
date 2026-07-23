@@ -7,7 +7,6 @@ byte-identical HTML apart from the timestamp. The agent never emits markup.
 from __future__ import annotations
 
 import json
-import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,7 +15,7 @@ from markupsafe import Markup, escape
 
 from .models import Cell, ColumnKind, Fragment, ReportRequest
 
-__all__ = ["TEMPLATE_VERSION", "render_report", "build_collection_url"]
+__all__ = ["TEMPLATE_VERSION", "render_report"]
 
 # Bump on any template change so rendered reports stay traceable.
 TEMPLATE_VERSION = "1.0.0"
@@ -24,71 +23,6 @@ TEMPLATE_VERSION = "1.0.0"
 RCSB_STRUCTURE_URL = "https://www.rcsb.org/structure/{}"
 RCSB_LIGAND_URL = "https://www.rcsb.org/ligand/{}"
 UNIPROT_URL = "https://www.uniprot.org/uniprotkb/{}"
-RCSB_SEARCH_URL = "https://www.rcsb.org/search?request="
-
-_ID_ATTRIBUTE_FOR_RETURN_TYPE = {
-    "entry": "rcsb_entry_container_identifiers.entry_id",
-    "mol_definition": "rcsb_chem_comp_container_identifiers.comp_id",
-    "polymer_entity": "rcsb_polymer_entity_container_identifiers.rcsb_id",
-    "assembly": "rcsb_assembly_container_identifiers.rcsb_id",
-}
-
-
-# --------------------------------------------------------------------------
-# Collection link
-# --------------------------------------------------------------------------
-
-
-def build_collection_url(
-    ids: list[str],
-    return_type: str = "entry",
-    attribute: str | None = None,
-) -> str:
-    """Build an RCSB.org Advanced Search URL that opens exactly ``ids``.
-
-    Percent-encoding happens here rather than in the model's head, which is
-    where hand-built versions of this URL tend to go wrong.
-    """
-    if not ids:
-        raise ValueError("cannot build a collection URL from an empty id list")
-
-    attr = attribute or _ID_ATTRIBUTE_FOR_RETURN_TYPE.get(return_type)
-    if attr is None:
-        raise ValueError(
-            f"no default search attribute known for return_type={return_type!r}; "
-            f"pass collection.attribute explicitly. Known: {sorted(_ID_ATTRIBUTE_FOR_RETURN_TYPE)}"
-        )
-
-    # One group wrapping one terminal. The RCSB.org query builder needs the group
-    # to render the condition, but not the two further nested groups this used to
-    # emit -- and every byte here is paid for three times over once percent-encoded
-    # (the encoding tokenizes at ~2.2 chars/token against ~4.6 for prose).
-    request = {
-        "query": {
-            "type": "group",
-            "logical_operator": "and",
-            "nodes": [
-                {
-                    "type": "terminal",
-                    "service": "text",
-                    "parameters": {
-                        "attribute": attr,
-                        "operator": "in",
-                        "negation": False,
-                        "value": list(ids),
-                    },
-                }
-            ],
-        },
-        "return_type": return_type,
-        "request_options": {
-            # Always at least as many rows as ids, so the whole set is on page 1.
-            "paginate": {"start": 0, "rows": max(25, len(ids))},
-            "results_content_type": ["experimental"],
-        },
-    }
-    payload = json.dumps(request, separators=(",", ":"))
-    return RCSB_SEARCH_URL + urllib.parse.quote(payload, safe="")
 
 
 # --------------------------------------------------------------------------
@@ -168,35 +102,12 @@ _ENV = _build_env()
 
 def render_report(req: ReportRequest, *, generated_at: datetime | None = None) -> str:
     """Render a ReportRequest to a complete, self-contained HTML document."""
-    ids = list(req.collection.ids)
-    if not ids and req.collection.enabled:
-        id_col = req.identifier_column()
-        if id_col is not None:
-            ids = [str(row[id_col.key]) for row in req.rows if row.get(id_col.key)]
-
-    collection_url = None
-    if req.collection.enabled and ids:
-        try:
-            collection_url = build_collection_url(
-                ids,
-                return_type=req.collection.return_type,
-                attribute=req.collection.attribute,
-            )
-        except ValueError:
-            # An unresolvable return_type/attribute must not sink the whole report:
-            # omit the "explore in RCSB.org" link rather than raising, so rendering
-            # a (possibly untrusted) request can never crash. Direct callers of
-            # build_collection_url still get the loud error.
-            collection_url = None
-
     stamp = generated_at or datetime.now(timezone.utc)
 
     return _ENV.get_template("report.html.j2").render(
         req=req,
         fragments=_render_fragments,
         cell=_render_cell,
-        collection_url=collection_url,
-        collection_count=len(ids),
         template_version=TEMPLATE_VERSION,
         generated_at=stamp.strftime("%Y-%m-%d %H:%M UTC"),
     )

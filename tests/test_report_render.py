@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import urllib.parse
 from datetime import datetime, timezone
 
 import pytest
@@ -15,12 +13,10 @@ from rcsb_mcp.report import (
     Block,
     Column,
     ColumnKind,
-    CollectionLink,
     DataUsageItem,
     Fragment,
     QuerySummary,
     ReportRequest,
-    build_collection_url,
     render_report,
 )
 
@@ -159,7 +155,6 @@ def test_columns_can_be_reordered_and_replaced():
             Column(key="weight", label="Weight", kind=ColumnKind.NUMERIC),
         ],
         rows=[{"comp_id": "ATP", "formula": "C10 H16 N5 O13 P3", "weight": 507.181}],
-        collection=CollectionLink(return_type="mol_definition"),
     )
     html = render_report(req, generated_at=FIXED)
     assert "https://www.rcsb.org/ligand/ATP" in html
@@ -176,50 +171,6 @@ def test_unknown_row_key_is_rejected():
         )
 
 
-# --------------------------------------------------------------------------
-# Collection URL
-# --------------------------------------------------------------------------
-
-
-def test_collection_url_roundtrips_to_valid_json():
-    url = build_collection_url(["101M", "1ASH", "4HHB"])
-    assert url.startswith("https://www.rcsb.org/search?request=")
-    payload = urllib.parse.unquote(url.split("request=", 1)[1])
-    parsed = json.loads(payload)
-    assert parsed["return_type"] == "entry"
-    terminal = parsed["query"]["nodes"][0]
-    assert terminal["parameters"]["value"] == ["101M", "1ASH", "4HHB"]
-    assert terminal["parameters"]["attribute"] == "rcsb_entry_container_identifiers.entry_id"
-
-
-def test_collection_rows_are_large_enough_for_the_set():
-    url = build_collection_url([f"{i:04d}" for i in range(60)])
-    parsed = json.loads(urllib.parse.unquote(url.split("request=", 1)[1]))
-    assert parsed["request_options"]["paginate"]["rows"] >= 60
-
-
-def test_ids_are_derived_from_the_identifier_column():
-    html = render_report(_minimal(), generated_at=FIXED)
-    assert "www.rcsb.org/search?request=" in html
-    assert "Open 1 result in RCSB.org Advanced Search" in html
-
-
-def test_collection_link_can_be_disabled():
-    req = _minimal(collection=CollectionLink(enabled=False))
-    html = render_report(req, generated_at=FIXED)
-    assert "Explore the final collection" not in html
-
-
-def test_mol_definition_uses_comp_id_attribute():
-    url = build_collection_url(["ATP"], return_type="mol_definition")
-    parsed = json.loads(urllib.parse.unquote(url.split("request=", 1)[1]))
-    terminal = parsed["query"]["nodes"][0]
-    assert terminal["parameters"]["attribute"] == "rcsb_chem_comp_container_identifiers.comp_id"
-
-
-def test_unknown_return_type_gives_actionable_error():
-    with pytest.raises(ValueError, match="pass collection.attribute explicitly"):
-        build_collection_url(["X"], return_type="interface")
 
 
 # --------------------------------------------------------------------------
@@ -252,7 +203,6 @@ def test_empty_results_render_the_no_results_block():
     html = render_report(req, generated_at=FIXED)
     assert "No matching structures were found." in html
     assert "<table>" not in html
-    assert "Explore the final collection" not in html
 
 
 # --------------------------------------------------------------------------
@@ -277,7 +227,6 @@ def test_all_required_sections_appear_in_fixed_order():
         "Results",
         "Data usage summary",
         "Interpretation",
-        "Explore the final collection in RCSB.org",
     ]
     positions = [html.index(s) for s in order]
     assert positions == sorted(positions)

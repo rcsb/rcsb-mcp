@@ -37,13 +37,10 @@
  .legend { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .6rem .8rem; font-size: .9rem; }
  .params { background: #f0f4f7; border-left: 4px solid var(--rcsb-blue); padding: .6rem .9rem; font-size: .9rem; }
  .empty { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .8rem 1rem; }
- .final { display: inline-block; margin-top: 1rem; background: var(--rcsb-blue); color: #fff;
-          padding: .7rem 1.1rem; border-radius: 5px; text-decoration: none; font-weight: 600; }
- .final:hover { background: #0d3d5e; }
  ol li, ul li { margin-bottom: .35rem; }
  footer { margin-top: 3rem; padding-top: .8rem; border-top: 1px solid var(--rcsb-rule);
           font-size: .78rem; color: #667; }
- @media print { th { position: static; } .final { color: #000; background: none; border: 1px solid #000; } }
+ @media print { th { position: static; } }
 </style>
 </head>
 <body>
@@ -143,13 +140,6 @@
 {% for block in req.interpretation %}
 <p>{{ fragments(block.body) }}</p>
 {% endfor %}
-{% endif %}
-
-{% if collection_url %}
-<h2>Explore the final collection in RCSB.org</h2>
-<a class="final" href="{{ collection_url }}" target="_blank" rel="noopener">
-  Open {{ collection_count }} result{{ '' if collection_count == 1 else 's' }} in RCSB.org Advanced Search &rarr;
-</a>
 {% endif %}
 
 <footer>

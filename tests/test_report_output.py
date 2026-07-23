@@ -14,12 +14,11 @@ The codec and the /r endpoint are covered in test_report_link.py.
 from __future__ import annotations
 
 import asyncio
-import json
 
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from rcsb_mcp.report import build_collection_url, tools as report_tools
+from rcsb_mcp.report import tools as report_tools
 
 MINIMAL = {
     "report": {
@@ -104,23 +103,3 @@ def test_fallback_html_is_emitted_in_both_content_and_structured(no_base_url):
     in_content = any("<!DOCTYPE html>" in (getattr(c, "text", "") or "") for c in content)
     assert in_content, "html should appear in a content[] text block"
     assert structured["html"].startswith("<!DOCTYPE html>"), "and in structuredContent"
-
-
-# --------------------------------------------------------------------------
-# Collection URL shape
-# --------------------------------------------------------------------------
-
-
-def test_collection_query_stays_flat():
-    """One group wrapping one terminal.
-
-    The RCSB.org query builder needs the group to render the condition but not
-    the two further nested groups this used to emit; verified against the live
-    site.
-    """
-    import urllib.parse
-
-    url = build_collection_url(["101M", "1ASH"])
-    query = json.loads(urllib.parse.unquote(url.split("request=", 1)[1]))["query"]
-    assert query["type"] == "group"
-    assert [n["type"] for n in query["nodes"]] == ["terminal"]

@@ -62,8 +62,7 @@ in this order — do not add, drop, reorder, or rename them.
 6. **Evidence** — the per-row justification (see **Evidence** below).
 
 The only exception is a chemical-component (ligand) search: replace column 1 with
-**Ligand ID** (`kind: "ligand_id"`) and set `collection.return_type: "mol_definition"`;
-columns 2–6 are unchanged.
+**Ligand ID** (`kind: "ligand_id"`); columns 2–6 are unchanged.
 
 For answers that aren't a result table (counts, facet breakdowns, a single
 entity), answer in prose or a small inline table; don't force them through the

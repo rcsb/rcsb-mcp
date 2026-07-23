@@ -12,7 +12,6 @@ from .models import (
     AttributeCondition,
     Block,
     Cell,
-    CollectionLink,
     Column,
     ColumnKind,
     DataUsageItem,
@@ -20,14 +19,13 @@ from .models import (
     QuerySummary,
     ReportRequest,
 )
-from .render import TEMPLATE_VERSION, build_collection_url, render_report
+from .render import TEMPLATE_VERSION, render_report
 
 __all__ = [
     "ApiCall",
     "AttributeCondition",
     "Block",
     "Cell",
-    "CollectionLink",
     "Column",
     "ColumnKind",
     "DataUsageItem",
@@ -36,7 +34,6 @@ __all__ = [
     "QuerySummary",
     "ReportRequest",
     "TEMPLATE_VERSION",
-    "build_collection_url",
     "decode_report",
     "encode_report",
     "render_report",

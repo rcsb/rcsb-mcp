@@ -147,17 +147,16 @@ def test_endpoint_rejects_bomb(client):
     assert client.get("/r", params={"d": bomb}).status_code == 400
 
 
-def test_endpoint_does_not_500_on_unresolvable_collection_link(client):
-    """A schema-valid report whose collection link can't resolve renders (no link), not 500."""
+def test_endpoint_rejects_unknown_fields(client):
+    """The schema is strict (extra=forbid): a stray field is a 400, not a 500."""
     token = link.encode_report(json.dumps({
         "title": "x",
         "columns": [{"key": "pdb_id", "label": "PDB ID", "kind": "pdb_id"}],
         "rows": [{"pdb_id": "AAAA"}],
-        "collection": {"return_type": "zzz_bogus", "enabled": True},
+        "collection": {"return_type": "entry"},  # removed field
     }))
     r = client.get("/r", params={"d": token})
-    assert r.status_code == 200, "unresolvable collection link must degrade, not crash"
-    assert "Explore the final collection" not in r.text  # the link is simply omitted
+    assert r.status_code == 400
 
 
 def test_endpoint_error_responses_are_hardened(client):

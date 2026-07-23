@@ -108,8 +108,6 @@ def register_report_tools(mcp: Any) -> None:
                 value, or a list of fragments for mixed provenance. Missing or null
                 values render as "NA".
             data_usage: ordered narrative of how each call shaped the final set.
-            collection: controls the trailing Advanced Search link; IDs are taken
-                from the pdb_id/ligand_id column unless you set them explicitly.
 
         Returns:
             RenderReportResult with EITHER a `url` or `html` (never both), plus

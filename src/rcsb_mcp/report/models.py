@@ -22,7 +22,6 @@ __all__ = [
     "ApiCall",
     "DataUsageItem",
     "Block",
-    "CollectionLink",
     "ReportRequest",
 ]
 
@@ -157,24 +156,6 @@ class Block(_Strict):
     body: list[Fragment] = Field(..., min_length=1)
 
 
-class CollectionLink(_Strict):
-    """Controls the final 'explore in RCSB.org' link."""
-
-    ids: list[str] = Field(
-        default_factory=list,
-        description=(
-            "The exact identifiers in the final results table. Leave empty to derive them from "
-            "the column whose kind is pdb_id / ligand_id."
-        ),
-    )
-    return_type: str = Field(default="entry", description="'entry' for structures, 'mol_definition' for ligands.")
-    attribute: str | None = Field(
-        default=None,
-        description="Override the search attribute; defaults to the right one for return_type.",
-    )
-    enabled: bool = Field(default=True, description="Set false when a collection link does not apply.")
-
-
 # --------------------------------------------------------------------------
 # Top-level request
 # --------------------------------------------------------------------------
@@ -202,7 +183,6 @@ class ReportRequest(_Strict):
         default_factory=list,
         description="Shown instead of the table when rows is empty; explain the search limitations here.",
     )
-    collection: CollectionLink = Field(default_factory=CollectionLink)
 
     @model_validator(mode="after")
     def _check_rows_against_columns(self) -> ReportRequest:
@@ -217,10 +197,3 @@ class ReportRequest(_Strict):
                     f"Declared column keys are {sorted(keys)}."
                 )
         return self
-
-    def identifier_column(self) -> Column | None:
-        """The column holding the identifiers used for the collection link."""
-        for col in self.columns:
-            if col.kind in (ColumnKind.PDB_ID, ColumnKind.LIGAND_ID):
-                return col
-        return None
