@@ -1999,6 +1999,7 @@ async def rcsb_search_combined(
     sort_direction: SortDirection = "asc",
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
+    return_filter_only: bool = False
 ) -> dict[str, Any]:
     """Search with several constraints — and, optionally, several SERVICES — at once.
 
