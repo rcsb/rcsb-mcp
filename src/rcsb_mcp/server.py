@@ -2114,6 +2114,10 @@ async def rcsb_search_combined(
     query = nodes[0] if len(nodes) == 1 else {
         "type": "group", "logical_operator": logical_operator, "nodes": nodes,
     }
+
+    if return_filter_only:
+        return query
+
     body = {"query": query, "return_type": return_type, "request_options": request_options}
 
     raw = await _post_search(body)
