@@ -927,8 +927,10 @@ async def rcsb_search_fulltext(
             text_chem service; usually pair with return_type="mol_definition").
         facets: Optional aggregation specs to return a breakdown / distribution of the matches instead of
             hits (see the faceting note in the server instructions for the spec).
-        sort_by: Attribute path to sort by (e.g. "rcsb_entry_info.resolution_combined");
-            omit to sort by relevance score.
+        sort_by: Attribute path to order the hits by; omit to sort by relevance score. Only
+            SORTABLE attributes work: those listing exact_match (strings) or equals (numbers/
+            dates) in rcsb_list_pdb_search_attributes; full-text-only attributes (e.g.
+            struct.title) and return_type="mol_definition" are rejected.
         sort_direction: "asc" (default) or "desc" for sort_by.
         group_by: Collapse redundant polymer_entity hits into clusters, returning one
             representative each — "seqid_30"/"seqid_50"/"seqid_70"/"seqid_90"/"seqid_95"
@@ -2048,8 +2050,10 @@ async def rcsb_search_combined(
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging (default 0); pass the response's
             next_offset back with the same query to fetch the next page.
-        sort_by: Attribute to sort by, e.g. "rcsb_entry_info.resolution_combined".
-            Omit to sort by relevance score.
+        sort_by: Attribute path to order the hits by; omit to sort by relevance score. Only
+            SORTABLE attributes work: those listing exact_match (strings) or equals (numbers/
+            dates) in rcsb_list_pdb_search_attributes; full-text-only attributes (e.g.
+            struct.title) and return_type="mol_definition" are rejected.
         sort_direction: "asc" (default) or "desc" for sort_by.
         group_by: Collapse redundant polymer_entity hits into clusters, returning one
             representative each — "seqid_30"/"seqid_50"/"seqid_70"/"seqid_90"/"seqid_95"
