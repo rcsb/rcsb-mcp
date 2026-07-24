@@ -307,6 +307,12 @@ def test_count_query():
 
 
 def test_strucmotif():
+    exchanges = [
+        {
+            "residue_id": {"label_asym_id": "A", "label_seq_id": 162},
+            "allowed": ["LYS", "HIS"],
+        }
+    ]
     q = queries.build_strucmotif_query(
         "2mnr",
         residue_ids=[
@@ -314,6 +320,7 @@ def test_strucmotif():
             {"label_asym_id": "A", "label_seq_id": 193},
             {"label_asym_id": "A", "label_seq_id": 219, "struct_oper_id": "1"},
         ],
+        exchanges=exchanges,
         rmsd_cutoff=1.5,
     )
     p = q["query"]["parameters"]
@@ -323,9 +330,71 @@ def test_strucmotif():
     assert p["value"]["residue_ids"][2]["struct_oper_id"] == "1"
     assert p["rmsd_cutoff"] == 1.5
     assert p["atom_pairing_scheme"] == "SIDE_CHAIN" and p["motif_pruning_strategy"] == "KRUSKAL"
+    assert p["exchanges"] == exchanges
     assert q["return_type"] == "polymer_entity"
     assert q["request_options"]["scoring_strategy"] == "strucmotif"
     print("ok: strucmotif")
+
+
+def test_strucmotif_exchange_validation():
+    residue_ids = [
+        {"label_asym_id": "A", "label_seq_id": seq_id}
+        for seq_id in range(1, 6)
+    ]
+
+    def error_message(exchanges):
+        try:
+            queries.build_strucmotif_query(
+                "2MNR", residue_ids=residue_ids, exchanges=exchanges
+            )
+        except ValueError as exc:
+            return str(exc)
+        raise AssertionError("expected ValueError")
+
+    unmatched = [
+        {
+            "residue_id": {"label_asym_id": "B", "label_seq_id": 1},
+            "allowed": ["LYS"],
+        }
+    ]
+    assert "must exactly match one of residue_ids" in error_message(unmatched)
+
+    empty_allowed = [
+        {
+            "residue_id": {"label_asym_id": "A", "label_seq_id": 1},
+            "allowed": [],
+        }
+    ]
+    assert "between 1 and 4 residues; got 0" in error_message(empty_allowed)
+
+    too_many_for_position = [
+        {
+            "residue_id": {"label_asym_id": "A", "label_seq_id": 1},
+            "allowed": ["ALA", "GLY", "SER", "THR", "VAL"],
+        }
+    ]
+    assert "between 1 and 4 residues; got 5" in error_message(too_many_for_position)
+
+    maximum_valid = [
+        {
+            "residue_id": {"label_asym_id": "A", "label_seq_id": index + 1},
+            "allowed": ["ALA", "GLY", "SER", "THR"],
+        }
+        for index in range(4)
+    ]
+    queries.build_strucmotif_query(
+        "2MNR", residue_ids=residue_ids, exchanges=maximum_valid
+    )
+
+    too_many_total = [
+        {
+            "residue_id": {"label_asym_id": "A", "label_seq_id": index + 1},
+            "allowed": ["ALA", "GLY", "SER", "THR"] if index < 4 else ["VAL"],
+        }
+        for index in range(5)
+    ]
+    assert "at most 16 allowed residues in total; got 17" in error_message(too_many_total)
+    print("ok: strucmotif exchange validation")
 
 
 def test_chemical_attribute_service():
@@ -631,6 +700,7 @@ if __name__ == "__main__":
     test_facet_query()
     test_count_query()
     test_strucmotif()
+    test_strucmotif_exchange_validation()
     test_service_refinement_and_facets()
     test_chemical_attribute_service()
     test_validation_errors()

@@ -696,6 +696,60 @@ def _strucmotif_residue(r: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _validate_strucmotif_exchanges(
+    residue_ids: list[dict[str, Any]],
+    exchanges: list[dict[str, Any]] | None,
+) -> None:
+    """Validate position-specific exchanges against their structural motif."""
+    if exchanges is None:
+        return
+
+    motif_residues = [_strucmotif_residue(residue) for residue in residue_ids]
+    total_allowed = 0
+    for index, exchange in enumerate(exchanges):
+        if not isinstance(exchange, dict):
+            raise ValueError(
+                f"exchanges[{index}] must be a dict with 'residue_id' and 'allowed' keys"
+            )
+
+        residue_id = exchange.get("residue_id")
+        if not isinstance(residue_id, dict):
+            raise ValueError(
+                f"exchanges[{index}].residue_id must be a dict with "
+                "'label_asym_id', 'label_seq_id', and optional 'struct_oper_id'"
+            )
+        try:
+            exchange_residue = _strucmotif_residue(residue_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"exchanges[{index}].residue_id is invalid: {exc}"
+            ) from None
+        if exchange_residue not in motif_residues:
+            raise ValueError(
+                f"exchanges[{index}].residue_id {exchange_residue} must exactly match "
+                "one of residue_ids, including struct_oper_id when present"
+            )
+
+        allowed = exchange.get("allowed")
+        if not isinstance(allowed, list):
+            raise ValueError(
+                f"exchanges[{index}].allowed must be a list containing 1 to 4 "
+                "three-letter residue codes"
+            )
+        if not 1 <= len(allowed) <= 4:
+            raise ValueError(
+                f"exchanges[{index}].allowed must contain between 1 and 4 residues; "
+                f"got {len(allowed)}"
+            )
+        total_allowed += len(allowed)
+
+    if total_allowed > 16:
+        raise ValueError(
+            "exchanges may specify at most 16 allowed residues in total; "
+            f"got {total_allowed}"
+        )
+
+
 def build_strucmotif_query(
     entry_id: str,
     residue_ids: list[dict[str, Any]],
@@ -733,6 +787,7 @@ def build_strucmotif_query(
     residues = [_strucmotif_residue(r) for r in (residue_ids or [])]
     if not 2 <= len(residues) <= 10:
         raise ValueError("provide between 2 and 10 residue_ids")
+    _validate_strucmotif_exchanges(residues, exchanges)
     for nm, val in (
         ("backbone_distance_tolerance", backbone_distance_tolerance),
         ("side_chain_distance_tolerance", side_chain_distance_tolerance),

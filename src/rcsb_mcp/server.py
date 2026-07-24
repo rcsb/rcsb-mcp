@@ -1847,7 +1847,9 @@ async def rcsb_search_strucmotif(
         exchanges: Optional position-specific residue substitutions. Each item is a dict
             {"residue_id": {"label_asym_id": <chain>, "label_seq_id": <int>,
             "struct_oper_id"?: <str>}, "allowed": [<three-letter residue codes>]}.
-            The residue_id should identify one of the residues in residue_ids. Example:
+            The residue_id must exactly match one of the residues in residue_ids. Each
+            allowed list must contain 1-4 residues, with at most 16 allowed residues
+            across all exchanges. Example:
             [{"residue_id":{"label_asym_id":"A","label_seq_id":162},
               "allowed":["LYS","HIS"]}].
         backbone_distance_tolerance: Backbone distance tolerance in Å, integer 0-3 (default 1).
