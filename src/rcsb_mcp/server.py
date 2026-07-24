@@ -1977,7 +1977,11 @@ def _validate_query_nodes(filters: list[dict[str, Any]]) -> None:
     for i, f in enumerate(filters):
         if not isinstance(f, dict):
             raise ValueError(f"filters[{i}] must be a dict, got {type(f).__name__}")
-        missing = [k for k in ("type", "service", "parameters") if k not in f]
+        if "logical_operator" in f:
+            missing = [k for k in ("type", "logical_operator", "nodes") if k not in f]
+            _validate_query_nodes(f["nodes"])
+        else:
+            missing = [k for k in ("type", "service", "parameters") if k not in f]
         if missing:
             raise ValueError(
                 f"filters[{i}] is missing required key(s) {missing}; expected a query node "
