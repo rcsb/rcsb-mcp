@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import link
+from . import enrich, link
 from .models import ReportRequest
 from .render import TEMPLATE_VERSION, render_report
 from .store import REPORT_STORE
@@ -88,8 +88,13 @@ def _report_link_mode() -> str:
     return "SHORT /r/<id> — resolvable ONLY by a process sharing this store"
 
 
-def register_report_tools(mcp: Any) -> None:
-    """Attach the report tools to a FastMCP server instance."""
+def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = None) -> None:
+    """Attach the report tools to a FastMCP server instance.
+
+    ``entry_fetcher`` is injected by the server (it owns the HTTP client) so the
+    report package keeps no network dependency of its own and stays testable
+    offline. Left None, the tool renders exactly what the agent supplied.
+    """
     logging.getLogger(__name__).warning(
         "rcsb-mcp report links: %s | base_url=%s | store=%s(shared=%s)",
         _report_link_mode(),
@@ -105,7 +110,9 @@ def register_report_tools(mcp: Any) -> None:
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
-            "openWorldHint": False,
+            # True since the tool fills Title/Organism/Method/Resolution from the
+            # Data API: it now reaches an external service like every other rcsb_* tool.
+            "openWorldHint": True,
         },
     )
     async def rcsb_render_report(params: RenderReportInput) -> RenderReportResult:
@@ -128,7 +135,10 @@ def register_report_tools(mcp: Any) -> None:
                 "organism" for italics, "numeric" for right alignment.
             rows: one dict per result keyed by column key. A cell may be a plain
                 value, or a list of fragments for mixed provenance. Missing or null
-                values render as "NA".
+                values render as "NA". For a PDB-entry table, supply ONLY the id and
+                evidence cells — the ``title``/``organism``/``method``/``resolution``
+                columns are fetched server-side from the ids and OVERWRITE anything
+                you send, so sending them only wastes tokens.
             data_usage: ordered narrative of how each call shaped the final set;
                 each item's body is a list of provenance-tagged fragments
                 ``{"text": ..., "model_supplied": bool}`` — model_supplied true for
@@ -142,6 +152,13 @@ def register_report_tools(mcp: Any) -> None:
             the output instructions in the pdb_assistant prompt.
         """
         report = params.report
+
+        # Fill Title/Organism/Method/Resolution from the entry ids before rendering.
+        # Best-effort: a failure here leaves those cells as "NA" rather than losing
+        # the report (see report/enrich.py).
+        if entry_fetcher is not None:
+            await enrich.fill_from_entries(report, entry_fetcher)
+
         report_json = report.model_dump_json(exclude_defaults=True)
 
         # Render up front: it is cheap, it surfaces a malformed report to the caller

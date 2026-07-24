@@ -385,11 +385,31 @@ Return types and fetching details:
     transport_security=_transport_security(),
 )
 
-from rcsb_mcp.report import link as report_link, render_report
+from rcsb_mcp.report import enrich as report_enrich, link as report_link, render_report
 from rcsb_mcp.report.models import ReportRequest
 from rcsb_mcp.report.store import REPORT_STORE, URL_ID_RE
 from rcsb_mcp.report.tools import register_report_tools
-register_report_tools(mcp)
+
+
+async def _fetch_report_entries(ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch the server-filled report columns for `ids` in one Data-API round trip.
+
+    Injected into the report tool so the report package owns no HTTP client.
+    `_graphql_field` is defined further down this module and resolved at call
+    time, which is why this can be declared here, above it.
+    """
+    body = {"query": report_enrich.ENTRY_FIELDS_QUERY, "variables": {"ids": ids}}
+    entries = await _graphql_field(body, "entries")
+    if entries is None:
+        # A 200 whose JSON carries neither `data.entries` nor `errors` (a WAF/CDN block
+        # page, a maintenance body, a field rename) must NOT look like "resolved, no such
+        # entries" — that would blank every cell in the table. Raise so the caller treats
+        # it as a failed chunk and keeps what the agent supplied.
+        raise RuntimeError("Data API returned no `entries` field")
+    return entries
+
+
+register_report_tools(mcp, entry_fetcher=_fetch_report_entries)
 
 
 # --------------------------------------------------------------------------- #
