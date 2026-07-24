@@ -1809,6 +1809,7 @@ async def rcsb_search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
 async def rcsb_search_strucmotif(
     entry_id: str,
     residue_ids: list[dict[str, Any]],
+    exchanges: list[dict[str, Any]] | None = None,
     backbone_distance_tolerance: Tolerance = 1,
     side_chain_distance_tolerance: Tolerance = 1,
     angle_tolerance: Tolerance = 1,
@@ -1846,6 +1847,12 @@ async def rcsb_search_strucmotif(
             [{"label_asym_id":"A","label_seq_id":162},
              {"label_asym_id":"A","label_seq_id":193},
              {"label_asym_id":"A","label_seq_id":219}]
+        exchanges: Optional position-specific residue substitutions. Each item is a dict
+            {"residue_id": {"label_asym_id": <chain>, "label_seq_id": <int>,
+            "struct_oper_id"?: <str>}, "allowed": [<three-letter residue codes>]}.
+            The residue_id should identify one of the residues in residue_ids. Example:
+            [{"residue_id":{"label_asym_id":"A","label_seq_id":162},
+              "allowed":["LYS","HIS"]}].
         backbone_distance_tolerance: Backbone distance tolerance in Å, integer 0-3 (default 1).
         side_chain_distance_tolerance: Side-chain distance tolerance in Å, integer 0-3 (default 1).
         angle_tolerance: Angle tolerance in multiples of 20°, integer 0-3 (default 1).
@@ -1885,6 +1892,7 @@ async def rcsb_search_strucmotif(
     body = queries.build_strucmotif_query(
         entry_id,
         residue_ids,
+        exchanges=exchanges,
         backbone_distance_tolerance=backbone_distance_tolerance,
         side_chain_distance_tolerance=side_chain_distance_tolerance,
         angle_tolerance=angle_tolerance,
