@@ -2,13 +2,15 @@
 
 The tool returns EITHER a ``url`` or ``html``, never both:
 
-* ``url`` — the preferred path. A self-contained link that renders the report on
-  demand from the data packed into it (see report/link.py); the server stores
-  nothing. The agent relays the link and never reproduces the document.
+* ``url`` — the preferred path. A short ``/r/<id>`` link; opening it redirects to a
+  self-contained URL that renders the report on demand (see report/link.py). The id
+  maps to the packed token in a short-TTL store; if the store is down the tool emits
+  the fat ``/r?d=`` URL instead. The agent relays the link and never reproduces it.
 * ``html`` — the fallback, returned only when no render endpoint is configured
   (``RCSB_MCP_REPORT_BASE_URL`` unset) or the report is too big to pack into a URL.
 
-The codec and the /r endpoint are covered in test_report_link.py.
+The codec, the store, and the /r endpoints are covered in test_report_link.py and
+test_report_store.py.
 """
 
 from __future__ import annotations
@@ -41,6 +43,17 @@ def with_base_url(monkeypatch):
     return "https://reports.example.org"
 
 
+@pytest.fixture
+def shared_store(monkeypatch):
+    """A shared store, so the tool takes the short-link path (not the fat-URL fallback)."""
+    from rcsb_mcp.report.store import InMemoryReportStore
+
+    store = InMemoryReportStore()
+    store.shared = True
+    monkeypatch.setattr(report_tools, "REPORT_STORE", store)
+    return store
+
+
 def _invoke(**params):
     """Call the registered tool, returning (content_blocks, structured_result)."""
     mcp = FastMCP("test")
@@ -57,11 +70,50 @@ def _structured(**params) -> dict:
 # --------------------------------------------------------------------------
 
 
-def test_returns_a_link_when_a_base_url_is_configured(with_base_url):
+def test_returns_a_short_link_with_a_shared_store(with_base_url, shared_store):
     res = _structured(**MINIMAL)
-    assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r?d=")
+    assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r/")
+    assert "?d=" not in res["url"], "the agent gets the short link, not the fat packed URL"
     assert res["html"] is None, "must not also ship the markup when a link is returned"
     assert res["row_count"] == 2
+
+
+def test_short_link_id_resolves_to_the_report_token_in_the_store(with_base_url, shared_store):
+    """The short link's id must map, in the store, to the exact token that renders."""
+    from rcsb_mcp.report import link
+
+    res = _structured(**MINIMAL)
+    url_id = res["url"].rsplit("/", 1)[-1]
+    token = shared_store.get(url_id)
+    assert token is not None, "the tool must have stored the token under the id"
+    # The stored token is the self-contained payload the /r?d= endpoint renders.
+    assert "Iron-type nitrile hydratases" in link.decode_report(token)
+
+
+def test_emits_the_fat_url_when_the_store_is_not_shared(with_base_url, monkeypatch):
+    """The dead-link fix: a process-local store must NOT mint a short link that would
+    410 on another replica — the tool emits the self-contained /r?d= URL instead."""
+    from rcsb_mcp.report.store import InMemoryReportStore
+
+    monkeypatch.setattr(report_tools, "REPORT_STORE", InMemoryReportStore())  # shared=False
+    res = _structured(**MINIMAL)
+    assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r?d=")
+    assert res["html"] is None
+
+
+def test_falls_back_to_fat_url_when_a_shared_store_write_fails(with_base_url, monkeypatch):
+    """A shared-store write failure (e.g. Redis down) must degrade to /r?d=, not html."""
+
+    class _DeadSharedStore:
+        shared = True
+
+        def put(self, token):  # noqa: ARG002 — simulates an unreachable shared store
+            return None
+
+    monkeypatch.setattr(report_tools, "REPORT_STORE", _DeadSharedStore())
+    res = _structured(**MINIMAL)
+    assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r?d=")
+    assert res["html"] is None
 
 
 def test_falls_back_to_html_when_no_base_url(no_base_url):
@@ -89,6 +141,29 @@ def test_oversized_report_falls_back_to_html_even_with_a_base_url(with_base_url,
     monkeypatch.setattr(report_tools, "MAX_URL_BYTES", 200)  # force the ceiling
     res = _structured(**MINIMAL)
     assert res["url"] is None
+    assert res["html"].startswith("<!DOCTYPE html>")
+
+
+def test_multibyte_report_over_the_byte_cap_falls_back_to_html(with_base_url):
+    """Fix [3]: the emit gate measures UTF-8 BYTES, not characters. A multibyte report
+    whose char count is UNDER MAX_DECOMPRESSED but whose byte count is OVER it must fall
+    back to html — the /r endpoint bounds decompressed BYTES and would reject the link.
+    (A char-length gate would wrongly emit it, so this fails if fix [3] is reverted.)"""
+    from rcsb_mcp.report import link
+    from rcsb_mcp.report.models import ReportRequest
+
+    big = {
+        "title": "probe",
+        "columns": [{"key": "pdb_id", "label": "P", "kind": "pdb_id"}, {"key": "t", "label": "T"}],
+        "rows": [{"pdb_id": "AAAA", "t": "あ" * 70_000}],  # 70k chars, 210k UTF-8 bytes
+    }
+    report_json = ReportRequest(**big).model_dump_json(exclude_defaults=True)
+    assert len(report_json) < link.MAX_DECOMPRESSED, "char length is under the cap (a char gate would emit)"
+    assert len(report_json.encode("utf-8")) > link.MAX_DECOMPRESSED, "but byte length is over it"
+    assert len(link.encode_report(report_json)) < 2000, "compresses tiny, so the fat_url gate is NOT the rejecter"
+
+    res = _structured(report=big)
+    assert res["url"] is None, "must not emit a link the endpoint would reject on decompressed bytes"
     assert res["html"].startswith("<!DOCTYPE html>")
 
 

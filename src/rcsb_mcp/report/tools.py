@@ -6,6 +6,8 @@ decorated function into wherever your existing ``rcsb_*`` tools are defined.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from typing import Any
 
@@ -14,15 +16,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from . import link
 from .models import ReportRequest
 from .render import TEMPLATE_VERSION, render_report
+from .store import REPORT_STORE
 
 __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
 
 # Public origin that serves the report render endpoint (GET /r?d=...). Set it in the
-# deployment (e.g. https://rcsb-mcp.rcsb.org) and the tool hands back a self-contained
-# link instead of the markup, so the agent never has to reproduce the document. Left
-# unset -- local stdio dev with no reachable endpoint -- the tool falls back to
-# returning `html`, and the client writes the file the old way.
-_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "http://localhost:8080").strip()
+# deployment (e.g. https://rcsb-mcp.rcsb.org) and the tool hands back a link instead of
+# the markup, so the agent never has to reproduce the document. It MUST default to empty
+# (not localhost): unset then means REPORT_BASE_URL is None and the tool falls back to
+# `html` — the safe behavior for stdio dev and any deployment that hasn't set a real,
+# remote-reachable origin. A non-empty default would emit dead http://localhost links to
+# remote users. The dev server sets this explicitly (scripts/dev-server.sh).
+_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "").strip()
 REPORT_BASE_URL = _BASE_ENV.rstrip("/") or None
 
 # Above this the packed link is too long to be a safe URL (browsers and the ingress
@@ -41,17 +46,18 @@ class RenderReportInput(BaseModel):
 class RenderReportResult(BaseModel):
     """Structured result of rcsb_render_report.
 
-    Returns EITHER ``url`` or ``html``, never both. ``url`` is a self-contained link
-    that renders the report on demand from the data packed into it — the server
-    stores nothing, so any replica serves any link. It is the deliverable: hand it to
-    the user, do not fetch or reproduce it. ``html`` is the fallback for when no
-    render endpoint is reachable (or the report is too large to pack into a URL).
+    Returns EITHER ``url`` or ``html``, never both. ``url`` is a short link to the
+    rendered report; opening it redirects to a self-contained URL that renders the
+    report on demand, so the page the user lands on needs nothing stored server-side.
+    It is the deliverable: hand it to the user, do not fetch or reproduce it.
+    ``html`` is the fallback for when no render endpoint is reachable (or the report
+    is too large to pack into a URL).
     """
 
     url: str | None = Field(
         default=None,
         description=(
-            "Self-contained link to the rendered report. When set, THIS is the deliverable — "
+            "Short link to the rendered report. When set, THIS is the deliverable — "
             "give it to the user as a clickable link. Do not open it, fetch it, or reproduce "
             "anything from it."
         ),
@@ -67,8 +73,30 @@ class RenderReportResult(BaseModel):
     template_version: str = Field(..., description="Version of the report template used.")
 
 
+def _report_link_mode() -> str:
+    """One-line description of what rcsb_render_report will actually hand back.
+
+    Which of the three modes is active depends on env read at import, so it is
+    invisible until a report is rendered. Logging it at startup turns "why did I
+    get html / a long URL / a dead /r/<id>?" into something you can read off the
+    server's first lines instead of bisecting the config.
+    """
+    if REPORT_BASE_URL is None:
+        return "OFF — returning html (set RCSB_MCP_REPORT_BASE_URL to emit links)"
+    if not REPORT_STORE.shared:
+        return "LONG /r?d= — self-contained (set RCSB_MCP_REPORT_SHARED_STORE=true, single process only, or RCSB_MCP_REDIS_URL, for short links)"
+    return "SHORT /r/<id> — resolvable ONLY by a process sharing this store"
+
+
 def register_report_tools(mcp: Any) -> None:
     """Attach the report tools to a FastMCP server instance."""
+    logging.getLogger(__name__).warning(
+        "rcsb-mcp report links: %s | base_url=%s | store=%s(shared=%s)",
+        _report_link_mode(),
+        REPORT_BASE_URL or "<unset>",
+        type(REPORT_STORE).__name__,
+        REPORT_STORE.shared,
+    )
 
     @mcp.tool(
         name="rcsb_render_report",
@@ -122,13 +150,23 @@ def register_report_tools(mcp: Any) -> None:
         html: str | None = render_report(report)
 
         url: str | None = None
-        if REPORT_BASE_URL is not None and len(report_json) <= link.MAX_DECOMPRESSED:
-            # Both gates must match the /r endpoint's accept criteria so we never emit
-            # a link it would reject: it caps the DECOMPRESSED payload (checked above),
-            # and browsers/ingress cap the URL length (checked here).
-            candidate = f"{REPORT_BASE_URL}/r?d={link.encode_report(report_json)}"
-            if len(candidate) <= MAX_URL_BYTES:
-                url = candidate
+        # Gate on the DECOMPRESSED byte length (what the /r endpoint bounds), not the
+        # str length — a multibyte report has more bytes than characters.
+        if REPORT_BASE_URL is not None and len(report_json.encode("utf-8")) <= link.MAX_DECOMPRESSED:
+            # The redirect target — and the fat-URL fallback — is /r?d=<token>. Gate on
+            # ITS length (not the short link's): browsers/ingress cap the request line.
+            # Both gates match the /r endpoint's accept criteria, so we never hand back a
+            # link it would reject.
+            token = link.encode_report(report_json)
+            fat_url = f"{REPORT_BASE_URL}/r?d={token}"
+            if len(fat_url) <= MAX_URL_BYTES:
+                # Mint the short /r/<id> link (cheap for the model to emit) ONLY against a
+                # store shared across replicas — else the id would 410 on another pod. A
+                # process-local store, or a shared write that fails, yields the fat URL,
+                # which needs no store and always renders. Offload the (possibly blocking,
+                # e.g. Redis-socket) write so it can't stall the event loop.
+                url_id = await asyncio.to_thread(REPORT_STORE.put, token) if REPORT_STORE.shared else None
+                url = f"{REPORT_BASE_URL}/r/{url_id}" if url_id else fat_url
                 html = None  # the link renders the document on demand instead
 
         return RenderReportResult(

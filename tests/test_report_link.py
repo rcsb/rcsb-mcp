@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import pytest
 from starlette.testclient import TestClient
@@ -167,25 +167,75 @@ def test_endpoint_error_responses_are_hardened(client):
 
 
 # --------------------------------------------------------------------------
+# /r/<id> short link: redirect to the self-contained URL, or an "expired" page
+# --------------------------------------------------------------------------
+
+
+def test_short_id_redirects_to_the_self_contained_url(client):
+    from rcsb_mcp.report.store import REPORT_STORE
+
+    token = _token(REPORT)
+    uid = REPORT_STORE.put(token)
+    r = client.get(f"/r/{uid}", follow_redirects=False)
+    assert r.status_code == 302
+    # A relative target, so it inherits the caller's host behind any ingress.
+    assert r.headers["location"] == f"/r?d={token}"
+
+
+def test_short_id_followed_renders_the_report(client):
+    from rcsb_mcp.report.store import REPORT_STORE
+
+    uid = REPORT_STORE.put(_token(REPORT))
+    r = client.get(f"/r/{uid}", follow_redirects=True)
+    assert r.status_code == 200
+    assert "NITRILE HYDRATASE" in r.text
+
+
+def test_unknown_short_id_shows_expired_page(client):
+    r = client.get("/r/" + "a" * 16, follow_redirects=False)
+    assert r.status_code == 410
+    assert "expired" in r.text.lower()
+    assert r.headers["cache-control"] == "no-store", "never cache a transient miss"
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.parametrize("bad", ["has%20space", "x" * 65, "no.dots"])
+def test_malformed_short_id_shows_expired_page(client, bad):
+    """A single-segment id that fails the charset/length gate is a 410, not a 500."""
+    r = client.get(f"/r/{bad}", follow_redirects=False)
+    assert r.status_code == 410
+
+
+# --------------------------------------------------------------------------
 # End-to-end: the tool's link resolves at the endpoint to the same document
 # --------------------------------------------------------------------------
 
 
-def test_tool_link_renders_at_endpoint(client, monkeypatch):
-    """The exact link the tool emits must render the report at /r."""
+def test_tool_short_link_renders_at_endpoint(client, monkeypatch):
+    """The exact short link the tool emits must resolve and render at /r/<id>."""
     import asyncio
 
     from mcp.server.fastmcp import FastMCP
 
+    from rcsb_mcp import server
     from rcsb_mcp.report import tools as report_tools
+    from rcsb_mcp.report.store import InMemoryReportStore
 
+    # A shared store so the tool takes the short-link path; the SAME instance must back
+    # the endpoint (the tool writes it, /r/<id> reads it).
+    store = InMemoryReportStore()
+    store.shared = True
     monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
+    monkeypatch.setattr(report_tools, "REPORT_STORE", store)
+    monkeypatch.setattr(server, "REPORT_STORE", store)
+
     mcp = FastMCP("test")
     report_tools.register_report_tools(mcp)
     _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": REPORT}}))
 
-    d = parse_qs(urlparse(res["url"]).query)["d"][0]
-    r = client.get("/r", params={"d": d})
+    assert "/r?d=" not in res["url"], "the tool hands back the short link, not the fat URL"
+    uid = urlparse(res["url"]).path.rsplit("/", 1)[-1]
+    r = client.get(f"/r/{uid}", follow_redirects=True)
     assert r.status_code == 200
     assert "NITRILE HYDRATASE" in r.text
 

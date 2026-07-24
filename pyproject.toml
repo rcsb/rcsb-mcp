@@ -16,6 +16,17 @@ dependencies = [
     "typing-extensions>=4.12",
 ]
 
+[project.optional-dependencies]
+# Shared store for the short report link (…/r/<id>) so it resolves across replicas.
+# Only needed for multi-replica HTTP deployment; install with `.[redis]`. Without it,
+# short links fall back to the self-contained …/r?d= link (see report/store.py).
+redis = ["redis>=5.0"]
+
+[dependency-groups]
+# Test deps. Declared here (not left to a manual venv install) so `uv sync` / `uv run`
+# keep them installed — otherwise a sync evicts pytest and the suite stops collecting.
+dev = ["pytest>=8"]
+
 [project.scripts]
 rcsb-mcp = "rcsb_mcp.server:main"
 

@@ -12,10 +12,13 @@ RUN groupadd --gid 1000 appuser \
     && useradd --create-home --uid 1000 --gid 1000 appuser
 
 # Install the package and its dependencies. Copy build metadata + source only
-# (keeps the layer cache friendly and the image lean).
+# (keeps the layer cache friendly and the image lean). The [redis] extra ships the
+# client for the shared short-link store, so setting RCSB_MCP_REDIS_URL actually
+# enables short report links across replicas (without it, `import redis` fails and
+# the tool falls back to self-contained links).
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install .
+RUN pip install '.[redis]'
 
 USER appuser
 

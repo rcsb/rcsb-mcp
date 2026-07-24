@@ -31,7 +31,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.cors import CORSMiddleware
-from starlette.responses import HTMLResponse, PlainTextResponse
+from starlette.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from rcsb_mcp.attribute_types import AttributeValueType, SearchAttribute, TextOperator
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
@@ -387,6 +387,7 @@ Return types and fetching details:
 
 from rcsb_mcp.report import link as report_link, render_report
 from rcsb_mcp.report.models import ReportRequest
+from rcsb_mcp.report.store import REPORT_STORE, URL_ID_RE
 from rcsb_mcp.report.tools import register_report_tools
 register_report_tools(mcp)
 
@@ -2617,6 +2618,47 @@ _REPORT_HEADERS = {
 }
 # Applied to the 400s too, so an error page is as inert as the report page.
 _REPORT_ERROR_HEADERS = {"X-Content-Type-Options": "nosniff", "X-Robots-Tag": "noindex, nofollow"}
+# An unknown short id might be a transient store miss (blip, or a link minted on
+# another replica), so never let a browser or CDN cache the "expired" answer.
+_EXPIRED_HEADERS = {**_REPORT_ERROR_HEADERS, "Cache-Control": "no-store"}
+
+# Inert, self-contained "this link expired" page for an unknown short report id.
+_EXPIRED_HTML = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report link expired</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+max-width:34rem;margin:4rem auto;padding:0 1rem;color:#1c1c1c;line-height:1.5}
+h1{font-size:1.3rem;color:#12507b;border-bottom:3px solid #12507b;padding-bottom:.4rem}</style>
+</head><body>
+<h1>This report link has expired</h1>
+<p>Short report links are temporary. This one is no longer available &mdash; it may have
+expired, or it was opened on a server that no longer holds it.</p>
+<p>Re-run your query to generate a fresh report.</p>
+</body></html>
+"""
+
+
+@mcp.custom_route("/r/{url_id}", methods=["GET"])
+async def redirect_report_link(request):
+    """Resolve a short report id to its self-contained URL and 302 there.
+
+    The id maps (in a short-TTL, ideally shared store) to the packed report token;
+    we redirect to ``/r?d=<token>`` — the durable, self-contained URL that renders
+    with nothing stored. An unknown id — expired, evicted, or minted on another
+    replica without a shared store — returns 410 with a friendly "expired" page.
+    """
+    url_id = request.path_params["url_id"]
+    if not URL_ID_RE.match(url_id):
+        return HTMLResponse(_EXPIRED_HTML, status_code=410, headers=_EXPIRED_HEADERS)
+    # Offload the (possibly blocking, e.g. Redis-socket) read so a store stall can't
+    # freeze the event loop and take the pod's liveness probe down with it.
+    token = await asyncio.to_thread(REPORT_STORE.get, url_id)
+    if not token:
+        return HTMLResponse(_EXPIRED_HTML, status_code=410, headers=_EXPIRED_HEADERS)
+    # Relative target: it inherits the caller's scheme/host, so the redirect works
+    # behind any ingress without this endpoint knowing its own public origin.
+    return RedirectResponse(f"/r?d={token}", status_code=302, headers=_REPORT_ERROR_HEADERS)
 
 
 @mcp.custom_route("/r", methods=["GET"])
