@@ -58,13 +58,13 @@
 <ol>
   {% for call in req.api_calls %}
   <li>
-    {%- if call.editor_url -%}
-      <a href="{{ call.editor_url }}" target="_blank" rel="noopener">{{ call.label }}</a>
+    {%- if call.editor -%}
+      <a href="{{ editor_href(call.editor) }}" target="_blank" rel="noopener">{{ call.label }}</a>
     {%- else -%}
       {{ call.label }}
     {%- endif -%}
     {%- if call.tool_name %} &mdash; <code>{{ call.tool_name }}</code>{% endif -%}
-    {%- if not call.editor_url %} <span class="non-tool-source">(no editor link for this tool)</span>{% endif -%}
+    {%- if not call.editor %} <span class="non-tool-source">(no editor link for this tool)</span>{% endif -%}
   </li>
   {% endfor %}
 </ol>

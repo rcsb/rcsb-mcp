@@ -93,9 +93,8 @@ def register_report_tools(mcp: Any) -> None:
         Key fields of ``report``:
             title: page heading describing the search.
             api_calls: one per Search/Data/Sequence-Coordinates call, using the
-                ``query_editor_url`` / ``graphiql_url`` the tool returned VERBATIM.
-                Resolver and discovery tools have no editor link — pass label and
-                tool_name only.
+                ``editor`` object the tool returned VERBATIM. Resolver and
+                discovery tools have no editor link — pass label and tool_name only.
             columns: the table schema — one entry per column, in display order.
                 Set ``kind`` to "pdb_id" / "ligand_id" / "uniprot" to get links,
                 "organism" for italics, "numeric" for right alignment.

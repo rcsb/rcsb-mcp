@@ -13,6 +13,7 @@ from .models import (
     Column,
     ColumnKind,
     DataUsageItem,
+    EditorLink,
     Fragment,
     ReportRequest,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "Column",
     "ColumnKind",
     "DataUsageItem",
+    "EditorLink",
     "Fragment",
     "LinkError",
     "ReportRequest",

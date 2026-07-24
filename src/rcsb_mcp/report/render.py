@@ -7,13 +7,14 @@ byte-identical HTML apart from the timestamp. The agent never emits markup.
 from __future__ import annotations
 
 import json
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
 
-from .models import Cell, ColumnKind, Fragment, ReportRequest
+from .models import Cell, ColumnKind, EditorLink, Fragment, ReportRequest
 
 __all__ = ["TEMPLATE_VERSION", "render_report"]
 
@@ -79,6 +80,30 @@ def _to_json(value: Any) -> str:
     return json.dumps(value, separators=(", ", ": "))
 
 
+def _editor_href(editor: EditorLink) -> str:
+    """Rebuild the percent-encoded editor URL from an un-encoded EditorLink.
+
+    Byte-for-byte identical to the URL the tool used to embed directly: each
+    param value is compact-JSON-encoded unless it is already a string, then
+    percent-encoded with no safe characters. Autoescape turns the raw ``&``
+    between params into ``&amp;`` in the rendered href, as before.
+
+    ``None``-valued params are dropped (mirroring the tools, which only emit a
+    param when it is present), and empty params yield the bare base URL with no
+    dangling ``?`` -- both only reachable if an agent hand-builds the object
+    rather than copying the tool's ``editor`` verbatim.
+    """
+    parts = [
+        f"{key}=" + urllib.parse.quote(
+            value if isinstance(value, str) else json.dumps(value, separators=(",", ":")),
+            safe="",
+        )
+        for key, value in editor.params.items()
+        if value is not None
+    ]
+    return editor.url + ("?" + "&".join(parts) if parts else "")
+
+
 def _build_env() -> Environment:
     env = Environment(
         loader=PackageLoader("rcsb_mcp.report", "templates"),
@@ -108,6 +133,7 @@ def render_report(req: ReportRequest, *, generated_at: datetime | None = None) -
         req=req,
         fragments=_render_fragments,
         cell=_render_cell,
+        editor_href=_editor_href,
         template_version=TEMPLATE_VERSION,
         generated_at=stamp.strftime("%Y-%m-%d %H:%M UTC"),
     )

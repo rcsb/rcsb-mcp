@@ -8,7 +8,7 @@ render time, which also satisfies the "escape tool-returned text" rule for free.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Union
+from typing import Any, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,6 +17,7 @@ __all__ = [
     "Cell",
     "ColumnKind",
     "Column",
+    "EditorLink",
     "ApiCall",
     "DataUsageItem",
     "ReportRequest",
@@ -88,32 +89,48 @@ class Column(_Strict):
 # --------------------------------------------------------------------------
 
 
+class EditorLink(_Strict):
+    """A query-editor link carried un-encoded, to save tokens.
+
+    The tool returns this ``editor`` object instead of a long percent-encoded
+    URL; the template rebuilds the exact editor URL at render time by
+    JSON-encoding and percent-encoding ``params``. Copy it through verbatim.
+    """
+
+    url: str = Field(
+        ...,
+        description="Editor base URL from the tool's `editor.url`, e.g. 'https://search.rcsb.org/query-editor.html'.",
+    )
+    params: dict[str, Any] = Field(
+        ...,
+        description="Un-encoded query params from the tool's `editor.params`; the server percent-encodes them at render.",
+    )
+
+    @field_validator("url")
+    @classmethod
+    def _must_be_rcsb(cls, v: str) -> str:
+        if not v.startswith(("https://search.rcsb.org/", "https://data.rcsb.org/", "https://sequence-coordinates.rcsb.org/")):
+            raise ValueError(
+                "editor.url must be a URL returned verbatim by an rcsb_* tool "
+                "(search.rcsb.org, data.rcsb.org or sequence-coordinates.rcsb.org). "
+                "Do not construct or edit these URLs by hand."
+            )
+        return v
+
+
 class ApiCall(_Strict):
     """One entry in the 'API requests' section."""
 
     label: str = Field(..., description="Short human-readable label for the call.", min_length=1)
-    editor_url: str | None = Field(
+    editor: EditorLink | None = Field(
         default=None,
         description=(
-            "The query_editor_url / graphiql_url returned BY THE TOOL, verbatim. Leave null for "
+            "The `editor` object returned BY THE TOOL, verbatim. Leave null for "
             "resolver and discovery tools (rcsb_find_*, rcsb_list_pdb_search_attributes, "
             "rcsb_describe_*), which do not return one."
         ),
     )
     tool_name: str | None = Field(default=None, description="MCP tool that was called, e.g. 'rcsb_get_entries'.")
-
-    @field_validator("editor_url")
-    @classmethod
-    def _must_be_rcsb(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        if not v.startswith(("https://search.rcsb.org/", "https://data.rcsb.org/", "https://sequence-coordinates.rcsb.org/")):
-            raise ValueError(
-                "editor_url must be a URL returned verbatim by an rcsb_* tool "
-                "(search.rcsb.org, data.rcsb.org or sequence-coordinates.rcsb.org). "
-                "Do not construct or edit these URLs by hand."
-            )
-        return v
 
 
 class DataUsageItem(_Strict):

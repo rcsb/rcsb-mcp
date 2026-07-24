@@ -20,12 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import json
 import os
 import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
-from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -373,10 +371,10 @@ Return types and fetching details:
   (e.g. "rcsb_polymer_entity.pdbx_description") OR GraphQL nested-brace syntax
   (e.g. "rcsb_polymer_entity { pdbx_description }"), the two may be mixed, and multiple
   paths are separated by spaces or commas.
-- Every search/Data/Sequence-Coordinates tool response includes a link to the interactive
-  query editor for that exact request — `query_editor_url` (search) or `graphiql_url`
-  (GraphQL). When you show your work, surface that link verbatim; never construct these
-  URLs yourself.""",
+- Every search/Data/Sequence-Coordinates tool response includes an `editor` object — an
+  un-encoded {url, params} descriptor of the interactive query editor for that exact
+  request. When you show your work, pass that `editor` object to rcsb_render_report
+  verbatim; never construct or percent-encode these URLs yourself.""",
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
     # run stateless (any pod can serve any request — no per-session state to lose)
     # and answer with plain JSON instead of long-lived SSE streams. Both flags are
@@ -531,18 +529,26 @@ async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPH
     return (payload.get("data") or {}).get(field)
 
 
-def _search_editor_url(body: dict[str, Any]) -> str:
-    """Link opening this Search API query body in the RCSB query editor."""
-    return f"{SEARCH_EDITOR_URL}?json=" + quote(json.dumps(body, separators=(",", ":")), safe="")
+def _search_editor(body: dict[str, Any]) -> dict[str, Any]:
+    """Editor descriptor opening this Search API query body in the RCSB query editor.
+
+    Carried un-encoded as {url, params}; rcsb_render_report percent-encodes
+    params into the actual URL. Halves the token cost of embedding the link.
+    """
+    return {"url": SEARCH_EDITOR_URL, "params": {"json": body}}
 
 
-def _graphiql_url(base: str, body: dict[str, Any]) -> str:
-    """Link opening this GraphQL query (+ variables) in a GraphiQL editor."""
-    url = f"{base}?query=" + quote(body["query"], safe="")
+def _graphiql_editor(base: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Editor descriptor opening this GraphQL query (+ variables) in a GraphiQL editor.
+
+    Carried un-encoded as {url, params}; params has `query` and, when present,
+    `variables`. rcsb_render_report percent-encodes them into the actual URL.
+    """
+    params: dict[str, Any] = {"query": body["query"]}
     variables = body.get("variables")
     if variables:
-        url += "&variables=" + quote(json.dumps(variables, separators=(",", ":")), safe="")
-    return url
+        params["variables"] = variables
+    return {"url": base, "params": params}
 
 
 # --------------------------------------------------------------------------- #
@@ -795,7 +801,7 @@ async def _query_batch(
     result: dict[str, Any] = {"count": len(nodes), spec.root_field: nodes}
     if missing:
         result["not_found"] = missing
-    result["graphiql_url"] = _graphiql_url(DATA_GRAPHIQL_URL, body)
+    result["editor"] = _graphiql_editor(DATA_GRAPHIQL_URL, body)
     return result
 
 
@@ -808,7 +814,7 @@ async def _query_single(
     node = await _graphql_field(body, spec.root_field)
     if node is None:
         return {"id": id_value, "error": "not found"}
-    return {**node, "graphiql_url": _graphiql_url(DATA_GRAPHIQL_URL, body)}
+    return {**node, "editor": _graphiql_editor(DATA_GRAPHIQL_URL, body)}
 
 
 def _format(
@@ -831,7 +837,7 @@ def _format(
         result["next_offset"] = offset + len(hits) if has_more else None
     result["hits"] = hits
     if body is not None:
-        result["query_editor_url"] = _search_editor_url(body)
+        result["editor"] = _search_editor(body)
     return result
 
 
@@ -888,7 +894,7 @@ def _format_facets(raw: dict[str, Any], body: dict[str, Any] | None = None) -> d
         "facets": [_format_facet(f) for f in raw.get("facets", [])],
     }
     if body is not None:
-        result["query_editor_url"] = _search_editor_url(body)
+        result["editor"] = _search_editor(body)
     return result
 
 
@@ -983,7 +989,7 @@ async def rcsb_search_fulltext(
             the server instructions.
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; hits are ids only — batch them into rcsb_get_entries (or the
+        editor}; hits are ids only — batch them into rcsb_get_entries (or the
         rcsb_get_* tool matching return_type). all_hits/facets response variants: see the
         server instructions.
     """
@@ -1460,7 +1466,7 @@ async def rcsb_search_by_attribute(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; hits are ids only — batch them into rcsb_get_entries (or the
+        editor}; hits are ids only — batch them into rcsb_get_entries (or the
         rcsb_get_* tool matching return_type). The per-hit `score` is near-uniform for a pure
         attribute filter and carries NO biological meaning — don't rank hits by it.
         all_hits/facets response variants: see the server instructions.
@@ -1542,7 +1548,7 @@ async def rcsb_search_by_sequence(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
+        editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
     body = queries.build_sequence_query(
         sequence,
@@ -1630,7 +1636,7 @@ async def rcsb_search_by_chemical(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
+        editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
     body = queries.build_chemical_query(
         value,
@@ -1712,7 +1718,7 @@ async def rcsb_search_by_structure(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
+        editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
     body = queries.build_structure_query(
         entry_id,
@@ -1790,7 +1796,7 @@ async def rcsb_search_by_seqmotif(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
+        editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
     body = queries.build_seqmotif_query(
         pattern,
@@ -1930,7 +1936,7 @@ async def rcsb_search_strucmotif(
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
-        query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
+        editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
     body = queries.build_strucmotif_query(
         entry_id,
@@ -2346,7 +2352,7 @@ async def rcsb_data_graphql(query: str, variables: dict[str, Any] | None = None)
     """
     payload = await _post_graphql(query, variables)
     if isinstance(payload, dict):
-        payload["graphiql_url"] = _graphiql_url(
+        payload["editor"] = _graphiql_editor(
             DATA_GRAPHIQL_URL, {"query": query, "variables": variables}
         )
     return payload
@@ -2465,7 +2471,7 @@ async def rcsb_seqcoord_alignments(
         fields: Optional GraphQL selection to override the default.
     """
     body = queries.build_sc_alignments_query(query_id, from_ref, to_ref, seq_range, fields)
-    graphiql_url = _graphiql_url(SEQCOORD_GRAPHIQL_URL, body)
+    editor = _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body)
     data = await _graphql_field(body, "alignments", url=SEQCOORD_GRAPHQL_URL)
     if not data or not (data.get("target_alignments")):
         return {
@@ -2479,9 +2485,9 @@ async def rcsb_seqcoord_alignments(
                 if from_ref.startswith("PDB") and "_" not in query_id and "." not in query_id
                 else "No alignments found for this query."
             ),
-            "graphiql_url": graphiql_url,
+            "editor": editor,
         }
-    return {**data, "graphiql_url": graphiql_url}
+    return {**data, "editor": editor}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -2511,7 +2517,7 @@ async def rcsb_seqcoord_annotations(
     return {
         "count": len(data),
         "annotations": data,
-        "graphiql_url": _graphiql_url(SEQCOORD_GRAPHIQL_URL, body),
+        "editor": _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body),
     }
 
 
@@ -2532,11 +2538,11 @@ async def rcsb_seqcoord_group_alignments(
         fields: Optional GraphQL selection to override the default.
     """
     body = queries.build_sc_group_alignments_query(group, group_id, filter_terms, fields)
-    graphiql_url = _graphiql_url(SEQCOORD_GRAPHIQL_URL, body)
+    editor = _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body)
     data = await _graphql_field(body, "group_alignments", url=SEQCOORD_GRAPHQL_URL)
     if data is None:
-        return {"group_id": group_id, "error": "no alignment found", "graphiql_url": graphiql_url}
-    return {**data, "graphiql_url": graphiql_url}
+        return {"group_id": group_id, "error": "no alignment found", "editor": editor}
+    return {**data, "editor": editor}
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -2567,7 +2573,7 @@ async def rcsb_seqcoord_group_annotations(
     return {
         "count": len(data),
         "annotations": data,
-        "graphiql_url": _graphiql_url(SEQCOORD_GRAPHIQL_URL, body),
+        "editor": _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body),
     }
 
 
@@ -2586,7 +2592,7 @@ async def rcsb_seqcoord_graphql(query: str, variables: dict[str, Any] | None = N
     """
     payload = await _post_graphql(query, variables, url=SEQCOORD_GRAPHQL_URL)
     if isinstance(payload, dict):
-        payload["graphiql_url"] = _graphiql_url(
+        payload["editor"] = _graphiql_editor(
             SEQCOORD_GRAPHIQL_URL, {"query": query, "variables": variables}
         )
     return payload

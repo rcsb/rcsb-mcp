@@ -12,6 +12,7 @@ from rcsb_mcp.report import (
     Column,
     ColumnKind,
     DataUsageItem,
+    EditorLink,
     Fragment,
     ReportRequest,
     render_report,
@@ -176,16 +177,72 @@ def test_unknown_row_key_is_rejected():
 # --------------------------------------------------------------------------
 
 
-def test_editor_url_must_come_from_rcsb():
+def test_editor_must_come_from_rcsb():
     with pytest.raises(ValidationError, match="returned verbatim"):
-        ApiCall(label="hand-built", editor_url="https://example.com/query-editor")
+        ApiCall(label="hand-built", editor={"url": "https://example.com/query-editor", "params": {}})
 
 
-def test_resolver_calls_without_editor_url_are_allowed():
+def test_resolver_calls_without_editor_are_allowed():
     call = ApiCall(label="Resolved EC class", tool_name="rcsb_find_enzyme_classes")
     html = render_report(_minimal(api_calls=[call]), generated_at=FIXED)
     assert "Resolved EC class" in html
     assert "no editor link for this tool" in html
+
+
+def test_editor_object_renders_as_percent_encoded_url():
+    """The un-encoded editor object must render to the exact URL the tool used
+    to embed directly: json.dumps(compact) then percent-encode, `&amp;` between params."""
+    search = ApiCall(
+        label="Search",
+        editor=EditorLink(
+            url="https://search.rcsb.org/query-editor.html",
+            params={"json": {"query": {"type": "terminal"}, "return_type": "entry"}},
+        ),
+    )
+    graphiql = ApiCall(
+        label="Fetch",
+        editor=EditorLink(
+            url="https://data.rcsb.org/graphiql/index.html",
+            params={"query": "query{x}", "variables": {"ids": ["4HHB"]}},
+        ),
+    )
+    html = render_report(_minimal(api_calls=[search, graphiql]), generated_at=FIXED)
+    # Compact JSON, no spaces, fully percent-encoded (`{`->%7B, `:`->%3A, `"`->%22).
+    assert (
+        'href="https://search.rcsb.org/query-editor.html?json='
+        "%7B%22query%22%3A%7B%22type%22%3A%22terminal%22%7D%2C%22return_type%22%3A%22entry%22%7D"
+        '"' in html
+    )
+    # query is a bare string (percent-encoded), then `&amp;variables=` (autoescaped `&`).
+    assert (
+        'href="https://data.rcsb.org/graphiql/index.html?query=query%7Bx%7D'
+        "&amp;variables=%7B%22ids%22%3A%5B%224HHB%22%5D%7D"
+        '"' in html
+    )
+
+
+def test_editor_href_hardening_for_degenerate_agent_input():
+    """Agent-hand-built (not tool-verbatim) editors must degrade cleanly, never
+    diverging with a `variables=null` or a dangling `?`."""
+    # A None-valued param is dropped, not encoded as "null" (mirrors the tools).
+    none_var = ApiCall(
+        label="Fetch",
+        editor=EditorLink(
+            url="https://data.rcsb.org/graphiql/index.html",
+            params={"query": "q{x}", "variables": None},
+        ),
+    )
+    html = render_report(_minimal(api_calls=[none_var]), generated_at=FIXED)
+    assert 'href="https://data.rcsb.org/graphiql/index.html?query=q%7Bx%7D"' in html
+    assert "variables=null" not in html
+    # Empty params yield the bare base URL, no dangling "?".
+    empty = ApiCall(
+        label="Search",
+        editor=EditorLink(url="https://search.rcsb.org/query-editor.html", params={}),
+    )
+    html = render_report(_minimal(api_calls=[empty]), generated_at=FIXED)
+    assert 'href="https://search.rcsb.org/query-editor.html"' in html
+    assert "query-editor.html?" not in html
 
 
 # --------------------------------------------------------------------------
@@ -210,7 +267,7 @@ def test_empty_results_render_the_no_results_block():
 
 def test_all_required_sections_appear_in_fixed_order():
     req = _minimal(
-        api_calls=[ApiCall(label="Search", editor_url="https://search.rcsb.org/query-editor.html?json=%7B%7D")],
+        api_calls=[ApiCall(label="Search", editor=EditorLink(url="https://search.rcsb.org/query-editor.html", params={"json": {}}))],
         data_usage=[DataUsageItem(heading="Discovery", body=[Fragment(text="One structured query.")])],
     )
     html = render_report(req, generated_at=FIXED)
