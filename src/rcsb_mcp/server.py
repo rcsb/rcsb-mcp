@@ -863,7 +863,7 @@ async def rcsb_search_fulltext(
     sort_direction: SortDirection = "asc",
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Search the PDB by free-text keywords (e.g. "CRISPR Cas9", "hemoglobin"), optionally
     refined with structured attribute filters.
@@ -939,7 +939,7 @@ async def rcsb_search_fulltext(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             condition to pass into rcsb_search_combined's `filters`, composing it with other
             services (structure, sequence, chemical, motif) in one combined query.
@@ -948,7 +948,7 @@ async def rcsb_search_fulltext(
         query_editor_url}. Hits are identifiers only — batch them into rcsb_get_entries
         (or the rcsb_get_* tool matching return_type) for titles and other metadata.
         With all_hits, the offset/has_more/next_offset paging fields are omitted. With `facets`,
-        instead returns {total_count, facets, query_editor_url}. With return_filter_only,
+        instead returns {total_count, facets, query_editor_url}. With return_query_only,
         instead returns the raw query node (dict).
     """
     body = queries.build_combined_query(
@@ -967,7 +967,7 @@ async def rcsb_search_fulltext(
         chemical=chemical,
         facets=facets,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits:
         await _guard_all_hits(body, offset)
@@ -1368,7 +1368,7 @@ async def rcsb_search_by_attribute(
     group_by_ranking: GroupByRanking | None = None,
     chemical: bool = False,
     facets: list[dict[str, Any]] | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Search by one or more structured attribute conditions combined with a single AND/OR —
     preferred over rcsb_search_fulltext whenever the request resolves to clear attribute(s)
@@ -1432,7 +1432,7 @@ async def rcsb_search_by_attribute(
             Switches to the text_chem service; usually pair with return_type="mol_definition".
         facets: Optional aggregation specs to return a breakdown / distribution of the matches instead of
             hits (see the faceting note in the server instructions for the spec).
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             condition to pass into rcsb_search_combined's `filters`, composing it with other
             services (structure, sequence, chemical, motif) in one combined query.
@@ -1442,7 +1442,7 @@ async def rcsb_search_by_attribute(
         query_editor_url}. Hits are identifiers only — batch them into rcsb_get_entries
         (or the rcsb_get_* tool matching return_type) for titles and other metadata.
         With all_hits, the offset/has_more/next_offset paging fields are omitted. With `facets`,
-        instead returns {total_count, facets, query_editor_url}. With return_filter_only,
+        instead returns {total_count, facets, query_editor_url}. With return_query_only,
         instead returns the raw query node (dict).
     """
     body = queries.build_combined_query(
@@ -1458,7 +1458,7 @@ async def rcsb_search_by_attribute(
         chemical=chemical,
         facets=facets,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits:
         await _guard_all_hits(body, offset)
@@ -1482,7 +1482,7 @@ async def rcsb_search_by_sequence(
     facets: list[dict[str, Any]] | None = None,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Find PDB polymer entities similar to a given sequence (MMseqs2, BLAST-like).
 
@@ -1516,7 +1516,7 @@ async def rcsb_search_by_sequence(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             sequence-similarity condition to pass into rcsb_search_combined's `filters`,
             composing it with other services (e.g. structure similarity) in one call.
@@ -1524,7 +1524,7 @@ async def rcsb_search_by_sequence(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
-        With return_filter_only, instead returns the raw query node (dict).
+        With return_query_only, instead returns the raw query node (dict).
     """
     body = queries.build_sequence_query(
         sequence,
@@ -1540,7 +1540,7 @@ async def rcsb_search_by_sequence(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
@@ -1566,7 +1566,7 @@ async def rcsb_search_by_chemical(
     facets: list[dict[str, Any]] | None = None,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Search PDB chemical components by structure (SMILES/InChI) or formula.
 
@@ -1609,7 +1609,7 @@ async def rcsb_search_by_chemical(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             chemical-match condition to pass into rcsb_search_combined's `filters`, composing
             it with other services in one call.
@@ -1617,7 +1617,7 @@ async def rcsb_search_by_chemical(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
-        With return_filter_only, instead returns the raw query node (dict).
+        With return_query_only, instead returns the raw query node (dict).
     """
     body = queries.build_chemical_query(
         value,
@@ -1635,7 +1635,7 @@ async def rcsb_search_by_chemical(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
@@ -1659,7 +1659,7 @@ async def rcsb_search_by_structure(
     facets: list[dict[str, Any]] | None = None,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Find structures with a similar 3D shape to a reference PDB structure.
 
@@ -1696,7 +1696,7 @@ async def rcsb_search_by_structure(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             shape-similarity condition to pass into rcsb_search_combined's `filters`, composing
             it with other services (e.g. sequence similarity) in one call.
@@ -1704,7 +1704,7 @@ async def rcsb_search_by_structure(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
-        With return_filter_only, instead returns the raw query node (dict).
+        With return_query_only, instead returns the raw query node (dict).
     """
     body = queries.build_structure_query(
         entry_id,
@@ -1720,7 +1720,7 @@ async def rcsb_search_by_structure(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
@@ -1744,7 +1744,7 @@ async def rcsb_search_by_seqmotif(
     facets: list[dict[str, Any]] | None = None,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Find polymers containing a short sequence motif (PROSITE / regex / simple).
 
@@ -1779,7 +1779,7 @@ async def rcsb_search_by_seqmotif(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             motif condition to pass into rcsb_search_combined's `filters`, composing it with
             other services in one call.
@@ -1787,7 +1787,7 @@ async def rcsb_search_by_seqmotif(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
-        With return_filter_only, instead returns the raw query node (dict).
+        With return_query_only, instead returns the raw query node (dict).
     """
     body = queries.build_seqmotif_query(
         pattern,
@@ -1803,7 +1803,7 @@ async def rcsb_search_by_seqmotif(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
@@ -1872,7 +1872,7 @@ async def rcsb_search_strucmotif(
     facets: list[dict[str, Any]] | None = None,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False,
+    return_query_only: bool = False,
 ) -> dict[str, Any]:
     """Find structures containing a 3D STRUCTURAL MOTIF — a geometric arrangement of
     specific residues — like the one in a reference structure.
@@ -1925,7 +1925,7 @@ async def rcsb_search_strucmotif(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a reusable
             structural-motif condition to pass into rcsb_search_combined's `filters`,
             composing it with other services in one call.
@@ -1933,7 +1933,7 @@ async def rcsb_search_strucmotif(
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
-        With return_filter_only, instead returns the raw query node (dict).
+        With return_query_only, instead returns the raw query node (dict).
     """
     body = queries.build_strucmotif_query(
         entry_id,
@@ -1954,7 +1954,7 @@ async def rcsb_search_strucmotif(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
-    if return_filter_only:
+    if return_query_only:
         return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
@@ -1965,10 +1965,10 @@ async def rcsb_search_strucmotif(
 
 
 def _validate_query_nodes(filters: list[dict[str, Any]]) -> None:
-    """Validate a list of raw Search API query nodes (as returned by return_filter_only).
+    """Validate a list of raw Search API query nodes (as returned by return_query_only).
 
     Each must be a dict shaped like a terminal node: {type, service, parameters}. This
-    is what every rcsb_search_* tool's return_filter_only=True hands back, so a filters
+    is what every rcsb_search_* tool's return_query_only=True hands back, so a filters
     list built entirely from those calls always passes. Raises ValueError with an
     actionable message on the first problem found.
     """
@@ -1986,7 +1986,7 @@ def _validate_query_nodes(filters: list[dict[str, Any]]) -> None:
             raise ValueError(
                 f"filters[{i}] is missing required key(s) {missing}; expected a query node "
                 "shaped like {'type', 'service', 'parameters'} — get one from any "
-                "rcsb_search_* tool called with return_filter_only=True"
+                "rcsb_search_* tool called with return_query_only=True"
             )
 
 
@@ -2003,7 +2003,7 @@ async def rcsb_search_combined(
     sort_direction: SortDirection = "asc",
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
-    return_filter_only: bool = False
+    return_query_only: bool = False
 ) -> dict[str, Any]:
     """Search with several constraints — and, optionally, several SERVICES — at once.
 
@@ -2022,10 +2022,10 @@ async def rcsb_search_combined(
     `filters` lets you compose in OTHER services (structure similarity, sequence
     similarity, chemical match, sequence/structural motif) as additional AND/OR
     siblings — something none of the single-purpose rcsb_search_* tools can do alone.
-    Build each condition by calling the matching tool with return_filter_only=True,
+    Build each condition by calling the matching tool with return_query_only=True,
     then pass the returned node(s) here:
-        structure_node = rcsb_search_by_structure(entry_id="4HHB", return_filter_only=True)
-        sequence_node = rcsb_search_by_sequence(sequence="MVLS...", return_filter_only=True)
+        structure_node = rcsb_search_by_structure(entry_id="4HHB", return_query_only=True)
+        sequence_node = rcsb_search_by_sequence(sequence="MVLS...", return_query_only=True)
         rcsb_search_combined(filters=[structure_node, sequence_node])
     finds structures that are BOTH shape-similar to 4HHB AND sequence-similar to the
     given protein, in one call. `filters` may be combined with full_text/attributes too.
@@ -2036,7 +2036,7 @@ async def rcsb_search_combined(
             case_sensitive?} dicts. See rcsb_search_by_attribute / rcsb_list_pdb_search_attributes
             for paths and operators.
         filters: Optional list of raw query-node dicts, each obtained from another
-            rcsb_search_* tool's return_filter_only=True output. Used to combine
+            rcsb_search_* tool's return_query_only=True output. Used to combine
             non-text services (structure/sequence/chemical/seqmotif/strucmotif) into
             this query. Each must be a dict with {type, service, parameters}. May be
             given with or without full_text/attributes.
@@ -2060,7 +2060,7 @@ async def rcsb_search_combined(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
-        return_filter_only: If True, build the query node and return it directly instead
+        return_query_only: If True, build the query node and return it directly instead
             of running the search — no network call. Use this to build a nested group
             node to pass back into rcsb_search_combined's `filters`, composing several 
             services in one call.
@@ -2119,7 +2119,7 @@ async def rcsb_search_combined(
         "type": "group", "logical_operator": logical_operator, "nodes": nodes,
     }
 
-    if return_filter_only:
+    if return_query_only:
         return query
 
     body = {"query": query, "return_type": return_type, "request_options": request_options}
