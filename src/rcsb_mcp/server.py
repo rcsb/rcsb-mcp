@@ -1803,25 +1803,6 @@ async def rcsb_search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
     raw = await _post_search(query_body)
     return _format(raw, query_body)
 
-def _validate_search_strucmotif(residue_ids: list[dict[str, Any]], exchanges: list[dict[str, Any]] = None):
-    if len(residue_ids) == 0:
-        raise ValueError("Empty list - residue ids")
-    if exchanges is not None and len(exchanges) > 0:
-        if len(exchanges) > 4:
-            raise ValueError("No more than 4 exchanges allowed")
-        count = 0
-        expected_count = len(exchanges)
-        for exchange in exchanges:
-            allowed = exchange["allowed"]
-            if len(allowed) > 16:
-                raise ValueError("No more than 16 substitutions allowed for each residue")
-            for residue in residue_ids:
-                exchange_residue = exchange["residue_id"]
-                if residue["label_asym_id"] == exchange_residue["label_asym_id"] and residue["label_seq_id"] == exchange_residue["label_seq_id"]:
-                    count += 1
-                    break
-        if count != expected_count:
-            raise ValueError("Mismatching residue between exchanges and residue ids")
 
 @mcp.tool(annotations=READ_ONLY)
 async def rcsb_search_strucmotif(
@@ -1906,7 +1887,6 @@ async def rcsb_search_strucmotif(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         query_editor_url}; with `facets`, instead returns {total_count, facets, query_editor_url}.
     """
-    _validate_search_strucmotif(residue_ids, exchanges)
     body = queries.build_strucmotif_query(
         entry_id,
         residue_ids,
