@@ -2056,6 +2056,10 @@ async def rcsb_search_combined(
             "entity_residue_count" (longest), "score" (best ElasticSearch score), or "coverage" (most
             relevant biological sequence — requires group_by="uniprot", and recommended
             there). Omit for RCSB's default.
+        return_filter_only: If True, build the query node and return it directly instead
+            of running the search — no network call. Use this to build a nested group
+            node to pass back into rcsb_search_combined's `filters`, composing several 
+            services in one call.
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
