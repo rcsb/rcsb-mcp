@@ -20,7 +20,10 @@ __all__ = [
     "EditorLink",
     "ApiCall",
     "DataUsageItem",
+    "ResultType",
+    "Result",
     "ReportRequest",
+    "ReportDocument",
 ]
 
 
@@ -141,29 +144,101 @@ class DataUsageItem(_Strict):
 
 
 # --------------------------------------------------------------------------
-# Top-level request
+# What the agent supplies
 # --------------------------------------------------------------------------
 
 
+class ResultType(str, Enum):
+    """What kind of identifier the report is about.
+
+    This is the ONE thing only the agent knows — what it searched for — and it
+    selects the whole table layout server-side. Adding a kind is one enum value
+    plus one entry in report/tables.py; the agent never names a column.
+    """
+
+    ENTRY = "entry"  # PDB entry ids (4HHB) -> PDB ID / Title / Organism / Method / Resolution
+    LIGAND = "ligand"  # chemical component ids (ATP) -> Ligand ID / Name / Type / Weight
+
+
+class Result(_Strict):
+    """One reported identifier and the agent's justification for it."""
+
+    id: str = Field(
+        ...,
+        min_length=1,
+        description="The identifier: a PDB entry id (4HHB) or a chemical component id (ATP), matching result_type.",
+    )
+    evidence: list[Fragment] = Field(
+        default_factory=list,
+        description=(
+            "Why THIS result answers the user's question — the concrete attribute value, "
+            "matched annotation or title evidence. Provenance-tagged fragments; set "
+            "model_supplied true on your own inference."
+        ),
+    )
+
+
 class ReportRequest(_Strict):
-    """Complete structured description of a PDB search report."""
+    """What the agent supplies for a report.
+
+    Deliberately minimal: identifiers plus the reasoning. Every presentation
+    concern — which columns exist, their order, labels, links, and the values
+    that are derivable from the identifier — is owned by the server, so the
+    fixed schema cannot drift and the agent cannot spend tokens restating it.
+    """
 
     title: str = Field(..., description="Page title describing the search.", min_length=1)
     api_calls: list[ApiCall] = Field(default_factory=list)
-    columns: list[Column] = Field(default_factory=list)
-    rows: list[dict[str, Cell]] = Field(
+    result_type: ResultType = Field(
+        ...,
+        description=(
+            'REQUIRED — what your `results` ARE: "entry" for PDB entry ids (4HHB) or '
+            '"ligand" for chemical component ids (ATP). No default on purpose: a report '
+            "whose type disagrees with its ids resolves nothing and renders every value "
+            "empty, so you must state it rather than fall into a silent default."
+        ),
+    )
+    results: list[Result] = Field(
         default_factory=list,
-        description="One dict per result, keyed by Column.key. Missing keys render as 'NA'.",
+        description="The reported identifiers, in the order you want them ranked.",
     )
     sort_note: str | None = Field(default=None, description="How the table is ordered, e.g. 'Sorted by resolution, best first.'")
     data_usage: list[DataUsageItem] = Field(default_factory=list)
     no_results_note: list[Fragment] = Field(
         default_factory=list,
-        description="Shown instead of the table when rows is empty; explain the search limitations here.",
+        description="Shown instead of the table when results is empty; explain the search limitations here.",
     )
 
+
+# --------------------------------------------------------------------------
+# What gets rendered / packed into a link (server-owned, never agent input)
+# --------------------------------------------------------------------------
+
+
+class ReportDocument(_Strict):
+    """A fully resolved report: the table as it will be rendered.
+
+    The server builds this from a :class:`ReportRequest` by selecting the table
+    spec for ``result_type`` and filling the derivable cells. This — not the
+    request — is what gets packed into a report link, which is why ``/r`` can
+    render with no network call and no stored state.
+    """
+
+    title: str = Field(..., min_length=1)
+    api_calls: list[ApiCall] = Field(default_factory=list)
+    columns: list[Column] = Field(default_factory=list)
+    rows: list[dict[str, Cell]] = Field(default_factory=list)
+    sort_note: str | None = None
+    data_usage: list[DataUsageItem] = Field(default_factory=list)
+    no_results_note: list[Fragment] = Field(default_factory=list)
+
     @model_validator(mode="after")
-    def _check_rows_against_columns(self) -> ReportRequest:
+    def _check_rows_against_columns(self) -> ReportDocument:
+        """Internal safety net: the builder must never emit an undeclared row key.
+
+        Also guards the /r endpoint, which validates a decoded document from an
+        untrusted link before rendering it.
+        """
         if self.rows and not self.columns:
             raise ValueError("rows were supplied but columns is empty; define columns to render the table.")
         keys = {c.key for c in self.columns}

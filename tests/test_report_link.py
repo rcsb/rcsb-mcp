@@ -18,6 +18,7 @@ from starlette.testclient import TestClient
 from rcsb_mcp.report import link
 from rcsb_mcp.report.link import LinkError, MAX_DECOMPRESSED, MAX_ENCODED
 
+# A resolved ReportDocument — what the codec packs and the /r endpoints render.
 REPORT = {
     "title": "Iron-type nitrile hydratases",
     "columns": [
@@ -25,6 +26,13 @@ REPORT = {
         {"key": "title", "label": "Title"},
     ],
     "rows": [{"pdb_id": "2AHJ", "title": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}],
+}
+
+# What the AGENT sends to the tool: identifiers + reasoning, no table.
+TOOL_INPUT = {
+    "title": "Iron-type nitrile hydratases",
+    "result_type": "entry",
+    "results": [{"id": "2AHJ", "evidence": [{"text": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}]}],
 }
 
 
@@ -151,8 +159,8 @@ def test_endpoint_rejects_unknown_fields(client):
     """The schema is strict (extra=forbid): a stray field is a 400, not a 500."""
     token = link.encode_report(json.dumps({
         "title": "x",
-        "columns": [{"key": "pdb_id", "label": "PDB ID", "kind": "pdb_id"}],
-        "rows": [{"pdb_id": "AAAA"}],
+        "result_type": "entry",
+        "results": [{"id": "AAAA"}],
         "collection": {"return_type": "entry"},  # removed field
     }))
     r = client.get("/r", params={"d": token})
@@ -231,7 +239,7 @@ def test_tool_short_link_renders_at_endpoint(client, monkeypatch):
 
     mcp = FastMCP("test")
     report_tools.register_report_tools(mcp)
-    _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": REPORT}}))
+    _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": TOOL_INPUT}}))
 
     assert "/r?d=" not in res["url"], "the tool hands back the short link, not the fat URL"
     uid = urlparse(res["url"]).path.rsplit("/", 1)[-1]
@@ -256,10 +264,15 @@ def test_tool_never_emits_a_link_the_endpoint_would_reject(monkeypatch):
     monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
     big = {
         "title": "probe",
-        "columns": [{"key": "pdb_id", "label": "P", "kind": "pdb_id"}, {"key": "t", "label": "T"}],
-        "rows": [{"pdb_id": "AAAA", "t": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"} for _ in range(3000)],
+        "result_type": "entry",
+        "results": [
+            {"id": "AAAA", "evidence": [{"text": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}]}
+            for _ in range(3000)
+        ],
     }
-    report_json = ReportRequest(**big).model_dump_json(exclude_defaults=True)
+    from rcsb_mcp.report.enrich import build_document
+
+    report_json = asyncio.run(build_document(ReportRequest(**big), None)).model_dump_json(exclude_defaults=True)
     assert len(report_json) > MAX_DECOMPRESSED, "test setup: report must exceed the cap"
     # ... and yet it compresses tiny, which is exactly the trap:
     assert len(link.encode_report(report_json)) < 2000

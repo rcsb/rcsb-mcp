@@ -69,7 +69,6 @@ class RenderReportResult(BaseModel):
             "to a `.html` file and deliver that."
         ),
     )
-    row_count: int = Field(..., description="Number of result rows rendered.")
     template_version: str = Field(..., description="Version of the report template used.")
 
 
@@ -119,10 +118,8 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
         """Render a structure-search report as a styled, self-contained HTML page.
 
         Call this LAST, after the searches and rcsb_get_* calls that produce the
-        values shown in the report. Supply facts only — the page's layout, CSS,
-        section order, provenance colouring, escaping and the final RCSB.org
-        Advanced Search link are all produced by a fixed server-side template, so
-        every report looks identical. Do not write HTML yourself, and do not
+        values shown in the report. Supply facts only: the page is rendered from a
+        fixed server-side template, so do not write HTML yourself and do not
         rewrite what this tool returns.
 
         Key fields of ``report``:
@@ -130,15 +127,12 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
             api_calls: one per Search/Data/Sequence-Coordinates call, using the
                 ``editor`` object the tool returned VERBATIM. Resolver and
                 discovery tools have no editor link — pass label and tool_name only.
-            columns: the table schema — one entry per column, in display order.
-                Set ``kind`` to "pdb_id" / "ligand_id" / "uniprot" to get links,
-                "organism" for italics, "numeric" for right alignment.
-            rows: one dict per result keyed by column key. A cell may be a plain
-                value, or a list of fragments for mixed provenance. Missing or null
-                values render as "NA". For a PDB-entry table, supply ONLY the id and
-                evidence cells — the ``title``/``organism``/``method``/``resolution``
-                columns are fetched server-side from the ids and OVERWRITE anything
-                you send, so sending them only wastes tokens.
+            result_type: what your ids ARE — "entry" for PDB entry ids (4HHB, the
+                default) or "ligand" for chemical component ids (ATP). It must match
+                the ids you send: a mismatch resolves nothing, and every derived
+                value comes back empty.
+            results: the identifiers you are reporting, in the order you want them
+                ranked, each ``{"id": ..., "evidence": [...]}``.
             data_usage: ordered narrative of how each call shaped the final set;
                 each item's body is a list of provenance-tagged fragments
                 ``{"text": ..., "model_supplied": bool}`` — model_supplied true for
@@ -146,25 +140,21 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
 
         Returns:
             RenderReportResult with EITHER a `url` or `html` (never both), plus
-            row_count and template_version. Prefer `url` — it is a self-contained
+            template_version. Prefer `url` — it is a self-contained
             link that renders the report on demand; deliver it to the user as-is.
             `html` is only returned as a fallback; write it to a `.html` file. See
             the output instructions in the pdb_assistant prompt.
         """
-        report = params.report
-
-        # Fill Title/Organism/Method/Resolution from the entry ids before rendering.
-        # Best-effort: a failure here leaves those cells as "NA" rather than losing
-        # the report (see report/enrich.py).
-        if entry_fetcher is not None:
-            await enrich.fill_from_entries(report, entry_fetcher)
-
-        report_json = report.model_dump_json(exclude_defaults=True)
+        # Resolve the agent's identifiers into the full table BEFORE packing, so the
+        # link carries every value and /r renders with no network call (see
+        # report/enrich.py). Best-effort: fill problems degrade cells to "NA".
+        document = await enrich.build_document(params.report, entry_fetcher)
+        report_json = document.model_dump_json(exclude_defaults=True)
 
         # Render up front: it is cheap, it surfaces a malformed report to the caller
         # (rather than emitting a link that only fails later at the endpoint), and it
         # is the fallback body. We WITHHOLD it only when we hand back a link instead.
-        html: str | None = render_report(report)
+        html: str | None = render_report(document)
 
         url: str | None = None
         # Gate on the DECOMPRESSED byte length (what the /r endpoint bounds), not the
@@ -189,6 +179,5 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
         return RenderReportResult(
             url=url,
             html=html,
-            row_count=len(report.rows),
             template_version=TEMPLATE_VERSION,
         )

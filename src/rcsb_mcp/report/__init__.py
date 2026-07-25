@@ -15,7 +15,10 @@ from .models import (
     DataUsageItem,
     EditorLink,
     Fragment,
+    ReportDocument,
     ReportRequest,
+    Result,
+    ResultType,
 )
 from .render import TEMPLATE_VERSION, render_report
 
@@ -28,7 +31,10 @@ __all__ = [
     "EditorLink",
     "Fragment",
     "LinkError",
+    "ReportDocument",
     "ReportRequest",
+    "Result",
+    "ResultType",
     "TEMPLATE_VERSION",
     "decode_report",
     "encode_report",

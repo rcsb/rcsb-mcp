@@ -14,12 +14,12 @@ from typing import Any
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
 
-from .models import Cell, ColumnKind, EditorLink, Fragment, ReportRequest
+from .models import Cell, ColumnKind, EditorLink, Fragment, ReportDocument
 
 __all__ = ["TEMPLATE_VERSION", "render_report"]
 
 # Bump on any template change so rendered reports stay traceable.
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.1.0"
 
 RCSB_STRUCTURE_URL = "https://www.rcsb.org/structure/{}"
 RCSB_LIGAND_URL = "https://www.rcsb.org/ligand/{}"
@@ -125,12 +125,12 @@ _ENV = _build_env()
 # --------------------------------------------------------------------------
 
 
-def render_report(req: ReportRequest, *, generated_at: datetime | None = None) -> str:
-    """Render a ReportRequest to a complete, self-contained HTML document."""
+def render_report(doc: ReportDocument, *, generated_at: datetime | None = None) -> str:
+    """Render a resolved ReportDocument to a complete, self-contained HTML page."""
     stamp = generated_at or datetime.now(timezone.utc)
 
     return _ENV.get_template("report.html.j2").render(
-        req=req,
+        req=doc,
         fragments=_render_fragments,
         cell=_render_cell,
         editor_href=_editor_href,

@@ -1,4 +1,8 @@
-"""Tests for the deterministic report renderer."""
+"""Tests for the deterministic report renderer.
+
+The renderer takes a ReportDocument -- the resolved table the server builds from
+the agent's identifiers -- so these construct documents directly.
+"""
 
 from __future__ import annotations
 
@@ -14,14 +18,14 @@ from rcsb_mcp.report import (
     DataUsageItem,
     EditorLink,
     Fragment,
-    ReportRequest,
+    ReportDocument,
     render_report,
 )
 
 FIXED = datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
 
 
-def _minimal(**kw) -> ReportRequest:
+def _minimal(**kw) -> ReportDocument:
     base = dict(
         title="Test report",
         columns=[
@@ -31,7 +35,7 @@ def _minimal(**kw) -> ReportRequest:
         rows=[{"pdb_id": "4HHB", "resolution": 1.74}],
     )
     base.update(kw)
-    return ReportRequest(**base)
+    return ReportDocument(**base)
 
 
 # --------------------------------------------------------------------------
@@ -100,7 +104,7 @@ def test_model_supplied_fragments_are_wrapped_and_tool_ones_are_not():
 
 
 def test_mixed_provenance_inside_a_table_cell():
-    req = ReportRequest(
+    req = ReportDocument(
         title="t",
         columns=[
             Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
@@ -132,7 +136,7 @@ def test_pdb_id_column_is_linked():
 
 
 def test_missing_and_none_values_render_as_na():
-    req = ReportRequest(
+    req = ReportDocument(
         title="t",
         columns=[
             Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
@@ -146,7 +150,7 @@ def test_missing_and_none_values_render_as_na():
 
 def test_columns_can_be_reordered_and_replaced():
     """The frame is rigid; the table is parametric."""
-    req = ReportRequest(
+    req = ReportDocument(
         title="Ligand search",
         columns=[
             Column(key="comp_id", label="Component ID", kind=ColumnKind.LIGAND_ID),
@@ -163,7 +167,7 @@ def test_columns_can_be_reordered_and_replaced():
 
 def test_unknown_row_key_is_rejected():
     with pytest.raises(ValidationError, match="not declared in columns"):
-        ReportRequest(
+        ReportDocument(
             title="t",
             columns=[Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID)],
             rows=[{"pdb_id": "4HHB", "typo_key": "oops"}],
@@ -251,7 +255,7 @@ def test_editor_href_hardening_for_degenerate_agent_input():
 
 
 def test_empty_results_render_the_no_results_block():
-    req = ReportRequest(
+    req = ReportDocument(
         title="Nothing found",
         no_results_note=[Fragment(text="No entries carry this EC and a bound iron ion.", model_supplied=True)],
     )
@@ -271,10 +275,12 @@ def test_all_required_sections_appear_in_fixed_order():
         data_usage=[DataUsageItem(heading="Discovery", body=[Fragment(text="One structured query.")])],
     )
     html = render_report(req, generated_at=FIXED)
+    # Anchor on the section HEADERS, not bare substrings — the legend prose also
+    # mentions "Results" and "Data usage summary", so a substring search matches there.
     order = [
-        "API requests",
-        "Results",
-        "Data usage summary",
+        "<h2>API requests</h2>",
+        "<h2>Results</h2>",
+        "<h2>Data usage summary</h2>",
     ]
     positions = [html.index(s) for s in order]
     assert positions == sorted(positions)

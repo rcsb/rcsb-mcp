@@ -19,14 +19,15 @@ import asyncio
 
 import pytest
 from mcp.server.fastmcp import FastMCP
+from pydantic import ValidationError
 
 from rcsb_mcp.report import tools as report_tools
 
 MINIMAL = {
     "report": {
         "title": "Iron-type nitrile hydratases",
-        "columns": [{"key": "pdb_id", "label": "PDB ID", "kind": "pdb_id"}],
-        "rows": [{"pdb_id": "4HHB"}, {"pdb_id": "1IRE"}],
+        "result_type": "entry",
+        "results": [{"id": "4HHB"}, {"id": "1IRE"}],
     }
 }
 
@@ -75,7 +76,6 @@ def test_returns_a_short_link_with_a_shared_store(with_base_url, shared_store):
     assert res["url"] is not None and res["url"].startswith(f"{with_base_url}/r/")
     assert "?d=" not in res["url"], "the agent gets the short link, not the fat packed URL"
     assert res["html"] is None, "must not also ship the markup when a link is returned"
-    assert res["row_count"] == 2
 
 
 def test_short_link_id_resolves_to_the_report_token_in_the_store(with_base_url, shared_store):
@@ -120,14 +120,24 @@ def test_falls_back_to_html_when_no_base_url(no_base_url):
     res = _structured(**MINIMAL)
     assert res["url"] is None
     assert res["html"].startswith("<!DOCTYPE html>")
-    assert res["row_count"] == 2
 
 
 def test_result_surface_is_only_url_html_and_metadata(no_base_url):
     res = _structured(**MINIMAL)
-    assert set(res) == {"url", "html", "row_count", "template_version"}
+    assert set(res) == {"url", "html", "template_version"}
     schema = report_tools.RenderReportInput.model_json_schema()
     assert set(schema["properties"]) == {"report"}, "input must expose only `report`"
+
+
+def test_result_type_is_required(no_base_url):
+    """No default: a report whose type is omitted (or disagrees with its ids) would
+    resolve nothing and render every derived value empty — so the agent MUST state it."""
+    req = report_tools.RenderReportInput.model_json_schema()["$defs"]["ReportRequest"]
+    assert "result_type" in req["required"], "result_type must be required, not defaulted"
+    with pytest.raises(ValidationError, match="result_type"):
+        report_tools.RenderReportInput.model_validate(
+            {"report": {"title": "t", "results": [{"id": "4HHB"}]}}
+        )
 
 
 def test_writes_nothing_to_disk(tmp_path, monkeypatch, with_base_url):
@@ -150,14 +160,17 @@ def test_multibyte_report_over_the_byte_cap_falls_back_to_html(with_base_url):
     back to html — the /r endpoint bounds decompressed BYTES and would reject the link.
     (A char-length gate would wrongly emit it, so this fails if fix [3] is reverted.)"""
     from rcsb_mcp.report import link
+    from rcsb_mcp.report.enrich import build_document
     from rcsb_mcp.report.models import ReportRequest
 
     big = {
         "title": "probe",
-        "columns": [{"key": "pdb_id", "label": "P", "kind": "pdb_id"}, {"key": "t", "label": "T"}],
-        "rows": [{"pdb_id": "AAAA", "t": "あ" * 70_000}],  # 70k chars, 210k UTF-8 bytes
+        "result_type": "entry",
+        # 70k chars / 210k UTF-8 bytes of evidence — the agent-supplied part of a row.
+        "results": [{"id": "AAAA", "evidence": [{"text": "あ" * 70_000}]}],
     }
-    report_json = ReportRequest(**big).model_dump_json(exclude_defaults=True)
+    document = asyncio.run(build_document(ReportRequest(**big), None))
+    report_json = document.model_dump_json(exclude_defaults=True)
     assert len(report_json) < link.MAX_DECOMPRESSED, "char length is under the cap (a char gate would emit)"
     assert len(report_json.encode("utf-8")) > link.MAX_DECOMPRESSED, "but byte length is over it"
     assert len(link.encode_report(report_json)) < 2000, "compresses tiny, so the fat_url gate is NOT the rejecter"

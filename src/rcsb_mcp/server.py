@@ -386,30 +386,30 @@ Return types and fetching details:
 )
 
 from rcsb_mcp.report import enrich as report_enrich, link as report_link, render_report
-from rcsb_mcp.report.models import ReportRequest
+from rcsb_mcp.report.models import ReportDocument
 from rcsb_mcp.report.store import REPORT_STORE, URL_ID_RE
 from rcsb_mcp.report.tools import register_report_tools
 
 
-async def _fetch_report_entries(ids: list[str]) -> list[dict[str, Any]]:
-    """Fetch the server-filled report columns for `ids` in one Data-API round trip.
+async def _fetch_report_rows(query: str, root_field: str, ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch a report table spec's derivable cells for `ids` in one round trip.
 
-    Injected into the report tool so the report package owns no HTTP client.
-    `_graphql_field` is defined further down this module and resolved at call
-    time, which is why this can be declared here, above it.
+    Generic over the spec (report/tables.py supplies the query and root field), so
+    adding a result type needs no change here. Injected into the report tool so the
+    report package owns no HTTP client. `_graphql_field` is defined further down
+    this module and resolved at call time, which is why this can be declared above it.
     """
-    body = {"query": report_enrich.ENTRY_FIELDS_QUERY, "variables": {"ids": ids}}
-    entries = await _graphql_field(body, "entries")
-    if entries is None:
+    nodes = await _graphql_field({"query": query, "variables": {"ids": ids}}, root_field)
+    if nodes is None:
         # A 200 whose JSON carries neither `data.entries` nor `errors` (a WAF/CDN block
         # page, a maintenance body, a field rename) must NOT look like "resolved, no such
         # entries" — that would blank every cell in the table. Raise so the caller treats
         # it as a failed chunk and keeps what the agent supplied.
-        raise RuntimeError("Data API returned no `entries` field")
-    return entries
+        raise RuntimeError(f"Data API returned no `{root_field}` field")
+    return nodes
 
 
-register_report_tools(mcp, entry_fetcher=_fetch_report_entries)
+register_report_tools(mcp, entry_fetcher=_fetch_report_rows)
 
 
 # --------------------------------------------------------------------------- #
@@ -2685,7 +2685,8 @@ async def redirect_report_link(request):
 async def render_report_link(request):
     """Render a report packed into the ``d`` query param — stateless, nothing stored.
 
-    ``d`` is the gzip+base64url of a ReportRequest (see report/link.py). Decoding is
+    ``d`` is the gzip+base64url of a ReportDocument (see report/link.py) — already
+    resolved, so rendering needs no network call. Decoding is
     size-guarded against oversized and bomb inputs; the payload is validated against
     the schema; the template escapes every value. Anything malformed — bad token,
     wrong schema, or a value that render can't resolve — is a 400, never a 500.
@@ -2693,8 +2694,8 @@ async def render_report_link(request):
     token = request.query_params.get("d", "")
     try:
         report_json = report_link.decode_report(token)
-        report = ReportRequest.model_validate_json(report_json)
-        html = render_report(report)
+        document = ReportDocument.model_validate_json(report_json)
+        html = render_report(document)
     except report_link.LinkError as exc:
         # LinkError messages are static (from report/link.py), safe to surface.
         return PlainTextResponse(f"Invalid report link: {exc}\n", status_code=400,
