@@ -1,4 +1,4 @@
-"""Deterministic guard for load-bearing content in the pdb_assistant prompt.
+"""Deterministic guard for load-bearing content in the rcsb_search_assistant prompt.
 
 The prompt is the agent's only instruction on what to put in a report and how to
 deliver it, and it has no other coverage: the tool-selection eval
@@ -25,7 +25,7 @@ def _norm(s: str) -> str:
 
 def _prompt() -> str:
     """The prompt as the MCP client actually receives it (via the registered resource)."""
-    return _norm(server.pdb_assistant())
+    return _norm(server.rcsb_search_assistant())
 
 
 # Rules that are not derivable from the tool schema, so only the prompt carries them.
@@ -73,7 +73,7 @@ FORBIDDEN_STALE = [
 def test_load_bearing_rules_are_present():
     text = _prompt()
     missing = [(s, why) for s, why in REQUIRED if s not in text]
-    assert not missing, "pdb_assistant.md lost load-bearing rules:\n" + "\n".join(
+    assert not missing, "rcsb_search_assistant.md lost load-bearing rules:\n" + "\n".join(
         f"  - {s!r}  ({why})" for s, why in missing
     )
 
@@ -83,7 +83,7 @@ def test_prompt_contains_no_presentation_vocabulary():
     text = _prompt().lower()
     found = [w for w in FORBIDDEN_VOCABULARY if re.search(rf"\b{w}s?\b", text)]
     assert not found, (
-        f"pdb_assistant.md mentions presentation vocabulary {found}. The agent supplies "
+        f"rcsb_search_assistant.md mentions presentation vocabulary {found}. The agent supplies "
         "identifiers and reasoning; the server owns how they are displayed. If a layout "
         "genuinely must be described, describe it in report/tables.py instead."
     )
@@ -93,11 +93,11 @@ def test_prompt_has_no_stale_claims():
     """Promises about features that no longer exist mislead the agent worse than silence."""
     text = _prompt().lower()
     found = [(s, why) for s, why in FORBIDDEN_STALE if s in text]
-    assert not found, "pdb_assistant.md makes stale claims:\n" + "\n".join(
+    assert not found, "rcsb_search_assistant.md makes stale claims:\n" + "\n".join(
         f"  - {s!r}  ({why})" for s, why in found
     )
 
 
 def test_prompt_is_reachable_as_an_mcp_prompt():
     """It ships as package data behind a registered prompt — not an unused file."""
-    assert server.pdb_assistant().startswith("You are a structural biology assistant")
+    assert server.rcsb_search_assistant().startswith("You are a structural biology assistant")

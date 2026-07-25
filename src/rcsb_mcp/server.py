@@ -418,7 +418,7 @@ register_report_tools(mcp, entry_fetcher=_fetch_report_rows)
 # client can list and invoke it (the MCP `prompts` capability). Kept OUT of the
 # `instructions` above — those are always-on, tool-routing guidance for every
 # client — because this is opt-in application/presentation policy. The text is
-# package data (prompts/pdb_assistant.md), the single source of truth, so it
+# package data (prompts/rcsb_search_assistant.md), the single source of truth, so it
 # ships with the wheel and stays editable without touching code.
 # --------------------------------------------------------------------------- #
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
@@ -429,14 +429,14 @@ def _load_prompt(name: str) -> str:
 
 
 @mcp.prompt(
-    name="pdb_assistant",
-    title="PDB structure assistant",
-    description="Persona and HTML-report output format for answering Protein Data "
-    "Bank questions with the rcsb_* tools. Invoke to start a PDB analysis session.",
+    name="rcsb_search_assistant",
+    title="RCSB PDB search assistant",
+    description="Persona and report output format for answering Protein Data "
+    "Bank search questions with the rcsb_* tools. Invoke to start a PDB search session.",
 )
-def pdb_assistant() -> str:
+def rcsb_search_assistant() -> str:
     """Structural-biology assistant instructions: persona + report output format."""
-    return _load_prompt("pdb_assistant.md")
+    return _load_prompt("rcsb_search_assistant.md")
 
 
 # --------------------------------------------------------------------------- #

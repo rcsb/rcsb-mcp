@@ -247,7 +247,7 @@ report.
 
 **Fallback.** When `RCSB_MCP_REPORT_BASE_URL` is unset (e.g. local stdio dev with
 no reachable endpoint) or a report is too large to pack into a URL, the tool
-returns `html` instead of `url`, and the `pdb_assistant` prompt tells the model to
+returns `html` instead of `url`, and the `rcsb_search_assistant` prompt tells the model to
 write it to a `.html` file. Reports compress to ~1 KB even at 50 rows, so the
 size fallback is rare.
 
@@ -272,12 +272,12 @@ size fallback is rare.
 
 ## Prompt
 
-The server also exposes an MCP **prompt**, `pdb_assistant` ("PDB structure
+The server also exposes an MCP **prompt**, `rcsb_search_assistant` ("RCSB PDB search
 assistant") — the runtime assistant persona plus the HTML-report output format.
 Because it is served over the protocol's `prompts` capability, any MCP client can
 list and invoke it (e.g. Claude Desktop surfaces server prompts in the `+` / prompt
 menu); there's nothing to copy-paste. The text lives in
-[`src/rcsb_mcp/prompts/pdb_assistant.md`](src/rcsb_mcp/prompts/pdb_assistant.md)
+[`src/rcsb_mcp/prompts/rcsb_search_assistant.md`](src/rcsb_mcp/prompts/rcsb_search_assistant.md)
 and ships with the package.
 
 This is deliberately separate from the always-on server `instructions` (tool
