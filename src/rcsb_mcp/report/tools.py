@@ -142,8 +142,7 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
             RenderReportResult with EITHER a `url` or `html` (never both), plus
             template_version. Prefer `url` — it is a self-contained
             link that renders the report on demand; deliver it to the user as-is.
-            `html` is only returned as a fallback; write it to a `.html` file. See
-            the output instructions in the pdb_assistant prompt.
+            `html` is only returned as a fallback; write it to a `.html` file.
         """
         # Resolve the agent's identifiers into the full table BEFORE packing, so the
         # link carries every value and /r renders with no network call (see
