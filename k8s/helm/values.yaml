@@ -106,11 +106,33 @@ podEnvVars:
   # …/r?d=<token> URL. The id → token map lives in a short-TTL store. With multiple
   # replicas and no session affinity, that store MUST be shared or a link minted on
   # one pod won't resolve on another (it degrades to the fat …/r?d= link, which always
-  # works, but the token saving is lost). Point RCSB_MCP_REDIS_URL at a shared Redis to
-  # make short links resolve across replicas. Unset ⇒ per-pod in-memory store.
-  # - name: RCSB_MCP_REDIS_URL
-  #   value: "redis://rcsb-mcp-redis:6379/0"
+  # works, but the token saving is lost). Enable the bundled Redis below (redis.enabled)
+  # and the chart wires RCSB_MCP_REDIS_URL into the MCP pods automatically — don't set
+  # it here as well. Unset ⇒ per-pod in-memory store.
   # - name: RCSB_MCP_REPORT_TTL_SECONDS   # short-link lifetime; default 3600
   #   value: "3600"
+
+# Bundled Redis: shared short-TTL store so report short links minted on one MCP replica
+# resolve on every replica. Deploys a single ephemeral Redis pod plus a ClusterIP
+# Service; nothing routes to it from outside the cluster (no ingress rule, no external
+# IP), so it is cluster-internal by construction. Data is disposable (persistence off):
+# a Redis restart only degrades pending short links to the long …/r?d= form.
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  port: 6379
+  # Keep memory bounded; evict least-recently-used keys (old short links) when full.
+  maxmemory: 64mb
+  maxmemoryPolicy: allkeys-lru
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
 
 arguments: null

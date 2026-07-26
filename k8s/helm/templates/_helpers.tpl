@@ -51,3 +51,29 @@ ConfigMap resource name. Ensure names conform to character limits in Kubernetes
 {{- define "helm_chart.configmapName" -}}
 {{- printf "%s-config" (include "helm_chart.fullname" . | trunc 56 | trimSuffix "-") }}
 {{- end }}
+
+{{/*
+Name for the bundled Redis (shared short-link store). trunc 57 leaves room for "-redis".
+*/}}
+{{- define "helm_chart.redisFullname" -}}
+{{- printf "%s-redis" (include "helm_chart.fullname" . | trunc 57 | trimSuffix "-") }}
+{{- end }}
+
+{{/*
+Redis selector labels. These MUST differ from helm_chart.selectorLabels, otherwise the
+MCP Service (and HPA) would also match the Redis pod and route MCP traffic to it.
+*/}}
+{{- define "helm_chart.redisSelectorLabels" -}}
+app.kubernetes.io/name: {{ .Chart.Name }}-redis
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Redis common labels
+*/}}
+{{- define "helm_chart.redisLabels" -}}
+helm.sh/chart: {{ include "helm_chart.chart" . }}
+{{ include "helm_chart.redisSelectorLabels" . }}
+app.kubernetes.io/component: redis
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}

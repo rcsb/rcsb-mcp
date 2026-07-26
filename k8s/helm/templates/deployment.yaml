@@ -62,9 +62,16 @@ spec:
             httpGet:
               path: {{ .Values.readinessProbe.http.path }}
               port: {{ .Values.service.containerPort }}
-          {{- if .Values.podEnvVars }}
+          {{- if or .Values.podEnvVars .Values.redis.enabled }}
           env:
-            {{- toYaml .Values.podEnvVars | nindent 12 }}
+            {{- if .Values.redis.enabled }}
+            # Auto-wired to the bundled Redis Service; don't also set this in podEnvVars.
+            - name: RCSB_MCP_REDIS_URL
+              value: "redis://{{ include "helm_chart.redisFullname" . }}:{{ .Values.redis.port }}/0"
+            {{- end }}
+            {{- with .Values.podEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

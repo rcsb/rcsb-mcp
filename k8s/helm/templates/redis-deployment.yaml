@@ -1,0 +1,69 @@
+{{- if .Values.redis.enabled }}
+# Ephemeral shared store for report short links. Single replica + Recreate: the data is
+# a disposable short-TTL id→token cache, and a RollingUpdate would briefly run two
+# Redises behind one Service, splitting the store. A restart only degrades pending
+# short links to the long self-contained …/r?d= form, which always resolves.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helm_chart.redisFullname" . }}
+  labels:
+    {{- include "helm_chart.redisLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "helm_chart.redisSelectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "helm_chart.redisSelectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+          # Persistence off (--save '' / no AOF): the store is a short-TTL cache, and with
+          # no disk writes Redis runs as non-root on a read-only root filesystem.
+          args:
+            - redis-server
+            - --port
+            - {{ .Values.redis.port | quote }}
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --maxmemory
+            - {{ .Values.redis.maxmemory | quote }}
+            - --maxmemory-policy
+            - {{ .Values.redis.maxmemoryPolicy | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - containerPort: {{ .Values.redis.port }}
+              protocol: TCP
+          livenessProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            exec:
+              command: ["redis-cli", "-p", "{{ .Values.redis.port }}", "ping"]
+          readinessProbe:
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            exec:
+              command: ["redis-cli", "-p", "{{ .Values.redis.port }}", "ping"]
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          volumeMounts:
+            - name: data   # writable workdir (/data) while the root filesystem is read-only
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir:
+            medium: Memory
+{{- end }}

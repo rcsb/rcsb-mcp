@@ -67,3 +67,10 @@ autoscaling:
   maxReplicas: 6
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
+
+# Deploy the bundled Redis (ClusterIP only — unreachable from outside the cluster) so
+# report short links minted on one MCP replica resolve on all of them. Short links are
+# only produced once RCSB_MCP_REPORT_BASE_URL is set in podEnvVars (see values.yaml) —
+# do that after confirming the production host with DevOps.
+redis:
+  enabled: true
