@@ -114,13 +114,10 @@ _ATTR_INDEX: dict[str, dict[str, SearchAttribute]] = {
     schema: {a["attribute"]: a for a in catalog} for schema, catalog in ATTRIBUTE_CATALOGS.items()
 }
 
-# Two places the catalog is narrower than live API behaviour (adversarial review, 2026-07-26),
-# so validating strictly against it would false-reject a working query:
-#  - `in` (list match) works on numeric/date attributes, but the published metadata schema
-#    lists it only for string types; accept it on numeric/date rather than reject.
-_LIST_MATCH_TYPES = frozenset({"number", "integer", "date"})
-#  - `score` is the API's reserved default relevance sort — a real sort_by value, not a
-#    catalog attribute; exempt it (and any future reserved token) from path validation.
+# `score` is the API's reserved default relevance sort — a real sort_by value, not a catalog
+# attribute; exempt it (and any future reserved token) from attribute-path validation. (The
+# `in`-on-numeric gap the catalog once had is now corrected in the catalog DATA itself — the
+# generator maps `in` onto numeric/date attributes — so no operator special-case is needed.)
 _RESERVED_SORT = frozenset({"score"})
 
 
@@ -140,14 +137,11 @@ def _check_attribute(path: str, schema: str) -> SearchAttribute:
 
 def _check_operator(record: SearchAttribute, operator: str) -> None:
     """Raise ValueError if `operator` isn't one this attribute supports."""
-    if operator in record["operators"]:
-        return
-    if operator == "in" and record["type"] in _LIST_MATCH_TYPES:
-        return  # API accepts a list match on numeric/date; the metadata schema omits it
-    raise ValueError(
-        f"operator '{operator}' is not valid for attribute '{record['attribute']}' "
-        f"(type {record['type']}); valid operators: {', '.join(record['operators'])}."
-    )
+    if operator not in record["operators"]:
+        raise ValueError(
+            f"operator '{operator}' is not valid for attribute '{record['attribute']}' "
+            f"(type {record['type']}); valid operators: {', '.join(record['operators'])}."
+        )
 
 
 def _check_facet(facet: Any, schema: str) -> None:
@@ -408,7 +402,7 @@ async def rcsb_list_pdb_search_attributes(
             SUBSTRING against the attribute path and description, so pass ONE keyword
             ("resolution", "comp_id"), not a phrase — a multi-word query only matches where
             those exact words are adjacent in a description. Omit to return everything.
-        schema: Which catalog — "structure" (~677 attrs: entry/entity/assembly/instance) or
+        schema: Which catalog — "structure" (~675 attrs: entry/entity/assembly/instance) or
             "chemical" (~57 attrs: chemical-component). See the server instructions for how to
             search chemical attributes.
 

@@ -384,7 +384,7 @@ def test_list_attributes_full_catalog():
     r = _list_attrs()
     assert r["match_mode"] == "all"
     assert r["count"] == len(SEARCH_ATTRIBUTES) == len(r["attributes"])
-    assert "large" in r["note"], "the 677-attribute dump should warn about its size"
+    assert "large" in r["note"], "the ~675-attribute dump should warn about its size"
     assert _list_attrs(query="   ")["match_mode"] == "all", "blank query == omitted"
     assert _list_attrs(schema="chemical")["count"] == len(CHEMICAL_SEARCH_ATTRIBUTES)
     print("ok: list attributes full catalog")

@@ -78,11 +78,11 @@ def test_nested_facet_attribute_is_validated():
 
 # --- catalog is narrower than the live API in two spots: don't false-reject -----
 def test_in_operator_is_accepted_on_numeric_and_date_attributes():
-    """The metadata schema omits `in` from numeric/date operator lists, but the live
-    Search API accepts a list match there — validation must not false-reject it."""
+    """The live Search API accepts an `in` list match on numeric/date attributes; the
+    generator maps `in` onto them, so the catalog carries it and validation accepts it."""
     for path in ("rcsb_entry_info.resolution_combined", "rcsb_entry_info.deposited_polymer_monomer_count"):
         rec = _check_attribute(path, "structure")
-        assert "in" not in rec["operators"], "precondition: catalog omits `in` for this numeric attr"
+        assert "in" in rec["operators"], "catalog must carry `in` for numeric attrs (generator maps it on)"
         _check_operator(rec, "in")  # must NOT raise
     # and end-to-end through the combined validator
     _validate_query_attributes(attributes=[

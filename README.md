@@ -40,8 +40,8 @@ per sequence-identity cluster — i.e. non-redundant results. To search
 chemical-component attributes, find the path with
 `rcsb_list_pdb_search_attributes(schema="chemical")`, then pass `chemical=True` to
 `rcsb_search_by_attribute` / `rcsb_search_fulltext` (usually with `return_type="mol_definition"`).
-The chemical catalog is generated from the live metadata schema by
-[`scripts/generate_chemical_attributes.py`](scripts/generate_chemical_attributes.py).
+Both catalogs (structure and chemical) are generated from the live metadata schemas by
+[`scripts/generate_search_attributes.py`](scripts/generate_search_attributes.py).
 
 Counting and faceting are **output options on every `rcsb_search_*` tool**, not separate
 tools: each response includes `total_count` (the full match count — for "how many ..." run a
