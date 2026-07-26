@@ -13,7 +13,7 @@ from typing import get_args
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
-from rcsb_mcp import queries, server  # noqa: E402
+from rcsb_mcp import client, graphql, queries, search  # noqa: E402
 from rcsb_mcp.attribute_types import AttributeValueType, TextOperator  # noqa: E402
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES  # noqa: E402
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES  # noqa: E402
@@ -53,16 +53,16 @@ _SCHEMA = {
 
 
 def _with_fake_schema(coro_factory):
-    """Run an async flatten with server._type_fields swapped for the synthetic schema."""
+    """Run an async flatten with graphql._type_fields swapped for the synthetic schema."""
     async def fake_type_fields(type_name, url=None):
         return _SCHEMA.get(type_name, [])
 
-    orig = server._type_fields
-    server._type_fields = fake_type_fields
+    orig = graphql._type_fields
+    graphql._type_fields = fake_type_fields
     try:
         return asyncio.run(coro_factory())
     finally:
-        server._type_fields = orig
+        graphql._type_fields = orig
 
 
 def _flatten(**kw):
@@ -70,8 +70,8 @@ def _flatten(**kw):
     kw.setdefault("url", "x")
     kw.setdefault("max_depth", 3)
     kw.setdefault("query", None)
-    kw.setdefault("max_results", server.DATA_FIELDS_RESULT_CAP)
-    return _with_fake_schema(lambda: server._flatten_object_fields(**kw))
+    kw.setdefault("max_results", graphql.DATA_FIELDS_RESULT_CAP)
+    return _with_fake_schema(lambda: graphql._flatten_object_fields(**kw))
 
 
 def test_flatten_depth_and_traversal():
@@ -128,10 +128,10 @@ def test_flatten_result_cap():
 
 def test_field_descriptor_shape():
     # list-of-object unwraps to kind=object, list=True, with the inner type name.
-    d = server._field_descriptor(_list_obj("polymer_entities", "CorePolymerEntity"))
+    d = graphql._field_descriptor(_list_obj("polymer_entities", "CorePolymerEntity"))
     assert d == {"name": "polymer_entities", "kind": "object", "type": "CorePolymerEntity",
                  "list": True, "description": None}
-    s = server._field_descriptor(_scalar("rcsb_id", "the id"))
+    s = graphql._field_descriptor(_scalar("rcsb_id", "the id"))
     assert s["kind"] == "scalar" and s["list"] is False and s["type"] == "String"
     print("ok: field descriptor shape")
 
@@ -139,7 +139,7 @@ def test_field_descriptor_shape():
 # --- _enrich_field_errors: raw GraphQL FieldUndefined -> self-correcting hint ------------- #
 def _enrich(msgs, root_field="entries", url=None):
     """Run the enricher with the synthetic schema + a fake root-field->type resolver."""
-    url = url or server.DATA_GRAPHQL_URL
+    url = url or client.DATA_GRAPHQL_URL
 
     async def fake_type_fields(type_name, u=None):
         return _SCHEMA.get(type_name, [])
@@ -147,13 +147,13 @@ def _enrich(msgs, root_field="entries", url=None):
     async def fake_root_types(u=None):
         return {"entries": "CoreEntry", "alignments": "CoreEntry"}
 
-    orig_tf, orig_rt = server._type_fields, server._root_field_types
-    server._type_fields = fake_type_fields
-    server._root_field_types = fake_root_types
+    orig_tf, orig_rt = graphql._type_fields, graphql._root_field_types
+    graphql._type_fields = fake_type_fields
+    graphql._root_field_types = fake_root_types
     try:
-        return asyncio.run(server._enrich_field_errors(msgs, root_field, url))
+        return asyncio.run(graphql._enrich_field_errors(msgs, root_field, url))
     finally:
-        server._type_fields, server._root_field_types = orig_tf, orig_rt
+        graphql._type_fields, graphql._root_field_types = orig_tf, orig_rt
 
 
 def test_enrich_relocation():
@@ -191,7 +191,7 @@ def test_enrich_unknown_field():
 def test_enrich_seqcoord_steer():
     # on the Sequence Coordinates endpoint the steer names the seqcoord discovery tool.
     out = _enrich("Field 'foo' in type 'CoreEntry' is undefined",
-                  root_field="alignments", url=server.SEQCOORD_GRAPHQL_URL)
+                  root_field="alignments", url=client.SEQCOORD_GRAPHQL_URL)
     assert 'rcsb_describe_seqcoord_object("alignments"' in out
     assert "rcsb_describe_data_object" not in out
     print("ok: enrich seqcoord steer")
@@ -214,12 +214,12 @@ def test_search_return_type_defaults():
 
     # strucmotif defaults to "assembly" — the most general unit for a 3D motif and the
     # default of RCSB.org advanced search (symmetry mates only exist at assembly level).
-    assert _default(server.rcsb_search_strucmotif) == "assembly"
+    assert _default(search.rcsb_search_strucmotif) == "assembly"
     # the other polymer-oriented services default to "polymer_entity"
-    assert _default(server.rcsb_search_by_sequence) == "polymer_entity"
-    assert _default(server.rcsb_search_by_seqmotif) == "polymer_entity"
+    assert _default(search.rcsb_search_by_sequence) == "polymer_entity"
+    assert _default(search.rcsb_search_by_seqmotif) == "polymer_entity"
     # chemical defaults to the chemical component itself
-    assert _default(server.rcsb_search_by_chemical) == "mol_definition"
+    assert _default(search.rcsb_search_by_chemical) == "mol_definition"
     print("ok: search return_type defaults")
 
 
@@ -257,12 +257,15 @@ class _FakeClient:
 
 
 def _get_json_with(resp):
-    orig = server.httpx.AsyncClient
-    server.httpx.AsyncClient = lambda *a, **k: _FakeClient(resp)
+    # _get_json (and its httpx) live in rcsb_mcp.client now; patch/call it there.
+    from rcsb_mcp import client
+
+    orig = client.httpx.AsyncClient
+    client.httpx.AsyncClient = lambda *a, **k: _FakeClient(resp)
     try:
-        return asyncio.run(server._get_json("http://x", {}, "Test"))
+        return asyncio.run(client._get_json("http://x", {}, "Test"))
     finally:
-        server.httpx.AsyncClient = orig
+        client.httpx.AsyncClient = orig
 
 
 def test_get_json_204_empty():
@@ -278,19 +281,48 @@ def test_get_json_204_empty():
 def test_interpro_no_match_graceful():
     # with no matches (empty payload) the resolver returns count 0 + a fall-back-to-keyword note,
     # instead of propagating the JSONDecodeError that this input used to trigger.
+    # The resolvers live in rcsb_mcp.resolvers now and resolve _get_json via that module's
+    # globals, so patch it there (not on server, whose _get_json is only a re-export).
+    from rcsb_mcp import resolvers
+
     async def fake_get_json(url, params, service):
         return {}
 
-    orig = server._get_json
-    server._get_json = fake_get_json
+    orig = resolvers._get_json
+    resolvers._get_json = fake_get_json
     try:
-        r = asyncio.run(server.rcsb_find_interpro_domains(
+        r = asyncio.run(resolvers.rcsb_find_interpro_domains(
             query="acyltransferase domain polyketide synthase", limit=15, with_pdb_counts=False))
     finally:
-        server._get_json = orig
+        resolvers._get_json = orig
     assert r["count"] == 0 and r["entries"] == []
     assert r.get("note"), "should advise a keyword fallback when nothing matched"
     print("ok: interpro no-match graceful")
+
+
+def test_resolver_pdb_count_path_runs():
+    # The DEFAULT with_pdb_counts=True path fans PDB-count queries out with asyncio.gather,
+    # so the resolvers module must import asyncio. Regression: extracting the resolvers into
+    # their own module dropped that import (every rcsb_find_* NameError'd on its primary
+    # path); no prior test exercised with_pdb_counts=True (the only resolver test used False).
+    from rcsb_mcp import resolvers
+
+    async def fake_get_json(url, params, service):
+        return {"results": [{"id": "GO:0016301", "name": "kinase activity", "aspect": "molecular_function"}]}
+
+    async def fake_post_search(body):
+        return {"total_count": 7}
+
+    oj, ops = resolvers._get_json, resolvers._post_search
+    resolvers._get_json = fake_get_json
+    resolvers._post_search = fake_post_search
+    try:
+        r = asyncio.run(resolvers.rcsb_find_go_terms("kinase activity"))  # with_pdb_counts=True default
+    finally:
+        resolvers._get_json, resolvers._post_search = oj, ops
+    assert r["count"] == 1
+    assert r["terms"][0]["pdb_entry_count"] == 7, "the gather/count path must run (needs the asyncio import)"
+    print("ok: resolver pdb-count path runs")
 
 
 def test_attribute_catalogs_conform():
@@ -316,7 +348,7 @@ def test_attribute_catalogs_conform():
 
 
 def _list_attrs(**kw):
-    return asyncio.run(server.rcsb_list_pdb_search_attributes(**kw))
+    return asyncio.run(search.rcsb_list_pdb_search_attributes(**kw))
 
 
 def test_list_attributes_exact_match():

@@ -25,7 +25,8 @@ redis = ["redis>=5.0"]
 [dependency-groups]
 # Test deps. Declared here (not left to a manual venv install) so `uv sync` / `uv run`
 # keep them installed — otherwise a sync evicts pytest and the suite stops collecting.
-dev = ["pytest>=8"]
+# pyflakes backs tests/test_static_names.py (undefined-name / unused-import tripwire).
+dev = ["pytest>=8", "pyflakes>=3"]
 
 [project.scripts]
 rcsb-mcp = "rcsb_mcp.server:main"
