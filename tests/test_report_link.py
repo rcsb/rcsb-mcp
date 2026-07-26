@@ -225,17 +225,18 @@ def test_tool_short_link_renders_at_endpoint(client, monkeypatch):
 
     from mcp.server.fastmcp import FastMCP
 
-    from rcsb_mcp import server
+    from rcsb_mcp.report import routes as report_routes
     from rcsb_mcp.report import tools as report_tools
     from rcsb_mcp.report.store import InMemoryReportStore
 
     # A shared store so the tool takes the short-link path; the SAME instance must back
-    # the endpoint (the tool writes it, /r/<id> reads it).
+    # the endpoint (the tool writes it, /r/<id> reads it — the route resolves REPORT_STORE
+    # via report.routes' globals now, so patch it there).
     store = InMemoryReportStore()
     store.shared = True
     monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://reports.example.org")
     monkeypatch.setattr(report_tools, "REPORT_STORE", store)
-    monkeypatch.setattr(server, "REPORT_STORE", store)
+    monkeypatch.setattr(report_routes, "REPORT_STORE", store)
 
     mcp = FastMCP("test")
     report_tools.register_report_tools(mcp)
