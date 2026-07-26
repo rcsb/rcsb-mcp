@@ -11,6 +11,7 @@ module imports nothing back from server.
 
 from __future__ import annotations
 
+import difflib
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
@@ -94,6 +95,115 @@ ALL_HITS_MAX = 10000
 
 # Attribute catalogs by schema name (see rcsb_list_pdb_search_attributes).
 ATTRIBUTE_CATALOGS = {"structure": SEARCH_ATTRIBUTES, "chemical": CHEMICAL_SEARCH_ATTRIBUTES}
+
+# --------------------------------------------------------------------------- #
+# Local attribute validation
+#
+# Agents routinely GUESS attribute paths from naming conventions (e.g.
+# `...nonpolymer_entity_container_identifiers.comp_id` instead of the real
+# `...nonpolymer_comp_id`) — the prompt tells them not to, but pattern-matching wins.
+# The path they invent is usually absent from the schema entirely, yet the Search API
+# reports it as a CAPABILITY limit ("aggregation is not allowed on the attribute"),
+# which reads as "exists but not aggregatable" and invites a work-around instead of a
+# correction — costing several round trips. So validate here, locally, against the
+# authoritative catalog (the exact set rcsb_list_pdb_search_attributes serves): a path
+# not in it is not searchable, so this only rejects what the API would reject too, but
+# fails FAST with a "did you mean" that steers straight to the right path.
+# --------------------------------------------------------------------------- #
+_ATTR_INDEX: dict[str, dict[str, SearchAttribute]] = {
+    schema: {a["attribute"]: a for a in catalog} for schema, catalog in ATTRIBUTE_CATALOGS.items()
+}
+
+# Two places the catalog is narrower than live API behaviour (adversarial review, 2026-07-26),
+# so validating strictly against it would false-reject a working query:
+#  - `in` (list match) works on numeric/date attributes, but the published metadata schema
+#    lists it only for string types; accept it on numeric/date rather than reject.
+_LIST_MATCH_TYPES = frozenset({"number", "integer", "date"})
+#  - `score` is the API's reserved default relevance sort — a real sort_by value, not a
+#    catalog attribute; exempt it (and any future reserved token) from path validation.
+_RESERVED_SORT = frozenset({"score"})
+
+
+def _check_attribute(path: str, schema: str) -> SearchAttribute:
+    """Return the catalog record for `path`, or raise ValueError naming close matches."""
+    record = _ATTR_INDEX[schema].get(path)
+    if record is not None:
+        return record
+    close = difflib.get_close_matches(path, _ATTR_INDEX[schema], n=3, cutoff=0.6)
+    hint = f" Did you mean: {', '.join(close)}?" if close else ""
+    schema_arg = ', schema="chemical"' if schema == "chemical" else ""
+    raise ValueError(
+        f"'{path}' is not a searchable {schema} attribute. Find the exact path with "
+        f'rcsb_list_pdb_search_attributes(query="<keyword>"{schema_arg}) — do not guess it.{hint}'
+    )
+
+
+def _check_operator(record: SearchAttribute, operator: str) -> None:
+    """Raise ValueError if `operator` isn't one this attribute supports."""
+    if operator in record["operators"]:
+        return
+    if operator == "in" and record["type"] in _LIST_MATCH_TYPES:
+        return  # API accepts a list match on numeric/date; the metadata schema omits it
+    raise ValueError(
+        f"operator '{operator}' is not valid for attribute '{record['attribute']}' "
+        f"(type {record['type']}); valid operators: {', '.join(record['operators'])}."
+    )
+
+
+def _check_facet(facet: Any, schema: str) -> None:
+    """Validate a facet's aggregation attribute, recursing into nested sub-facets."""
+    if not isinstance(facet, dict):
+        return
+    attr = facet.get("attribute")
+    if isinstance(attr, str) and attr:
+        _check_attribute(attr, schema)
+    for sub in facet.get("facets") or []:
+        _check_facet(sub, schema)
+
+
+def _validate_query_attributes(
+    *,
+    chemical: bool = False,
+    attributes: list[AttributeFilter] | None = None,
+    facets: list[dict[str, Any]] | None = None,
+    sort_by: str | None = None,
+) -> None:
+    """Validate every agent-supplied attribute path (and each condition's operator) before
+    building the query, so a guessed path/operator raises a clear ValueError here rather
+    than a misleading Search-API error several calls later."""
+    schema = "chemical" if chemical else "structure"
+    for f in attributes or []:
+        _check_operator(_check_attribute(f.attribute, schema), f.operator)
+    for facet in facets or []:
+        _check_facet(facet, schema)
+    if sort_by and sort_by not in _RESERVED_SORT:
+        _check_attribute(sort_by, schema)
+
+
+def _validate_advanced_body(query_body: Any) -> None:
+    """Best-effort validation of the attribute paths in a raw advanced query body.
+
+    Walks `text` / `text_chem` terminals and checks their parameters.attribute (+ operator)
+    against the matching catalog; leaves everything else (services, group shape) to the API,
+    and never raises on a malformed body — only on a clearly-invalid attribute path.
+    """
+    def walk(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "group":
+            for child in node.get("nodes") or []:
+                walk(child)
+        elif node.get("type") == "terminal" and node.get("service") in ("text", "text_chem"):
+            params = node.get("parameters")
+            attr = params.get("attribute") if isinstance(params, dict) else None
+            if isinstance(attr, str) and attr:
+                record = _check_attribute(attr, "chemical" if node["service"] == "text_chem" else "structure")
+                operator = params.get("operator")
+                if isinstance(operator, str) and operator:
+                    _check_operator(record, operator)
+
+    if isinstance(query_body, dict):
+        walk(query_body.get("query"))
 
 
 def _format(
@@ -244,6 +354,7 @@ async def rcsb_search_fulltext(
         rcsb_get_* tool matching return_type). all_hits/facets response variants: see the
         server instructions.
     """
+    _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_combined_query(
         full_text=query,
         filters=_filter_dicts(attributes),
@@ -426,6 +537,7 @@ async def rcsb_search_by_attribute(
         attribute filter and carries NO biological meaning — don't rank hits by it.
         all_hits/facets response variants: see the server instructions.
     """
+    _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_combined_query(
         full_text=None,
         filters=_filter_dicts(attributes),
@@ -504,6 +616,7 @@ async def rcsb_search_by_sequence(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
+    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_sequence_query(
         sequence,
         sequence_type=sequence_type,
@@ -591,6 +704,7 @@ async def rcsb_search_by_chemical(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
+    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_chemical_query(
         value,
         query_type=query_type,
@@ -672,6 +786,7 @@ async def rcsb_search_by_structure(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
+    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_structure_query(
         entry_id,
         assembly_id=assembly_id,
@@ -749,6 +864,7 @@ async def rcsb_search_by_seqmotif(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
+    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_seqmotif_query(
         pattern,
         pattern_type=pattern_type,
@@ -807,6 +923,7 @@ async def rcsb_search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
             language at https://search.rcsb.org/). Returns the normalized
             {total_count, returned, hits} result.
     """
+    _validate_advanced_body(query_body)
     raw = await _post_search(query_body)
     return _format(raw, query_body)
 
@@ -887,6 +1004,7 @@ async def rcsb_search_strucmotif(
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
+    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_strucmotif_query(
         entry_id,
         residue_ids,
