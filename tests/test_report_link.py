@@ -129,6 +129,38 @@ def test_endpoint_sets_hardening_headers(client):
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
+def test_csp_allows_the_masthead_logo_origin(client):
+    """The template's logo and the endpoint's CSP are coupled across two modules.
+
+    `default-src 'none'` covers images too, so without an explicit img-src the browser
+    silently blocks the masthead logo and it renders as a broken icon -- invisible to
+    every server-side test, which is why this pins the pair together. It also pins the
+    allowance to that ONE origin: widening it to 'self' or '*' would let crafted report
+    text reach for an attacker's host, which `default-src 'none'` exists to prevent.
+    """
+    from rcsb_mcp.report import ReportDocument, render_report
+
+    csp = client.get("/r", params={"d": _token(REPORT)}).headers["content-security-policy"]
+    html = render_report(ReportDocument(title="t"))
+
+    assert 'src="https://cdn.rcsb.org/' in html, "template no longer loads the logo from the CDN"
+
+    # Parse the directive rather than substring-match it: "img-src https:" (a scheme-wide
+    # wildcard) is itself a substring of "img-src https://cdn.rcsb.org", so a naive
+    # `in` check both mis-fires and misses.
+    directives = {
+        parts[0]: parts[1:]
+        for parts in (d.strip().split() for d in csp.split(";"))
+        if parts
+    }
+    assert directives.get("default-src") == ["'none'"], "the deny-by-default base must stay"
+    assert directives.get("img-src") == ["https://cdn.rcsb.org"], (
+        f"img-src must name the logo's origin and nothing else, got {directives.get('img-src')!r}. "
+        "Without it the browser blocks the masthead logo; widened to 'self'/'*'/'https:' the "
+        "page could be made to fetch from a host an attacker chose."
+    )
+
+
 def test_endpoint_escapes_hostile_report_text(client):
     """The template escapes every value, so crafted text can never become markup."""
     hostile = {**REPORT, "title": "<script>alert(1)</script>"}

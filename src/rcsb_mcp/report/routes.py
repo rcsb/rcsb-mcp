@@ -24,7 +24,15 @@ _REPORT_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow",
     "Referrer-Policy": "no-referrer",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    # img-src is the RCSB CDN and nothing else: the template's masthead logo lives there
+    # (inlining a 33 KB PNG would bloat every page and every `html` fallback). Keep it to
+    # that exact origin -- not 'self', not '*' -- so the page still cannot be made to fetch
+    # anything an attacker controls. Coupled to the template; see
+    # tests/test_report_link.py::test_csp_allows_the_masthead_logo_origin.
+    "Content-Security-Policy": (
+        "default-src 'none'; img-src https://cdn.rcsb.org; style-src 'unsafe-inline'; "
+        "base-uri 'none'; form-action 'none'"
+    ),
     # Content-addressed by `d`, so the same link always renders the same page.
     "Cache-Control": "public, max-age=3600, immutable",
 }

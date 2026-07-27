@@ -312,6 +312,23 @@ def test_all_required_sections_appear_in_fixed_order():
     assert positions == sorted(positions)
 
 
+def test_masthead_pairs_the_rcsb_logo_with_the_title():
+    """The logo is a link to rcsb.org sitting alongside the report title, inside one
+    masthead so the rule under it spans both. Kept as an external CDN reference on
+    purpose: the PNG is ~33 KB, and inlining it would add ~44 KB to every page and to
+    every `html` fallback that goes back into the agent's context."""
+    html = render_report(_minimal(title="Iron-type nitrile hydratases"), generated_at=FIXED)
+    head = html[html.index('<header class="masthead">') : html.index("</header>")]
+    assert '<a href="https://www.rcsb.org"' in head
+    assert 'src="https://cdn.rcsb.org/rcsb-pdb/v2/common/images/rcsb_logo.png"' in head
+    assert 'alt="RCSB PDB"' in head
+    assert "<h1>Iron-type nitrile hydratases</h1>" in head, "title must sit in the masthead, beside the logo"
+    # the logo must precede the title in source order, so it renders to its left
+    assert head.index("rcsblogo") < head.index("<h1>")
+    # nothing else may be fetched from the network — the CSP only permits that one origin
+    assert html.count("https://cdn.rcsb.org") == 1
+
+
 def test_template_version_is_recorded_in_output():
     from rcsb_mcp.report import TEMPLATE_VERSION
 
