@@ -167,8 +167,6 @@ Open the Claude Desktop configuration file:
 
 This opens `claude_desktop_config.json` in your default text editor.
 
-### macOS
-
 Add the following configuration:
 
 ```json
@@ -181,6 +179,8 @@ Add the following configuration:
   }
 }
 ```
+
+### macOS
 
 For a local source checkout:
 
@@ -199,19 +199,6 @@ For a local source checkout:
 Restart Claude Desktop. The tools should appear in the connectors/tools interface.
 
 ### Windows
-
-Add the following configuration:
-
-```json
-{
-  "mcpServers": {
-    "rcsb-mcp": {
-      "command": "uvx",
-      "args": ["rcsb-mcp"]
-    }
-  }
-}
-```
 
 For a local source checkout:
 
