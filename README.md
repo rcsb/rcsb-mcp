@@ -139,7 +139,6 @@ uv pip install -e .
 [official uv installation docs](https://docs.astral.sh/uv/getting-started/installation/) for
 up-to-date instructions across all platforms.
 
-
 ## Run / test
 
 ```bash
