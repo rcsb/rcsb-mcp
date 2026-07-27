@@ -138,9 +138,16 @@ Other capabilities:
 - To DE-DUPLICATE redundant hits (one representative per cluster), set group_by on any
   rcsb_search_* tool (requires return_type="polymer_entity"):
   "seqid_30"/"seqid_50"/"seqid_70"/"seqid_90"/"seqid_95" (cluster by sequence-identity %) or
-  "uniprot" (one per UniProt accession). Choose the representative with group_by_ranking
-  (resolution / released_date / entity_residue_count / score). When group_by="uniprot", PREFER
-  group_by_ranking="coverage" — it keeps the most relevant biological sequence 
+  "uniprot" (one per UniProt accession). Choose the representative with group_by_ranking:
+    - resolution: ranks each group member by experimental resolution, best first.
+    - released_date: ranks each group member by initial release date, most recent first.
+    - entity_residue_count: ranks each group member by the length of the reported (sample)
+      sequence, longest first — this is the deposited construct, so expression tags and
+      fusion partners count toward it.
+    - score: ranks each group member by ElasticSearch score, highest first. This score does not 
+      measure biological relevance or quility of the structure.
+    - coverage: ranks each group member by sequence coverage of the UniProt protein, largest first.
+  When group_by="uniprot", PREFER group_by_ranking="coverage" — it keeps the most relevant biological sequence
   covering the most of the UniProt protein (coverage is valid only with group_by="uniprot").
 - rcsb_search_strucmotif finds structures sharing a 3D arrangement of specific residues (a
   geometric motif); this is different from rcsb_search_by_structure (whole-shape similarity).
