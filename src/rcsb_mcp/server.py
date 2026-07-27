@@ -215,6 +215,12 @@ class SeqmotifService(_ServiceSpec):
     sequence_type: SequenceType = "protein"
 
 
+class GroupService(_ServiceSpec):
+    """A nested group node"""
+    type: Literal["group"]
+    logical_operator: LogicalOperator
+    nodes: list[dict[str, Any]]
+
 class StrucmotifService(_ServiceSpec):
     """A 3D structural-motif (residue-geometry) match, like rcsb_search_strucmotif."""
 
@@ -245,7 +251,7 @@ class StrucmotifService(_ServiceSpec):
 SearchService = Annotated[
     Union[
         FullTextService, AttributeService, SequenceService, ChemicalService,
-        StructureService, SeqmotifService, StrucmotifService,
+        StructureService, SeqmotifService, StrucmotifService, GroupService
     ],
     Field(discriminator="type"),
 ]
@@ -1942,6 +1948,7 @@ async def rcsb_search_group(
     sort_direction: SortDirection = "asc",
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
+    return_filter_only: bool = False
 ) -> dict[str, Any]:
     """Combine ANY mix of search services into ONE boolean (AND/OR) query.
 
@@ -1994,6 +2001,9 @@ async def rcsb_search_group(
         group_by: Collapse redundant polymer_entity hits into clusters (requires
             return_type="polymer_entity"); see the other search tools for the values.
         group_by_ranking: Which member to keep as each cluster's representative.
+        return_filter_only: for recursively building a nested group node.
+            If True, returns just the value of "query" in the json search object.
+            Pass that back in as part of teh services list to build the search.
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
@@ -2013,6 +2023,8 @@ async def rcsb_search_group(
         group_by_ranking=group_by_ranking,
         facets=facets,
     )
+    if return_filter_only:
+        return body["query"]
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -2038,6 +2050,7 @@ async def rcsb_search_strucmotif(
     attributes: list[AttributeFilter] | None = None,
     logical_operator: LogicalOperator = "and",
     facets: list[dict[str, Any]] | None = None,
+    return_filter_only: bool = False,
     group_by: GroupBy | None = None,
     group_by_ranking: GroupByRanking | None = None,
 ) -> dict[str, Any]:

@@ -888,10 +888,13 @@ def _service_node(spec: dict[str, Any]) -> dict[str, Any]:
       seqmotif   {pattern, pattern_type?, sequence_type?}
       strucmotif {entry_id, residue_ids, backbone_distance_tolerance?, ...,
                   exchanges?, limit?}
+      group {...} for a nested group node, returns input unchanged
     """
     if not isinstance(spec, dict):
         raise ValueError("each service must be a dict with a 'type'")
     kind = spec.get("type")
+    if kind == "group":
+        return spec
     if kind == "fulltext":
         value = spec.get("value")
         if not value:
