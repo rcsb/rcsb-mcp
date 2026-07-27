@@ -168,7 +168,7 @@ Open the Claude Desktop configuration file:
 
 This opens `claude_desktop_config.json` in your default text editor.
 
-### macOS or Linux
+### macOS
 
 Add the following configuration:
 
