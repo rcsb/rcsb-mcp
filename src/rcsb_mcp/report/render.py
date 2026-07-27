@@ -14,12 +14,12 @@ from typing import Any
 from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
 
-from .models import Cell, ColumnKind, EditorLink, Fragment, ReportDocument
+from .models import Cell, ColumnKind, EditorLink, Evidence, ReportDocument
 
 __all__ = ["TEMPLATE_VERSION", "render_report"]
 
 # Bump on any template change so rendered reports stay traceable.
-TEMPLATE_VERSION = "1.1.0"
+TEMPLATE_VERSION = "1.2.0"
 
 RCSB_STRUCTURE_URL = "https://www.rcsb.org/structure/{}"
 RCSB_LIGAND_URL = "https://www.rcsb.org/ligand/{}"
@@ -31,26 +31,24 @@ UNIPROT_URL = "https://www.uniprot.org/uniprotkb/{}"
 # --------------------------------------------------------------------------
 
 
-def _render_fragments(items: list[Fragment]) -> Markup:
-    """Join fragments, wrapping model-supplied ones in the provenance span.
+def _render_evidence(ev: Evidence) -> Markup:
+    """Render an Evidence cell: tool-sourced ``grounds`` then, if present, the
+    assistant's ``interpretation`` in the provenance colour.
 
-    Adjacent fragments are joined with a single space unless the following one
-    starts with punctuation, so the agent does not have to manage whitespace.
+    This is the ONLY place the two-colour, provenance-aware text survives — the
+    split is a schema boundary, so the interpretation half can never be emitted
+    as tool-coloured text.
     """
-    out: list[str] = []
-    for frag in items:
-        text = escape(frag.text)
-        piece = f'<span class="non-tool-source">{text}</span>' if frag.model_supplied else str(text)
-        if out and not frag.text[:1] in ",.;:)]}!?":
-            out.append(" ")
-        out.append(piece)
-    return Markup("".join(out))
+    grounds = escape(ev.grounds)
+    if ev.interpretation:
+        return Markup(f'{grounds} <span class="non-tool-source">{escape(ev.interpretation)}</span>')
+    return Markup(str(grounds))
 
 
 def _render_cell(value: Cell, kind: str) -> Markup:
     """Render one table cell according to its column kind."""
-    if isinstance(value, list):
-        return _render_fragments([v if isinstance(v, Fragment) else Fragment(**v) for v in value])
+    if isinstance(value, Evidence):
+        return _render_evidence(value)
 
     if value is None or (isinstance(value, str) and not value.strip()):
         return Markup("NA")
@@ -131,7 +129,6 @@ def render_report(doc: ReportDocument, *, generated_at: datetime | None = None) 
 
     return _ENV.get_template("report.html.j2").render(
         req=doc,
-        fragments=_render_fragments,
         cell=_render_cell,
         editor_href=_editor_href,
         template_version=TEMPLATE_VERSION,

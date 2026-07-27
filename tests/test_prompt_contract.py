@@ -46,7 +46,10 @@ REQUIRED = [
     ("clickable link", "the url IS the deliverable"),
     ("`.html`", "the html fallback is written to a file — client-agnostic, no tool named"),
     # --- provenance --------------------------------------------------------
-    ("`model_supplied: true`", "provenance colouring depends on the agent setting this"),
+    # Provenance is now a schema split, not a per-fragment flag: the agent's own reading
+    # goes in evidence.interpretation, the tool value in grounds. Both names must survive.
+    ("`grounds`", "the tool-sourced half of evidence — provenance colouring keys off the split"),
+    ("`interpretation`", "the agent's-own-reading half; folding it into grounds is the bug this prevents"),
     # --- search quality: the agent's actual job ----------------------------
     ("FAMILY / ONTOLOGY ANCHOR", "rare-term recall strategy"),
     ("false positives", "full-text hits must be verified"),

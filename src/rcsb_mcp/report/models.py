@@ -13,7 +13,7 @@ from typing import Any, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 __all__ = [
-    "Fragment",
+    "Evidence",
     "Cell",
     "ColumnKind",
     "Column",
@@ -36,32 +36,44 @@ class _Strict(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Provenance
+# Evidence — the ONE place the tool-value / agent-reading distinction is carried,
+# split by field so it can't be blurred. Everything else in the report is either a
+# server-filled value (tool-sourced by construction) or agent narrative
+# (data_usage), so neither needs the split. How the two halves are presented is the
+# template's business, not the model's.
 # --------------------------------------------------------------------------
 
 
-class Fragment(_Strict):
-    """A run of text with an explicit provenance flag.
+class Evidence(_Strict):
+    """One result's justification, split so the two halves stay distinct and can
+    never be blurred: ``grounds`` is the tool-returned value the match rests on;
+    ``interpretation`` is the assistant's own reading of it.
 
-    This replaces hand-applied ``<span class="non-tool-source">`` wrapping.
-    Provenance becomes a boolean the agent sets per fragment; the template
-    decides how it is displayed, so the colour coding can never drift or be
-    applied inconsistently between the table and the prose sections.
+    Two fields rather than a free run of text: it makes the tool/inference seam a
+    schema boundary instead of a flag the agent has to remember to set, so a title
+    and the assistant's gloss on it can't be conflated into a single value.
     """
 
-    text: str = Field(..., description="Plain text. Do NOT include HTML tags; they are escaped.")
-    model_supplied: bool = Field(
-        default=False,
+    grounds: str = Field(
+        ...,
+        min_length=1,
         description=(
-            "True if this text is the assistant's own domain knowledge, interpretation or "
-            "inference. False if the value came verbatim (or as a direct paraphrase) from an "
-            "RCSB MCP tool response."
+            "The tool-returned value(s) the match rests on — an attribute value, annotation, "
+            "matched keyword, or title text from an rcsb_* response. "
+            "Put ONLY what a tool actually returned here; your own reading goes in interpretation."
+        ),
+    )
+    interpretation: str | None = Field(
+        default=None,
+        description=(
+            "Your OWN domain knowledge or inference about what `grounds` means or why it matters "
+            "— anything NOT returned by a tool. Omit when the evidence is purely a tool value."
         ),
     )
 
 
-# A cell is either plain tool-sourced text, or a mixed run of fragments.
-Cell = Union[str, int, float, None, list[Fragment]]
+# A cell is a plain server-filled value, or — for the Evidence column — an Evidence object.
+Cell = Union[str, int, float, None, Evidence]
 
 
 class ColumnKind(str, Enum):
@@ -88,7 +100,7 @@ class Column(_Strict):
 
 
 # --------------------------------------------------------------------------
-# Provenance
+# API calls and the data-usage narrative
 # --------------------------------------------------------------------------
 
 
@@ -140,7 +152,14 @@ class DataUsageItem(_Strict):
     """One step of the 'Data usage summary' narrative."""
 
     heading: str = Field(..., description="Short step name, e.g. 'Discovery', 'Filtering & disambiguation'.")
-    body: list[Fragment] = Field(..., description="The explanation, split into provenance-tagged fragments.")
+    body: str = Field(
+        ...,
+        min_length=1,
+        description=(
+            "The explanation for this step. Plain prose — the Data usage summary is your own "
+            "account of how you worked. Do NOT include HTML."
+        ),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -168,12 +187,12 @@ class Result(_Strict):
         min_length=1,
         description="The identifier: a PDB entry id (4HHB) or a chemical component id (ATP), matching result_type.",
     )
-    evidence: list[Fragment] = Field(
-        default_factory=list,
+    evidence: Evidence | None = Field(
+        default=None,
         description=(
-            "Why THIS result answers the user's question — the concrete attribute value, "
-            "matched annotation or title evidence. Provenance-tagged fragments; set "
-            "model_supplied true on your own inference."
+            "Why THIS result answers the user's question, split into `grounds` (the tool-returned "
+            "value the match rests on) and an optional `interpretation` (your own reading of it). "
+            "The split is what keeps your inference from rendering as if the archive returned it."
         ),
     )
 
@@ -204,9 +223,9 @@ class ReportRequest(_Strict):
     )
     sort_note: str | None = Field(default=None, description="How the table is ordered, e.g. 'Sorted by resolution, best first.'")
     data_usage: list[DataUsageItem] = Field(default_factory=list)
-    no_results_note: list[Fragment] = Field(
-        default_factory=list,
-        description="Shown instead of the table when results is empty; explain the search limitations here.",
+    no_results_note: str | None = Field(
+        default=None,
+        description="Shown instead of the table when results is empty; explain the search limitations here. Plain prose.",
     )
 
 
@@ -230,7 +249,7 @@ class ReportDocument(_Strict):
     rows: list[dict[str, Cell]] = Field(default_factory=list)
     sort_note: str | None = None
     data_usage: list[DataUsageItem] = Field(default_factory=list)
-    no_results_note: list[Fragment] = Field(default_factory=list)
+    no_results_note: str | None = None
 
     @model_validator(mode="after")
     def _check_rows_against_columns(self) -> ReportDocument:

@@ -34,6 +34,7 @@
  td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
  code { background: #eef2f5; padding: .05rem .25rem; border-radius: 3px; font-size: .9em; }
  .non-tool-source { color: var(--model-source); }
+ .muted { color: #667; }
  .legend { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .6rem .8rem; font-size: .9rem; }
  .params { background: #f0f4f7; border-left: 4px solid var(--rcsb-blue); padding: .6rem .9rem; font-size: .9rem; }
  .empty { background: #fdf6ec; border-left: 4px solid var(--model-source); padding: .8rem 1rem; }
@@ -48,8 +49,8 @@
 <h1>{{ req.title }}</h1>
 
 <p class="legend">
-  <span class="non-tool-source">Text in this color</span> in the Results table and Data usage summary
-    is context supplied by the AI agent, not retrieved from the RCSB PDB MCP tools.
+  In the <b>Evidence</b> column, <span class="non-tool-source">text in this color</span>
+    is the AI agent's own interpretation, not a value retrieved from the RCSB PDB MCP tools.
 </p>
 
 <h2>API requests</h2>
@@ -63,12 +64,12 @@
       {{ call.label }}
     {%- endif -%}
     {%- if call.tool_name %} &mdash; <code>{{ call.tool_name }}</code>{% endif -%}
-    {%- if not call.editor %} <span class="non-tool-source">(no editor link for this tool)</span>{% endif -%}
+    {%- if not call.editor %} <span class="muted">(no editor link for this tool)</span>{% endif -%}
   </li>
   {% endfor %}
 </ol>
 {% else %}
-<p><span class="non-tool-source">No API calls were recorded for this report.</span></p>
+<p><span class="muted">No API calls were recorded for this report.</span></p>
 {% endif %}
 
 <h2>Results</h2>
@@ -92,7 +93,7 @@
 {% else %}
 <div class="empty">
   <b>No matching structures were found.</b>
-  {% if req.no_results_note %}<p>{{ fragments(req.no_results_note) }}</p>{% endif %}
+  {% if req.no_results_note %}<p>{{ req.no_results_note }}</p>{% endif %}
 </div>
 {% endif %}
 
@@ -100,7 +101,7 @@
 <h2>Data usage summary</h2>
 <ol>
   {% for item in req.data_usage %}
-  <li><b>{{ item.heading }}</b> {{ fragments(item.body) }}</li>
+  <li><b>{{ item.heading }}</b> {{ item.body }}</li>
   {% endfor %}
 </ol>
 {% endif %}

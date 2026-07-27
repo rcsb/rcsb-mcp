@@ -132,11 +132,12 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
                 the ids you send: a mismatch resolves nothing, and every derived
                 value comes back empty.
             results: the identifiers you are reporting, in the order you want them
-                ranked, each ``{"id": ..., "evidence": [...]}``.
+                ranked, each ``{"id": ..., "evidence": {...}}``. Evidence has two
+                fields: ``grounds`` (the tool-returned value the match rests on) and
+                optional ``interpretation`` (your own reading of it). Splitting them is
+                what stops your inference from being read as something the archive returned.
             data_usage: ordered narrative of how each call shaped the final set;
-                each item's body is a list of provenance-tagged fragments
-                ``{"text": ..., "model_supplied": bool}`` — model_supplied true for
-                your own inference, false for tool-returned values.
+                each item's ``body`` is plain prose — your own account of how you worked.
 
         Returns:
             RenderReportResult with EITHER a `url` or `html` (never both), plus

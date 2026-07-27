@@ -24,7 +24,7 @@ def _req(ids, result_type=ResultType.ENTRY, **kw):
     return ReportRequest(
         title="t",
         result_type=result_type,
-        results=[Result(id=i, evidence=[{"text": "matched"}]) for i in ids],
+        results=[Result(id=i, evidence={"grounds": "matched"}) for i in ids],
         **kw,
     )
 
@@ -143,7 +143,7 @@ def test_ligand_document_has_the_fixed_five_columns():
 def test_evidence_and_id_survive_untouched():
     doc = _run(enrich.build_document(_req(["4HHB"]), _fetcher([_entry()])))
     assert doc.rows[0]["id"] == "4HHB"
-    assert doc.rows[0]["evidence"][0].text == "matched"
+    assert doc.rows[0]["evidence"].grounds == "matched"
 
 
 def test_result_order_is_preserved_as_the_ranking():
@@ -219,7 +219,7 @@ def test_the_spec_selects_the_query_and_root_field():
 def test_junk_from_the_api_never_destroys_the_report(junk):
     doc = _run(enrich.build_document(_req(["4HHB"]), _fetcher([junk])))
     assert doc.rows[0]["id"] == "4HHB"
-    assert doc.rows[0]["evidence"][0].text == "matched"
+    assert doc.rows[0]["evidence"].grounds == "matched"
 
 
 def test_non_list_fetch_result_is_survived():

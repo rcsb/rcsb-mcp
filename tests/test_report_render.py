@@ -17,7 +17,7 @@ from rcsb_mcp.report import (
     ColumnKind,
     DataUsageItem,
     EditorLink,
-    Fragment,
+    Evidence,
     ReportDocument,
     render_report,
 )
@@ -36,6 +36,18 @@ def _minimal(**kw) -> ReportDocument:
     )
     base.update(kw)
     return ReportDocument(**base)
+
+
+def _with_evidence(ev: Evidence) -> ReportDocument:
+    """A one-row document whose evidence cell carries the Evidence object under test."""
+    return ReportDocument(
+        title="t",
+        columns=[
+            Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
+            Column(key="evidence", label="Evidence"),
+        ],
+        rows=[{"pdb_id": "2QDY", "evidence": ev}],
+    )
 
 
 # --------------------------------------------------------------------------
@@ -72,57 +84,43 @@ def test_tool_text_is_escaped():
     assert "&amp; friends" in html
 
 
-def test_fragment_text_is_escaped_inside_provenance_span():
-    req = _minimal(
-        data_usage=[DataUsageItem(heading="Note", body=[Fragment(text="a < b & c", model_supplied=True)])]
-    )
+def test_evidence_interpretation_is_escaped_inside_provenance_span():
+    req = _with_evidence(Evidence(grounds="ok", interpretation="a < b & c"))
     html = render_report(req, generated_at=FIXED)
     assert '<span class="non-tool-source">a &lt; b &amp; c</span>' in html
 
 
+def test_data_usage_body_is_escaped_and_never_wrapped():
+    """Data usage is plain agent narrative now: escaped, but never provenance-coloured."""
+    req = _minimal(data_usage=[DataUsageItem(heading="Note", body="a < b & c")])
+    html = render_report(req, generated_at=FIXED)
+    assert "a &lt; b &amp; c" in html
+    assert '<span class="non-tool-source">a &lt; b &amp; c</span>' not in html
+
+
 # --------------------------------------------------------------------------
-# Provenance
+# Provenance — lives ONLY in the Evidence cell now
 # --------------------------------------------------------------------------
 
 
-def test_model_supplied_fragments_are_wrapped_and_tool_ones_are_not():
-    req = _minimal(
-        data_usage=[
-            DataUsageItem(
-                heading="Discovery",
-                body=[
-                    Fragment(text="32 entries matched."),
-                    Fragment(text="Fe-type enzymes dominate.", model_supplied=True),
-                ],
-            )
-        ]
+def test_evidence_grounds_are_plain_and_interpretation_is_wrapped():
+    """grounds render tool-sourced (no span); the interpretation half gets the colour."""
+    req = _with_evidence(
+        Evidence(grounds="EC 4.2.1.1; bound ZN", interpretation="a carbonic anhydrase fold")
     )
     html = render_report(req, generated_at=FIXED)
-    assert "32 entries matched." in html
-    assert '<span class="non-tool-source">Fe-type enzymes dominate.</span>' in html
-    assert '<span class="non-tool-source">32 entries matched.' not in html
+    assert "EC 4.2.1.1; bound ZN" in html
+    assert '<span class="non-tool-source">a carbonic anhydrase fold</span>' in html
+    # the tool-sourced grounds half is never wrapped
+    assert '<span class="non-tool-source">EC 4.2.1.1' not in html
 
 
-def test_mixed_provenance_inside_a_table_cell():
-    req = ReportDocument(
-        title="t",
-        columns=[
-            Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
-            Column(key="info", label="Evidence"),
-        ],
-        rows=[
-            {
-                "pdb_id": "2QDY",
-                "info": [
-                    {"text": "Thr315 gatekeeper residue"},
-                    {"text": "commonly associated with imatinib resistance", "model_supplied": True},
-                ],
-            }
-        ],
-    )
+def test_evidence_without_interpretation_has_no_provenance_span():
+    req = _with_evidence(Evidence(grounds="Thr315 gatekeeper residue"))
     html = render_report(req, generated_at=FIXED)
     assert "Thr315 gatekeeper residue" in html
-    assert '<span class="non-tool-source">commonly associated with imatinib resistance</span>' in html
+    # grounds-only evidence must not be wrapped in the assistant colour
+    assert '<span class="non-tool-source">Thr315' not in html
 
 
 # --------------------------------------------------------------------------
@@ -191,6 +189,31 @@ def test_resolver_calls_without_editor_are_allowed():
     html = render_report(_minimal(api_calls=[call]), generated_at=FIXED)
     assert "Resolved EC class" in html
     assert "no editor link for this tool" in html
+    # This is a server annotation, not agent interpretation: it must NOT wear the
+    # provenance colour, which now means "agent interpretation in Evidence" and nothing else.
+    assert '<span class="non-tool-source">(no editor link' not in html
+    assert '<span class="muted">(no editor link for this tool)</span>' in html
+
+
+def test_provenance_colour_appears_only_in_the_legend_and_evidence():
+    """The orange class means exactly one thing now — agent interpretation in Evidence — so
+    it must never leak onto server-generated notes (API-requests annotations, data usage,
+    no-results). Guarded by count: legend swatch (1) + one interpretation (1) = 2, no more."""
+    doc = ReportDocument(
+        title="t",
+        api_calls=[ApiCall(label="Resolved EC class", tool_name="rcsb_find_enzyme_classes")],
+        columns=[
+            Column(key="pdb_id", label="PDB ID", kind=ColumnKind.PDB_ID),
+            Column(key="evidence", label="Evidence"),
+        ],
+        rows=[
+            {"pdb_id": "1CA2", "evidence": Evidence(grounds="EC 4.2.1.1", interpretation="a carbonic anhydrase")},
+            {"pdb_id": "3KS3", "evidence": Evidence(grounds="title match")},  # grounds-only -> no span
+        ],
+        data_usage=[DataUsageItem(heading="Discovery", body="812 entries matched.")],
+    )
+    html = render_report(doc, generated_at=FIXED)
+    assert html.count('class="non-tool-source"') == 2
 
 
 def test_editor_object_renders_as_percent_encoded_url():
@@ -257,10 +280,13 @@ def test_editor_href_hardening_for_degenerate_agent_input():
 def test_empty_results_render_the_no_results_block():
     req = ReportDocument(
         title="Nothing found",
-        no_results_note=[Fragment(text="No entries carry this EC and a bound iron ion.", model_supplied=True)],
+        no_results_note="No entries carry this EC and a bound iron ion.",
     )
     html = render_report(req, generated_at=FIXED)
     assert "No matching structures were found." in html
+    assert "No entries carry this EC and a bound iron ion." in html
+    # plain prose now — never wrapped in the provenance colour
+    assert '<span class="non-tool-source">No entries' not in html
     assert "<table>" not in html
 
 
@@ -272,7 +298,7 @@ def test_empty_results_render_the_no_results_block():
 def test_all_required_sections_appear_in_fixed_order():
     req = _minimal(
         api_calls=[ApiCall(label="Search", editor=EditorLink(url="https://search.rcsb.org/query-editor.html", params={"json": {}}))],
-        data_usage=[DataUsageItem(heading="Discovery", body=[Fragment(text="One structured query.")])],
+        data_usage=[DataUsageItem(heading="Discovery", body="One structured query.")],
     )
     html = render_report(req, generated_at=FIXED)
     # Anchor on the section HEADERS, not bare substrings — the legend prose also

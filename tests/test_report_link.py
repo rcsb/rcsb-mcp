@@ -32,7 +32,7 @@ REPORT = {
 TOOL_INPUT = {
     "title": "Iron-type nitrile hydratases",
     "result_type": "entry",
-    "results": [{"id": "2AHJ", "evidence": [{"text": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}]}],
+    "results": [{"id": "2AHJ", "evidence": {"grounds": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}}],
 }
 
 
@@ -267,7 +267,7 @@ def test_tool_never_emits_a_link_the_endpoint_would_reject(monkeypatch):
         "title": "probe",
         "result_type": "entry",
         "results": [
-            {"id": "AAAA", "evidence": [{"text": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}]}
+            {"id": "AAAA", "evidence": {"grounds": "NITRILE HYDRATASE COMPLEXED WITH NITRIC OXIDE"}}
             for _ in range(3000)
         ],
     }

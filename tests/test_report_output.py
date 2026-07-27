@@ -167,7 +167,7 @@ def test_multibyte_report_over_the_byte_cap_falls_back_to_html(with_base_url):
         "title": "probe",
         "result_type": "entry",
         # 70k chars / 210k UTF-8 bytes of evidence — the agent-supplied part of a row.
-        "results": [{"id": "AAAA", "evidence": [{"text": "あ" * 70_000}]}],
+        "results": [{"id": "AAAA", "evidence": {"grounds": "あ" * 70_000}}],
     }
     document = asyncio.run(build_document(ReportRequest(**big), None))
     report_json = document.model_dump_json(exclude_defaults=True)
