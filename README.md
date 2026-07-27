@@ -255,7 +255,6 @@ Polymer entity: 4HHB_2
 UniProt accession: P68871
 ```
 
-
 ## Additional setups
 
 The Claude Desktop instructions above are the primary setup guide. For other
