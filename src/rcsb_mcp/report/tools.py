@@ -30,10 +30,21 @@ __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
 _BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "").strip()
 REPORT_BASE_URL = _BASE_ENV.rstrip("/") or None
 
-# Above this the packed link is too long to be a safe URL (browsers and the ingress
-# cap the request line), so we fall back to returning `html`. Compressed reports are
-# ~1 KB even at 50 rows, so only a pathological report ever trips this.
-MAX_URL_BYTES = 8_000
+# Above this the packed link is too long to hand out, so we fall back to `html`.
+#
+# This MUST stay <= link.MAX_ENCODED: the /r endpoint refuses a token bigger than that,
+# so a longer URL would be a link we emit and it rejects. (Gating the whole URL, not the
+# token, is the conservative side of that bound — the base URL only eats into the budget.)
+#
+# It was 8_000 (nginx's default request-line buffer), which was wrong on both counts: the
+# deployment fronts HAProxy, not nginx, and 8_000 is half what our own endpoint accepts —
+# so reports the endpoint would happily serve came back as ~40 KB of `html` instead, which
+# is exactly the agent-context cost the link exists to avoid. Measured against the live
+# ingress: a 65,040-char request line reaches the app, and a 7,905-char `Location:` header
+# survives the /r/<id> redirect; HAProxy sizes request and response header buffers from the
+# same tune.bufsize, so a ~16 KB redirect target has headroom. Guarded by
+# tests/test_report_output.py::test_url_gate_never_exceeds_what_the_endpoint_accepts.
+MAX_URL_BYTES = 16_000
 
 
 class RenderReportInput(BaseModel):
@@ -161,9 +172,10 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
         # str length — a multibyte report has more bytes than characters.
         if REPORT_BASE_URL is not None and len(report_json.encode("utf-8")) <= link.MAX_DECOMPRESSED:
             # The redirect target — and the fat-URL fallback — is /r?d=<token>. Gate on
-            # ITS length (not the short link's): browsers/ingress cap the request line.
-            # Both gates match the /r endpoint's accept criteria, so we never hand back a
-            # link it would reject.
+            # ITS length, not the short link's: even when the agent only ever sees
+            # /r/<id>, that id 302s to this URL, so this is what the browser and the
+            # ingress actually carry. MAX_URL_BYTES <= link.MAX_ENCODED keeps the gate
+            # inside the /r endpoint's own accept criteria (see the constant).
             token = link.encode_report(report_json)
             fat_url = f"{REPORT_BASE_URL}/r?d={token}"
             if len(fat_url) <= MAX_URL_BYTES:

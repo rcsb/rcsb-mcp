@@ -180,6 +180,30 @@ def test_multibyte_report_over_the_byte_cap_falls_back_to_html(with_base_url):
     assert res["html"].startswith("<!DOCTYPE html>")
 
 
+def test_url_gate_never_exceeds_what_the_endpoint_accepts():
+    """The emit gate must stay inside the /r endpoint's own accept criteria.
+
+    These two numbers live in different modules and drifted apart once already: the gate
+    sat at 8_000 (nginx's default request-line buffer, on a deployment fronted by HAProxy)
+    while the endpoint accepted 16_384, so real reports that /r would have served came back
+    as ~40 KB of `html` — the agent-context cost the report link exists to remove.
+
+    Only ONE direction is a correctness bug: a gate ABOVE MAX_ENCODED emits links that /r
+    refuses with a 400. A gate below merely wastes capacity, which is what this pins.
+    """
+    from rcsb_mcp.report import link
+
+    assert report_tools.MAX_URL_BYTES <= link.MAX_ENCODED, (
+        f"MAX_URL_BYTES ({report_tools.MAX_URL_BYTES}) exceeds the token size /r will accept "
+        f"(MAX_ENCODED={link.MAX_ENCODED}); the tool would hand back links the endpoint 400s."
+    )
+    # And it should not be so far below that it throws away most of that capacity.
+    assert report_tools.MAX_URL_BYTES >= link.MAX_ENCODED * 0.9, (
+        f"MAX_URL_BYTES ({report_tools.MAX_URL_BYTES}) is far under MAX_ENCODED "
+        f"({link.MAX_ENCODED}); reports the endpoint would serve fall back to html instead."
+    )
+
+
 # --------------------------------------------------------------------------
 # The fallback markup, when returned, is duplicated across both FastMCP copies
 # --------------------------------------------------------------------------
