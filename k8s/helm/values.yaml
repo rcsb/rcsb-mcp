@@ -115,8 +115,10 @@ podEnvVars:
 # Bundled Redis: shared short-TTL store so report short links minted on one MCP replica
 # resolve on every replica. Deploys a single ephemeral Redis pod plus a ClusterIP
 # Service; nothing routes to it from outside the cluster (no ingress rule, no external
-# IP), so it is cluster-internal by construction. Data is disposable (persistence off):
-# a Redis restart only degrades pending short links to the long …/r?d= form.
+# IP), so it is cluster-internal by construction. Persistence is off: a restart voids
+# already-issued short links (they 410 — the token exists only in Redis), which is an
+# accepted cost since links expire after an hour anyway; links minted while Redis is
+# down degrade to the long self-contained …/r?d= form and keep working.
 redis:
   enabled: false
   image:

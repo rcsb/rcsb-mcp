@@ -31,6 +31,12 @@ dev = ["pytest>=8", "pyflakes>=3"]
 [project.scripts]
 rcsb-mcp = "rcsb_mcp.server:main"
 
+# `hatch test` (CI) builds its own env and ignores [dependency-groups] — without this,
+# tests/test_static_names.py dies collecting on `import pyflakes`. Keep the pin in sync
+# with the dev group above. (Hatch envs have no dependency-groups option as of 1.14.)
+[tool.hatch.envs.hatch-test]
+extra-dependencies = ["pyflakes>=3"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

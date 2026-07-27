@@ -1,8 +1,11 @@
 {{- if .Values.redis.enabled }}
 # Ephemeral shared store for report short links. Single replica + Recreate: the data is
 # a disposable short-TTL id→token cache, and a RollingUpdate would briefly run two
-# Redises behind one Service, splitting the store. A restart only degrades pending
-# short links to the long self-contained …/r?d= form, which always resolves.
+# Redises behind one Service, splitting the store. Losing the data is tolerable but not
+# free: short links ALREADY handed out die with it (the token lives only here, so the
+# GET /r/<id> route answers 410 Gone) — links are short-lived by design (TTL 1h), so a
+# restart costs at most the last hour's links, not something worth a PVC. Links minted
+# WHILE Redis is down fall back to the long self-contained …/r?d= form and keep working.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
