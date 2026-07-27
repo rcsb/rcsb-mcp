@@ -19,7 +19,7 @@ from .models import Cell, ColumnKind, EditorLink, Evidence, ReportDocument
 __all__ = ["TEMPLATE_VERSION", "render_report"]
 
 # Bump on any template change so rendered reports stay traceable.
-TEMPLATE_VERSION = "1.3.0"
+TEMPLATE_VERSION = "1.4.0"
 
 RCSB_STRUCTURE_URL = "https://www.rcsb.org/structure/{}"
 RCSB_LIGAND_URL = "https://www.rcsb.org/ligand/{}"

@@ -24,14 +24,15 @@ _REPORT_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow",
     "Referrer-Policy": "no-referrer",
-    # img-src is the RCSB CDN and nothing else: the template's masthead logo lives there
-    # (inlining a 33 KB PNG would bloat every page and every `html` fallback). Keep it to
-    # that exact origin -- not 'self', not '*' -- so the page still cannot be made to fetch
-    # anything an attacker controls. Coupled to the template; see
-    # tests/test_report_link.py::test_csp_allows_the_masthead_logo_origin.
+    # img-src is two named RCSB origins and nothing else: the masthead logo (cdn) and the
+    # favicon (www -- RCSB publishes none on the cdn). Both are linked rather than inlined,
+    # because a data: URI of either would ride along in every `html` fallback the agent
+    # receives. Keep this to exact origins -- not 'self', not '*', not a bare scheme -- so
+    # the page still cannot be made to fetch anything an attacker controls. Coupled to the
+    # template; see tests/test_report_link.py::test_csp_allows_the_template_image_origins.
     "Content-Security-Policy": (
-        "default-src 'none'; img-src https://cdn.rcsb.org; style-src 'unsafe-inline'; "
-        "base-uri 'none'; form-action 'none'"
+        "default-src 'none'; img-src https://cdn.rcsb.org https://www.rcsb.org; "
+        "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
     ),
     # Content-addressed by `d`, so the same link always renders the same page.
     "Cache-Control": "public, max-age=3600, immutable",

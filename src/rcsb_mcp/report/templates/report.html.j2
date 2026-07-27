@@ -15,6 +15,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="rcsb-mcp report template {{ template_version }}">
+{# Declared explicitly so the browser does not fall back to requesting /favicon.ico from
+    whatever origin serves the report -- which 404s today, once per page view. RCSB publishes
+    no favicon on cdn.rcsb.org, so this is the www origin (the same one the masthead already
+    links to); /r's img-src allows both. Linked rather than inlined: a data: URI of this icon
+    is ~3 KB, which would ride along in every `html` fallback the agent receives. #}
+<link rel="icon" href="https://www.rcsb.org/favicon.ico" sizes="any">
 <title>{{ req.title }}</title>
 <style>
  :root {
@@ -28,8 +34,8 @@
  /* Logo and title share one row; the blue rule spans both, so it reads as one masthead.
     The logo is fetched from cdn.rcsb.org -- it is 33 KB, and inlining it as a data: URI
     would add ~44 KB to every rendered page AND to the `html` fallback the agent receives
-    (more than a whole large report). The /r Content-Security-Policy allows exactly that
-    one origin for images; see _REPORT_HEADERS in report/routes.py. */
+    (more than a whole large report). The /r Content-Security-Policy names this origin and
+    the favicon's; see _REPORT_HEADERS in report/routes.py. */
  .masthead { display: flex; align-items: center; gap: .9rem;
              border-bottom: 3px solid var(--rcsb-blue); padding-bottom: .4rem; margin-bottom: 1.2rem; }
  .masthead h1 { border-bottom: none; padding-bottom: 0; margin: 0; }

@@ -129,21 +129,26 @@ def test_endpoint_sets_hardening_headers(client):
     assert r.headers["x-content-type-options"] == "nosniff"
 
 
-def test_csp_allows_the_masthead_logo_origin(client):
-    """The template's logo and the endpoint's CSP are coupled across two modules.
+def test_csp_allows_every_image_origin_the_template_uses(client):
+    """The template's images and the endpoint's CSP are coupled across two modules.
 
-    `default-src 'none'` covers images too, so without an explicit img-src the browser
-    silently blocks the masthead logo and it renders as a broken icon -- invisible to
-    every server-side test, which is why this pins the pair together. It also pins the
-    allowance to that ONE origin: widening it to 'self' or '*' would let crafted report
-    text reach for an attacker's host, which `default-src 'none'` exists to prevent.
+    `default-src 'none'` covers images too, so an origin the template references but the
+    CSP omits is blocked by the BROWSER: the masthead logo renders as a broken icon, the
+    favicon silently vanishes. Neither failure is visible to a server-side render
+    assertion, which is why this pins the pair together -- and derives the requirement
+    FROM the template, so adding a third image can't quietly ship without its allowance.
+
+    It also pins the allowance to exact origins. Widening to 'self', '*' or a bare scheme
+    would let the page fetch from a host an attacker chose, which is what `default-src
+    'none'` exists to prevent; `data:` is excluded too, since inlining an image here would
+    put its base64 into every `html` fallback the agent receives.
     """
+    import re
+
     from rcsb_mcp.report import ReportDocument, render_report
 
     csp = client.get("/r", params={"d": _token(REPORT)}).headers["content-security-policy"]
     html = render_report(ReportDocument(title="t"))
-
-    assert 'src="https://cdn.rcsb.org/' in html, "template no longer loads the logo from the CDN"
 
     # Parse the directive rather than substring-match it: "img-src https:" (a scheme-wide
     # wildcard) is itself a substring of "img-src https://cdn.rcsb.org", so a naive
@@ -154,11 +159,25 @@ def test_csp_allows_the_masthead_logo_origin(client):
         if parts
     }
     assert directives.get("default-src") == ["'none'"], "the deny-by-default base must stay"
-    assert directives.get("img-src") == ["https://cdn.rcsb.org"], (
-        f"img-src must name the logo's origin and nothing else, got {directives.get('img-src')!r}. "
-        "Without it the browser blocks the masthead logo; widened to 'self'/'*'/'https:' the "
-        "page could be made to fetch from a host an attacker chose."
+    allowed = set(directives.get("img-src") or [])
+
+    # Origins the template actually fetches images from: the <img> logo and the <link> icon.
+    used = {
+        f"https://{m.group(1)}"
+        for m in re.finditer(r'(?:src|href)="https://([^/"]+)/[^"]*\.(?:png|ico|jpe?g|svg|gif)"', html)
+    }
+    assert len(used) >= 2, f"expected the logo and the favicon in the template, found {sorted(used)}"
+
+    assert not (used - allowed), (
+        f"the template loads images from {sorted(used - allowed)} but img-src allows only "
+        f"{sorted(allowed)}; the browser will block them."
     )
+    assert not (allowed - used), (
+        f"img-src allows {sorted(allowed - used)}, which the template never uses — "
+        "drop it rather than leaving the policy wider than the page needs."
+    )
+    for wildcard in ("*", "'self'", "https:", "data:", "'unsafe-inline'"):
+        assert wildcard not in allowed, f"img-src must name origins exactly, not {wildcard!r}"
 
 
 def test_endpoint_escapes_hostile_report_text(client):
