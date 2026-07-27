@@ -104,3 +104,29 @@ def test_prompt_has_no_stale_claims():
 def test_prompt_is_reachable_as_an_mcp_prompt():
     """It ships as package data behind a registered prompt — not an unused file."""
     assert server.rcsb_search_assistant().startswith("You are a structural biology assistant")
+
+
+def test_mcp_guide_prompt_is_the_instructions_verbatim():
+    """The guide prompt must BE the `instructions` text, not a copy of it.
+
+    27 of the 39 tool descriptions defer to "the server instructions" (~45 references).
+    `instructions` is returned on `initialize`, but the spec leaves injecting it to the
+    CLIENT and several do not — so those cross-references can point at text the agent
+    never received. The prompt is the fallback channel, which only helps if it carries
+    the SAME text; a copy would drift and the fallback would quietly go stale.
+    """
+    guide = server.rcsb_mcp_guide()
+    assert guide == server.mcp.instructions, (
+        "rcsb_mcp_guide drifted from the instructions block; both must read the same "
+        "package-data file (prompts/rcsb_mcp_guide.md)."
+    )
+    assert guide.strip(), "the guide prompt is empty"
+
+
+def test_both_prompts_are_registered_and_distinct():
+    """Two prompts with different jobs: the persona, and the tool-routing guidance."""
+    import asyncio
+
+    names = {p.name for p in asyncio.run(server.mcp.list_prompts())}
+    assert {"rcsb_search_assistant", "rcsb_mcp_guide"} <= names, f"registered prompts: {names}"
+    assert server.rcsb_search_assistant() != server.rcsb_mcp_guide()
