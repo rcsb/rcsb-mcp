@@ -196,7 +196,7 @@ For a local source checkout:
 }
 ```
 
-Restart Claude Desktop. The tools should appear in the connectors/tools interface.
+Restart Claude Desktop. The tools should appear in account-menu/settings/connectors.
 
 ### Windows
 
