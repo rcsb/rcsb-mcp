@@ -283,24 +283,17 @@ supported.
 
 ### Gemini
 
-Consumer Gemini CLI access ended on June 18, 2026. For free individual use, use
-Google Antigravity instead.
+Google Antigravity:
 
 * Antigravity supports local MCP servers.
 * The individual plan can be used with eligible personal Google accounts.
 * Google AI Pro is not required.
 * Workspace or university accounts may not qualify.
 
-Gemini CLI may still work through organizational Gemini Code Assist access or a
-Gemini API key.
-
 ### Qwen
 
 Qwen can use `rcsb-mcp` through MCP-capable clients such as Qwen Code or
 LM Studio.
-
-Remote Qwen models usually require Alibaba ModelStudio, an API key, or another
-supported provider. The free Qwen OAuth tier ended on April 15, 2026.
 
 Open-weight Qwen models can also run locally in LM Studio without an API key.
 
