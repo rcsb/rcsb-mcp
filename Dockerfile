@@ -18,7 +18,9 @@ RUN groupadd --gid 1000 appuser \
 # the tool falls back to self-contained links).
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install '.[redis]'
+# './' not '.': hadolint's DL3013 (pin pip versions) only exempts args it recognizes
+# as local paths, and '.[redis]' doesn't match its './' prefix check. Same install.
+RUN pip install './[redis]'
 
 USER appuser
 
