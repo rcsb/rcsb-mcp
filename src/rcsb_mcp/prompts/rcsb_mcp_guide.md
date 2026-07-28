@@ -47,10 +47,17 @@ Other capabilities:
       sequence, longest first — this is the deposited construct, so expression tags and
       fusion partners count toward it.
     - score: ranks each group member by ElasticSearch score, highest first. This score does not 
-      measure biological relevance or quility of the structure.
+      measure biological relevance or quality of the structure.
     - coverage: ranks each group member by sequence coverage of the UniProt protein, largest first.
   When group_by="uniprot", PREFER group_by_ranking="coverage" — it keeps the most relevant biological sequence
-  covering the most of the UniProt protein (coverage is valid only with group_by="uniprot").
+  covering most of the UniProt protein (coverage is valid only with group_by="uniprot").
+- If request refers to assembly / complex / assembled complex / multi-subunit machine / multimer (or any
+  other term indicating a structure composed of multiple subunits / proteins), add rcsb_assembly_info.*
+  composition to attributes to the appropriate rcsb_search_* tool:
+  - rcsb_assembly_info.polymer_entity_instance_count_protein >= N (total protein chains),
+  - rcsb_assembly_info.polymer_entity_count_protein >= M (distinct subunits),
+  - rcsb_assembly_info.polymer_composition exact_match "heteromeric protein" | "homomeric protein"
+    combine these as needed.
 - For requests about a molecular FUNCTION ("kinase activity"), biological PROCESS ("DNA repair"),
   or cellular COMPONENT / location ("mitochondrial membrane"), first call rcsb_find_go_terms to resolve
   the phrase to a Gene Ontology id, then search with
