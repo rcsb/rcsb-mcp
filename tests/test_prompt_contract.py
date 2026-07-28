@@ -134,12 +134,20 @@ def test_assistant_prompt_carries_the_guide_verbatim():
     """
     assistant = _prompt()
     assert _norm(server.rcsb_mcp_guide()) in assistant, (
-        "rcsb_search_assistant no longer contains the guide verbatim. It must APPEND "
+        "rcsb_search_assistant no longer contains the guide verbatim. It must join "
         "_MCP_GUIDE, not a copy or a summary of it."
     )
-    assert "see the server instructions" in assistant, (
-        "the bridging heading is gone — without it the appended guide is not connected "
-        "to the phrase the tool descriptions actually use."
+
+
+def test_guide_is_labelled_with_the_phrase_the_tools_cite():
+    """~45 tool descriptions say "see the server instructions". The guide's own heading is
+    the only thing that phrase resolves against — and, because the guide IS the
+    `instructions` block, the label reaches that channel too. Nothing added at the
+    composition seam could do that, so the heading has to live in the file.
+    """
+    assert server.rcsb_mcp_guide().lstrip().lower().startswith("## server instructions"), (
+        "the guide must OPEN with a heading naming it 'Server Instructions'; without it "
+        "the tool descriptions' cross-references point at unlabelled prose"
     )
 
 
@@ -151,7 +159,7 @@ def test_assistant_prompt_leads_with_the_guide():
     after the guide's opening line and contradict it — two answers to "what am I".
     """
     assistant = _prompt()
-    assert assistant.startswith("You are an assistant for interrogating"), (
+    assert assistant.startswith("## Server Instructions"), (
         "the guide must LEAD the composed prompt"
     )
     assert "You are a structural biology assistant" not in assistant, (

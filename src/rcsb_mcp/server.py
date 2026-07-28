@@ -135,12 +135,12 @@ register_data_tools(mcp)
 # --------------------------------------------------------------------------- #
 # Server prompts. Two, with different jobs:
 #
-# * rcsb_search_assistant — opt-in application/presentation policy (persona +
-#   report output format), with the guide APPENDED so one invocation leaves the
-#   agent fully briefed. The persona alone is NOT enough: its own rules lean on
-#   the guide (resolve a concept with an rcsb_find_* resolver, then search "that
-#   annotation" — the attribute paths live only in the guide), and so do the ~45
-#   "see the server instructions" cross-references in the tool descriptions.
+# * rcsb_search_assistant — the guide FOLLOWED BY the opt-in search/report policy,
+#   so one invocation leaves the agent fully briefed. The policy alone is NOT
+#   enough: its own rules lean on the guide (resolve a concept with an rcsb_find_*
+#   resolver, then search "that annotation" — the attribute paths live only in the
+#   guide), and so do the ~45 "see the server instructions" cross-references in the
+#   tool descriptions.
 # * rcsb_mcp_guide — the `instructions` text alone, for clients that never inject
 #   it and sessions that want the routing guidance without the report policy.
 #
@@ -149,21 +149,6 @@ register_data_tools(mcp)
 # COMPOSES the guide at call time from _MCP_GUIDE rather than embedding a copy, so
 # the three channels (instructions, guide prompt, assistant prompt) cannot drift.
 # --------------------------------------------------------------------------- #
-
-# Labels the guide half so the tool descriptions' ~45 "see the server instructions"
-# cross-references have something to resolve against: the guide text itself never
-# contains that phrase, so unlabelled it is just a wall of prose the agent has no reason
-# to connect to them. One line, at the seam — the guide needs no introduction in the
-# lead position, only a boundary marker where the policy half starts.
-_SEAM = """
-
----
-
-(Everything above is the server `instructions` block — what a tool description means by
-"see the server instructions".)
-
-"""
-
 
 @mcp.prompt(
     name="rcsb_search_assistant",
@@ -182,9 +167,14 @@ def rcsb_search_assistant() -> str:
     what the assistant is, not two competing ones. Order also puts the routing guidance in
     the position `instructions` would have occupied, which is what the tool descriptions
     were written against.
+
+    Joined with nothing but a blank line: the guide's own `## Server Instructions` heading
+    is what the ~45 "see the server instructions" cross-references resolve against, and it
+    labels the text in place, so no connecting prose is needed at the seam. That heading
+    also reaches the `instructions` channel, which no wording added here ever could.
     """
     policy = _load_prompt("rcsb_search_assistant.md").rstrip("\n")
-    return _MCP_GUIDE.rstrip("\n") + _SEAM + policy
+    return _MCP_GUIDE.rstrip("\n") + "\n\n" + policy
 
 
 @mcp.prompt(
