@@ -12,14 +12,16 @@ import inspect
 
 import pytest
 
-from rcsb_mcp import nested_attributes, search
+from rcsb_mcp import nested_attributes, queries, search
 from rcsb_mcp.search import (
     AttributeFilter,
     _check_attribute,
-    _check_nested_attribute_pairs,
     _check_operator,
     _collect_query_attributes,
+    _direct_terminal_attributes,
+    _iter_group_nodes,
     _validate_advanced_body,
+    _validate_nested_attribute_grouping,
     _validate_query_attributes,
 )
 
@@ -103,7 +105,13 @@ def test_reserved_sort_score_is_allowed_but_a_guessed_sort_attribute_is_not():
         _validate_query_attributes(sort_by="resolution")  # guessed (real path is resolution_combined)
 
 
-# --- nested-attribute pairing (rcsb_search_by_attribute) -------------------
+# --- nested-attribute pairing, as it actually reaches rcsb_search_by_attribute ---------
+# "a json object for a search query" covers BOTH tools: rcsb_search_by_attribute's flat
+# `attributes` list is itself first turned into the same {"query": ...} body rcsb_search_
+# advanced takes raw, via queries.build_combined_query — so these tests validate THAT
+# constructed body with _validate_nested_attribute_grouping, exactly as the tool now does,
+# rather than a flat-list-only primitive (there is no such separate primitive anymore).
+#
 # The real pairs are re-derived from the LIVE metadata schema at most once a day (see
 # rcsb_mcp.nested_attributes) rather than vendored, so these tests fake that loader with
 # a fixed synthetic pair set instead of hitting the network.
@@ -114,48 +122,51 @@ _FAKE_PAIRS = {"structure": [(NESTED_VALUE, NESTED_TYPE)], "chemical": []}
 
 @pytest.fixture(autouse=True)
 def _fake_nested_pairs(monkeypatch):
-    """Auto-applied in this file: every _check_nested_attribute_pairs call in these tests
-    resolves against _FAKE_PAIRS instead of nested_attributes.download_schemas (network)."""
+    """Auto-applied in this file: every nested-attribute check in these tests resolves
+    against _FAKE_PAIRS instead of nested_attributes.download_schemas (network)."""
     monkeypatch.setattr(nested_attributes, "load_nested_attribute_pairs", lambda *a, **k: _FAKE_PAIRS)
+
+
+def _by_attribute_body(*filters, chemical=False):
+    """The exact query body rcsb_search_by_attribute builds (and now validates) from a flat
+    `attributes` list — mirrors its own call to queries.build_combined_query, so these tests
+    exercise the real shape rather than a hand-rolled approximation of it."""
+    return queries.build_combined_query(full_text=None, filters=list(filters), chemical=chemical)
 
 
 def test_nested_attribute_alone_is_rejected():
     """A dependent nested attribute with no partner in the same filter list must raise —
     the Search API would otherwise silently match it outside the intended category."""
-    with pytest.raises(ValueError, match="nested attribute"):
-        _check_nested_attribute_pairs(
-            [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "structure",
-        )
+    body = _by_attribute_body({"attribute": NESTED_VALUE, "operator": "greater", "value": 1})
+    with pytest.raises(ValueError, match="cannot be queried on its own"):
+        _validate_nested_attribute_grouping(body)
 
 
 def test_nested_attribute_partner_side_alone_is_also_rejected():
     """The category/type side is just as much a nested attribute as its dependent partner."""
-    with pytest.raises(ValueError, match="nested attribute"):
-        _check_nested_attribute_pairs(
-            [AttributeFilter(attribute=NESTED_TYPE, operator="exact_match", value="x")], "structure",
-        )
+    body = _by_attribute_body({"attribute": NESTED_TYPE, "operator": "exact_match", "value": "x"})
+    with pytest.raises(ValueError, match="cannot be queried on its own"):
+        _validate_nested_attribute_grouping(body)
 
 
 def test_nested_attribute_pair_together_is_accepted():
-    _check_nested_attribute_pairs(
-        [
-            AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1),
-            AttributeFilter(attribute=NESTED_TYPE, operator="exact_match", value="x"),
-        ],
-        "structure",
-    )  # both present -> no raise
+    body = _by_attribute_body(
+        {"attribute": NESTED_VALUE, "operator": "greater", "value": 1},
+        {"attribute": NESTED_TYPE, "operator": "exact_match", "value": "x"},
+    )
+    _validate_nested_attribute_grouping(body)  # both present, and the ONLY two filters -> no raise
 
 
 def test_non_nested_attributes_are_unaffected():
-    _check_nested_attribute_pairs([AttributeFilter(attribute=GOOD, operator="less", value=2)], "structure")
+    body = _by_attribute_body({"attribute": GOOD, "operator": "less", "value": 2})
+    _validate_nested_attribute_grouping(body)
 
 
 def test_nested_attribute_check_is_schema_scoped():
-    """A structure-only nested attribute isn't flagged when validated under the chemical
-    schema (it simply isn't in that schema's partner map, so it isn't "nested" there)."""
-    _check_nested_attribute_pairs(
-        [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "chemical",
-    )  # not a chemical-schema nested attribute -> no raise
+    """A structure-only nested attribute isn't flagged when the call targets the chemical
+    schema instead (it simply isn't in that schema's partner map, so it isn't "nested" there)."""
+    body = _by_attribute_body({"attribute": NESTED_VALUE, "operator": "greater", "value": 1}, chemical=True)
+    _validate_nested_attribute_grouping(body)  # not a chemical-schema nested attribute -> no raise
 
 
 def test_nested_attribute_check_degrades_gracefully_on_load_failure(monkeypatch):
@@ -165,15 +176,28 @@ def test_nested_attribute_check_degrades_gracefully_on_load_failure(monkeypatch)
     def boom(*a, **k):
         raise RuntimeError("network unreachable")
     monkeypatch.setattr(nested_attributes, "load_nested_attribute_pairs", boom)
-    _check_nested_attribute_pairs(
-        [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "structure",
-    )  # load failure -> skipped, no raise
+    body = _by_attribute_body({"attribute": NESTED_VALUE, "operator": "greater", "value": 1})
+    _validate_nested_attribute_grouping(body)  # load failure -> skipped, no raise
 
 
-def test_every_search_tool_that_takes_attributes_is_covered_by_wiring_test_below():
-    # Sanity: rcsb_search_by_attribute itself calls the nested check (not just the primitive).
+def test_nested_attribute_pair_diluted_by_a_third_filter_is_rejected():
+    """The scenario rcsb_search_by_attribute can now catch that it couldn't before: both
+    partners present (not an orphan), but build_combined_query collapses every filter in
+    the call into ONE shared group — so a third, unrelated condition in the same call
+    means the pair isn't grouped alone, and the API won't apply nested semantics to it."""
+    body = _by_attribute_body(
+        {"attribute": "rcsb_id", "operator": "exact_match", "value": "1BX6"},
+        {"attribute": NESTED_VALUE, "operator": "greater", "value": 1},
+        {"attribute": NESTED_TYPE, "operator": "exact_match", "value": "x"},
+    )
+    with pytest.raises(ValueError, match="grouped together"):
+        _validate_nested_attribute_grouping(body)
+
+
+def test_rcsb_search_by_attribute_wires_in_the_grouping_check():
+    # Sanity: rcsb_search_by_attribute itself calls the grouping check (not just the primitive).
     src = inspect.getsource(search.rcsb_search_by_attribute)
-    assert "_check_nested_attribute_pairs" in src
+    assert "_validate_nested_attribute_grouping" in src
 
 
 # --- advanced (raw body) ---------------------------------------------------
@@ -250,6 +274,87 @@ def test_advanced_body_accepts_nested_pair_across_sibling_terminals():
         _terminal("text", NESTED_TYPE),
     ]}}
     _validate_advanced_body(body)  # both partners present, even in separate terminals -> no raise
+
+
+# --- _validate_nested_attribute_grouping: present isn't enough, must be grouped ALONE --
+def test_iter_group_nodes_and_direct_terminal_attributes():
+    body = {"type": "group", "logical_operator": "and", "nodes": [
+        {"type": "group", "logical_operator": "or", "nodes": [_terminal("text", NESTED_VALUE)]},
+        _terminal("text", GOOD),
+    ]}
+    groups = list(_iter_group_nodes(body))
+    assert len(groups) == 2  # the outer group + the inner sub-group
+    # The OUTER group's direct terminal children exclude the sub-group's own terminal.
+    assert _direct_terminal_attributes(groups[0]) == [GOOD]
+    assert _direct_terminal_attributes(groups[1]) == [NESTED_VALUE]
+
+
+def test_grouping_accepts_pair_alone_in_its_own_group():
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+        _terminal("text", NESTED_TYPE),
+    ]}}
+    _validate_nested_attribute_grouping(body)  # the pair IS the whole group -> no raise
+
+
+def test_grouping_rejects_pair_with_an_extra_sibling_in_the_same_group():
+    """Both partners are present — not an orphan — but a third condition shares their
+    group, so the pair isn't ALONE together; the API won't apply nested semantics here."""
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+        _terminal("text", NESTED_TYPE),
+        _terminal("text", GOOD, operator="less"),
+    ]}}
+    with pytest.raises(ValueError, match="grouped together"):
+        _validate_nested_attribute_grouping(body)
+
+
+def test_grouping_rejects_pair_split_across_separate_groups():
+    """Both partners are present in the query, just never as the sole two nodes of any
+    one group — e.g. each sits alone in its own separate group."""
+    body = {"query": {"type": "group", "logical_operator": "or", "nodes": [
+        {"type": "group", "logical_operator": "and", "nodes": [_terminal("text", NESTED_VALUE, operator="equals")]},
+        {"type": "group", "logical_operator": "and", "nodes": [_terminal("text", NESTED_TYPE)]},
+    ]}}
+    with pytest.raises(ValueError, match="grouped together"):
+        _validate_nested_attribute_grouping(body)
+
+
+def test_grouping_still_raises_for_an_orphan_before_checking_grouping():
+    """An orphan (partner missing entirely) is caught by the reused orphan check first —
+    grouping is irrelevant if there's no partner anywhere to group with."""
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+        _terminal("text", GOOD, operator="less"),
+    ]}}
+    with pytest.raises(ValueError, match="cannot be queried on its own"):
+        _validate_nested_attribute_grouping(body)
+
+
+def test_grouping_ignores_non_nested_attributes():
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", GOOD, operator="less"),
+    ]}}
+    _validate_nested_attribute_grouping(body)  # not nested at all -> no raise
+
+
+def test_grouping_degrades_gracefully_on_load_failure(monkeypatch):
+    """If the day-cache can't be refreshed at all, both the reused orphan check AND the
+    grouping check must skip (not raise) — a metadata-endpoint hiccup must never break
+    an otherwise-valid search."""
+    def boom(*a, **k):
+        raise RuntimeError("network unreachable")
+    monkeypatch.setattr(nested_attributes, "load_nested_attribute_pairs", boom)
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+    ]}}
+    _validate_nested_attribute_grouping(body)  # load failure -> skipped entirely, no raise
+
+
+def test_validate_advanced_body_wires_in_the_grouping_check():
+    # Sanity: _validate_advanced_body itself calls the grouping check (not just the primitive).
+    src = inspect.getsource(search._validate_advanced_body)
+    assert "_validate_nested_attribute_grouping" in src
 
 
 # --- wiring guard: no search tool may skip validation ----------------------

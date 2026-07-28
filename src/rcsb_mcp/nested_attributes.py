@@ -214,12 +214,16 @@ def load_nested_attribute_pairs(
     return {"structure": structure_pairs, "chemical": chemical_pairs}
 
 
-def _partner_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
+def partner_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
     """{attribute: sorted [valid partner attributes]} from a flat pair list.
 
     An attribute on EITHER side of a pair needs one of its partners present in the
     same query; a category/type attribute (e.g. `...type`) commonly partners several
-    different dependent attributes, so this is one-to-many, not one-to-one.
+    different dependent attributes, so this is one-to-many, not one-to-one. Public
+    (not just an internal helper for find_orphan_attributes below) because callers
+    that also need to check STRUCTURAL grouping — not just presence — need direct
+    access to "what are this attribute's valid partners" (see search._validate_
+    nested_attribute_grouping).
     """
     partners: dict[str, set[str]] = {}
     for a, b in pairs:
@@ -234,11 +238,11 @@ def find_orphan_attributes(
     """Return {orphan_attribute: [its valid partners]} for every entry in `attributes`
     that is nested (per `pairs`) but has none of its partner attributes also present
     in `attributes`. Empty if there are no orphans."""
-    partner_map = _partner_map(pairs)
+    partners_by_attr = partner_map(pairs)
     present = set(attributes)
     orphans: dict[str, list[str]] = {}
     for attr in attributes:
-        partners = partner_map.get(attr)
+        partners = partners_by_attr.get(attr)
         if partners and not present.intersection(partners):
             orphans[attr] = partners
     return orphans

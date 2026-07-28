@@ -175,24 +175,6 @@ def _validate_query_attributes(
         _check_attribute(sort_by, schema)
 
 
-def _check_nested_attribute_pairs(attributes: list[AttributeFilter], schema: str) -> None:
-    """Reject a filter list that uses a nested attribute without one of its required partners.
-
-    Some attributes are only meaningful queried together with a paired category/type
-    attribute — e.g. `rcsb_chem_comp_related.resource_accession_code` (a dependent value)
-    needs `rcsb_chem_comp_related.resource_name` (its parent/category) present in the SAME
-    `attributes` list, and vice versa. The Search API doesn't reject an unpaired one
-    outright, it just silently matches across unrelated contexts, so this is caught here
-    rather than left to a confusing, mismatched result downstream.
-
-    Thin adapter over rcsb_mcp.nested_attributes.validate_nested_attributes: this schema's
-    nested-attribute pairs are re-derived from the LIVE metadata schema at most once a day
-    (they aren't a vendored, generate-time catalog like SEARCH_ATTRIBUTES — the schema
-    changes too often for that), so the check stays current without a manual regenerate.
-    """
-    nested_attributes.validate_nested_attributes([f.attribute for f in attributes], schema)
-
-
 def _collect_query_attributes(query_body: Any) -> dict[str, list[str]]:
     """Walk a raw advanced query body's `query` node and collect every `text`/`text_chem`
     terminal's attribute path, grouped by schema ("structure" for `text`, "chemical" for
@@ -222,14 +204,102 @@ def _collect_query_attributes(query_body: Any) -> dict[str, list[str]]:
     return collected
 
 
+def _iter_group_nodes(node: Any):
+    """Yield every "group" node anywhere in the tree (itself, then recursively through
+    its "nodes"), so each group's own DIRECT children can be inspected in isolation —
+    used to check whether a nested-attribute pair is grouped alone together, which
+    `_collect_query_attributes` (a flat, whole-tree collector) can't tell you."""
+    if not isinstance(node, dict) or node.get("type") != "group":
+        return
+    yield node
+    for child in node.get("nodes") or []:
+        yield from _iter_group_nodes(child)
+
+
+def _direct_terminal_attributes(group_node: dict[str, Any]) -> list[str]:
+    """The attribute paths of a group's DIRECT `text`/`text_chem` terminal children only
+    — NOT recursing into any sub-group children (those are their own group, checked
+    separately by `_iter_group_nodes`)."""
+    attrs = []
+    for child in group_node.get("nodes") or []:
+        if not isinstance(child, dict):
+            continue
+        if child.get("type") == "terminal" and child.get("service") in ("text", "text_chem"):
+            params = child.get("parameters")
+            attr = params.get("attribute") if isinstance(params, dict) else None
+            if isinstance(attr, str) and attr:
+                attrs.append(attr)
+    return attrs
+
+
+def _validate_nested_attribute_grouping(query_body: Any) -> None:
+    """Validate nested-attribute usage across a raw query body: no orphans, AND every
+    present pair is grouped alone together.
+
+    Reuses `_collect_query_attributes` to find every attribute node in the query, and
+    `nested_attributes.validate_nested_attributes` to raise on an orphan (a dependent
+    attribute whose partner is missing from the query entirely) exactly as before. But
+    an attribute having ITS PARTNER present somewhere isn't sufficient: the RCSB Search
+    API only applies the "nested" indexing context to a pair that's the ONLY two nodes
+    of a dedicated group (mirroring py-rcsb-api's NestedAttributeQuery, which wraps
+    exactly two AttributeQuery objects into their own group) — scattered elsewhere, even
+    as siblings alongside a third condition, it silently matches outside that shared
+    context instead. So for every dependent (nested) attribute whose partner IS present,
+    this also requires some group in the tree to contain exactly {attribute, partner}
+    and nothing else.
+    """
+    attrs_by_schema = _collect_query_attributes(query_body)
+    if not any(attrs_by_schema.values()):
+        return
+
+    query_node = query_body.get("query") if isinstance(query_body, dict) else None
+    isolated_pairs: set[frozenset[str]] = {
+        frozenset(direct)
+        for group in _iter_group_nodes(query_node)
+        for direct in [_direct_terminal_attributes(group)]
+        if len(direct) == 2
+    }
+
+    for schema, attrs in attrs_by_schema.items():
+        if not attrs:
+            continue
+        # Reuses the previous function: raises ValueError on an orphan (partner missing
+        # from the query entirely), and — same as here — skips gracefully (its own
+        # warning already logged) if the pairs can't be loaded at all. Only pairs that
+        # survive this — partner present SOMEWHERE — reach the grouping check below.
+        nested_attributes.validate_nested_attributes(attrs, schema)
+
+        try:
+            pairs = nested_attributes.load_nested_attribute_pairs().get(schema, [])
+        except Exception:
+            continue  # already logged by validate_nested_attributes above; skip grouping too
+        partners_by_attr = nested_attributes.partner_map(pairs)
+        present = set(attrs)
+        for attr in attrs:
+            valid_partners = partners_by_attr.get(attr)
+            if not valid_partners:
+                continue  # not a dependent/nested attribute at all
+            co_present = sorted(present.intersection(valid_partners))
+            if not any(frozenset((attr, partner)) in isolated_pairs for partner in co_present):
+                raise ValueError(
+                    f"'{attr}' and its partner ({', '.join(co_present)}) are both present in "
+                    f"the query but not grouped together, alone, in a dedicated group node. "
+                    f"The RCSB Search API only applies the nested indexing context to a pair "
+                    f"that is the ONLY two nodes of one group — wrap just these two terminals "
+                    f'in {{"type": "group", "logical_operator": "and", "nodes": [<{attr}>, '
+                    f"<partner>]}}, separate from any other conditions."
+                )
+
+
 def _validate_advanced_body(query_body: Any) -> None:
     """Best-effort validation of a raw advanced query body: attribute paths + operators,
-    plus nested-attribute pairing across the WHOLE query.
+    plus nested-attribute pairing (orphans AND grouping) across the WHOLE query.
 
     Walks `text` / `text_chem` terminals and checks their parameters.attribute (+ operator)
     against the matching catalog; leaves everything else (services, group shape) to the API,
-    and never raises on a malformed body — only on a clearly-invalid attribute path/operator
-    or an orphaned nested attribute (one from a pair without the other, anywhere in the query).
+    and never raises on a malformed body — only on a clearly-invalid attribute path/operator,
+    an orphaned nested attribute, or a present-but-improperly-grouped nested pair (see
+    `_validate_nested_attribute_grouping`).
     """
     def walk(node: Any) -> None:
         if not isinstance(node, dict):
@@ -249,9 +319,7 @@ def _validate_advanced_body(query_body: Any) -> None:
     if isinstance(query_body, dict):
         walk(query_body.get("query"))
 
-    for schema, attrs in _collect_query_attributes(query_body).items():
-        if attrs:
-            nested_attributes.validate_nested_attributes(attrs, schema)
+    _validate_nested_attribute_grouping(query_body)
 
 
 def _format(
@@ -586,9 +654,6 @@ async def rcsb_search_by_attribute(
         all_hits/facets response variants: see the server instructions.
     """
     _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
-    # to_thread: on a cache miss this hits the network (see nested_attributes.download_schemas),
-    # which must not block the event loop other requests are running on.
-    await asyncio.to_thread(_check_nested_attribute_pairs, attributes, "chemical" if chemical else "structure")
     body = queries.build_combined_query(
         full_text=None,
         filters=_filter_dicts(attributes),
@@ -604,6 +669,13 @@ async def rcsb_search_by_attribute(
         sort_by=sort_by,
         sort_direction=sort_direction,
     )
+    # Validate the ACTUAL query body being sent, not just the flat attributes list: a
+    # nested-attribute pair here still needs to be the sole content of its own group —
+    # build_combined_query collapses the whole `attributes` list into one shared group,
+    # so this also catches a pair diluted by other conditions in the same call, not just
+    # a missing partner. to_thread: on a cache miss this hits the network (see
+    # nested_attributes.download_schemas), which must not block the event loop.
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
