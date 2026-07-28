@@ -270,13 +270,19 @@ size fallback is rare.
 ## Prompt
 
 The server also exposes an MCP **prompt**, `rcsb_search_assistant` ("RCSB PDB search
-assistant") — the runtime assistant persona plus the HTML-report output format.
-Because it is served over the protocol's `prompts` capability, any MCP client can
-list and invoke it (e.g. Claude Desktop surfaces server prompts in the `+` / prompt
-menu); there's nothing to copy-paste. The text lives in
+assistant") — the full tool-routing guide, followed by the search requirements and the
+HTML-report output format. Because it is served over the protocol's `prompts`
+capability, any MCP client can list and invoke it (e.g. Claude Desktop surfaces server
+prompts in the `+` / prompt menu); there's nothing to copy-paste. The policy half lives
+in
 [`src/rcsb_mcp/prompts/rcsb_search_assistant.md`](src/rcsb_mcp/prompts/rcsb_search_assistant.md)
-and ships with the package.
+and the guide half is
+[`rcsb_mcp_guide.md`](src/rcsb_mcp/prompts/rcsb_mcp_guide.md), joined at request time so
+the two never drift; both ship with the package.
 
-This is deliberately separate from the always-on server `instructions` (tool
-routing/chaining guidance): the prompt is opt-in application/presentation policy,
-so invoke it when you want answers formatted as a PDB report.
+Invoke it when you want answers formatted as a PDB report. It is self-sufficient: the
+appended guide is the same text as the always-on server `instructions`, so the prompt
+still works on clients that never inject those — and the tool descriptions' "see the
+server instructions" cross-references resolve against it. A second prompt,
+`rcsb_mcp_guide`, serves that guide on its own for sessions that want the routing
+guidance without the report policy; load one or the other, not both.

@@ -103,7 +103,7 @@ def test_prompt_has_no_stale_claims():
 
 def test_prompt_is_reachable_as_an_mcp_prompt():
     """It ships as package data behind a registered prompt — not an unused file."""
-    assert server.rcsb_search_assistant().startswith("You are a structural biology assistant")
+    assert "## Search Requirements" in server.rcsb_search_assistant()
 
 
 def test_mcp_guide_prompt_is_the_instructions_verbatim():
@@ -121,6 +121,46 @@ def test_mcp_guide_prompt_is_the_instructions_verbatim():
         "package-data file (prompts/rcsb_mcp_guide.md)."
     )
     assert guide.strip(), "the guide prompt is empty"
+
+
+def test_assistant_prompt_carries_the_guide_verbatim():
+    """The persona prompt must also deliver the tool-routing guide.
+
+    Its own rules depend on it: "resolve the concept with the matching rcsb_find_*
+    resolver ... and search that annotation" names no attribute path, because the paths
+    live in the guide. Invoked alone against a client that drops `instructions`, that
+    rule is unactionable and the ~45 "see the server instructions" cross-references in
+    the tool descriptions dangle. Verbatim (not paraphrased) so there is one source.
+    """
+    assistant = _prompt()
+    assert _norm(server.rcsb_mcp_guide()) in assistant, (
+        "rcsb_search_assistant no longer contains the guide verbatim. It must APPEND "
+        "_MCP_GUIDE, not a copy or a summary of it."
+    )
+    assert "see the server instructions" in assistant, (
+        "the bridging heading is gone — without it the appended guide is not connected "
+        "to the phrase the tool descriptions actually use."
+    )
+
+
+def test_assistant_prompt_leads_with_the_guide():
+    """Order is load-bearing, and so is the ABSENCE of a second persona.
+
+    The guide already opens with the identity and capability summary, so the policy half
+    starts at its first section. A persona preamble re-added to the .md file would sit
+    after the guide's opening line and contradict it — two answers to "what am I".
+    """
+    assistant = _prompt()
+    assert assistant.startswith("You are an assistant for interrogating"), (
+        "the guide must LEAD the composed prompt"
+    )
+    assert "You are a structural biology assistant" not in assistant, (
+        "the policy half re-grew a persona preamble; the guide's opening line is the "
+        "single statement of identity"
+    )
+    assert assistant.index("## Search Requirements") > assistant.index(
+        "Return types and fetching details"
+    ), "the policy half must FOLLOW the guide, never be interleaved with it"
 
 
 def test_both_prompts_are_registered_and_distinct():

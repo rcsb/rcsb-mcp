@@ -136,23 +136,55 @@ register_data_tools(mcp)
 # Server prompts. Two, with different jobs:
 #
 # * rcsb_search_assistant — opt-in application/presentation policy (persona +
-#   report output format). Deliberately NOT in `instructions`, which is always-on
-#   tool-routing guidance for every client.
-# * rcsb_mcp_guide — the `instructions` text itself, offered as a prompt for
-#   clients that never inject it. Same string, second channel.
+#   report output format), with the guide APPENDED so one invocation leaves the
+#   agent fully briefed. The persona alone is NOT enough: its own rules lean on
+#   the guide (resolve a concept with an rcsb_find_* resolver, then search "that
+#   annotation" — the attribute paths live only in the guide), and so do the ~45
+#   "see the server instructions" cross-references in the tool descriptions.
+# * rcsb_mcp_guide — the `instructions` text alone, for clients that never inject
+#   it and sessions that want the routing guidance without the report policy.
 #
-# Both are package data under prompts/, the single source of truth, so they ship
-# with the wheel and stay editable without touching code.
+# Both read package data under prompts/, the single source of truth, so they ship
+# with the wheel and stay editable without touching code. The assistant prompt
+# COMPOSES the guide at call time from _MCP_GUIDE rather than embedding a copy, so
+# the three channels (instructions, guide prompt, assistant prompt) cannot drift.
 # --------------------------------------------------------------------------- #
+
+# Labels the guide half so the tool descriptions' ~45 "see the server instructions"
+# cross-references have something to resolve against: the guide text itself never
+# contains that phrase, so unlabelled it is just a wall of prose the agent has no reason
+# to connect to them. One line, at the seam — the guide needs no introduction in the
+# lead position, only a boundary marker where the policy half starts.
+_SEAM = """
+
+---
+
+(Everything above is the server `instructions` block — what a tool description means by
+"see the server instructions".)
+
+"""
+
+
 @mcp.prompt(
     name="rcsb_search_assistant",
     title="RCSB PDB search assistant",
-    description="Persona and report output format for answering Protein Data "
-    "Bank search questions with the rcsb_* tools. Invoke to start a PDB search session.",
+    description="Everything needed for a PDB search session: the full tool-routing guide "
+    "(search-tool choice, return types, paging, faceting, grouping, ontology resolvers, "
+    "field selection) followed by the search/report policy. Invoke this one prompt rather "
+    "than pairing it with rcsb_mcp_guide.",
 )
 def rcsb_search_assistant() -> str:
-    """Structural-biology assistant instructions: persona + report output format."""
-    return _load_prompt("rcsb_search_assistant.md")
+    """The tool-routing guide, followed by the search requirements and report policy.
+
+    The guide leads. It already opens with the identity and capability summary ("You are
+    an assistant for interrogating Protein Data Bank structures ... DISCOVER / INSPECT /
+    RELATE"), so the policy half carries no persona preamble of its own — one statement of
+    what the assistant is, not two competing ones. Order also puts the routing guidance in
+    the position `instructions` would have occupied, which is what the tool descriptions
+    were written against.
+    """
+    policy = _load_prompt("rcsb_search_assistant.md").rstrip("\n")
+    return _MCP_GUIDE.rstrip("\n") + _SEAM + policy
 
 
 @mcp.prompt(
@@ -161,7 +193,8 @@ def rcsb_search_assistant() -> str:
     description="The always-on guidance for these tools: which search tool to use, return "
     "types, paging, faceting, de-duplication/grouping, the ontology resolvers, and field "
     "selection. Identical to the server `instructions` — load it when your client does not "
-    "inject those, otherwise the tool descriptions refer to text you never received.",
+    "inject those, otherwise the tool descriptions refer to text you never received. "
+    "Already included at the end of rcsb_search_assistant; load only one of the two.",
 )
 def rcsb_mcp_guide() -> str:
     """The `instructions` block, offered as a loadable prompt.
