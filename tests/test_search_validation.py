@@ -12,11 +12,13 @@ import inspect
 
 import pytest
 
-from rcsb_mcp import search
+from rcsb_mcp import nested_attributes, search
 from rcsb_mcp.search import (
     AttributeFilter,
     _check_attribute,
+    _check_nested_attribute_pairs,
     _check_operator,
+    _collect_query_attributes,
     _validate_advanced_body,
     _validate_query_attributes,
 )
@@ -101,6 +103,79 @@ def test_reserved_sort_score_is_allowed_but_a_guessed_sort_attribute_is_not():
         _validate_query_attributes(sort_by="resolution")  # guessed (real path is resolution_combined)
 
 
+# --- nested-attribute pairing (rcsb_search_by_attribute) -------------------
+# The real pairs are re-derived from the LIVE metadata schema at most once a day (see
+# rcsb_mcp.nested_attributes) rather than vendored, so these tests fake that loader with
+# a fixed synthetic pair set instead of hitting the network.
+NESTED_VALUE = "rcsb_binding_affinity.value"
+NESTED_TYPE = "rcsb_binding_affinity.type"
+_FAKE_PAIRS = {"structure": [(NESTED_VALUE, NESTED_TYPE)], "chemical": []}
+
+
+@pytest.fixture(autouse=True)
+def _fake_nested_pairs(monkeypatch):
+    """Auto-applied in this file: every _check_nested_attribute_pairs call in these tests
+    resolves against _FAKE_PAIRS instead of nested_attributes.download_schemas (network)."""
+    monkeypatch.setattr(nested_attributes, "load_nested_attribute_pairs", lambda *a, **k: _FAKE_PAIRS)
+
+
+def test_nested_attribute_alone_is_rejected():
+    """A dependent nested attribute with no partner in the same filter list must raise —
+    the Search API would otherwise silently match it outside the intended category."""
+    with pytest.raises(ValueError, match="nested attribute"):
+        _check_nested_attribute_pairs(
+            [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "structure",
+        )
+
+
+def test_nested_attribute_partner_side_alone_is_also_rejected():
+    """The category/type side is just as much a nested attribute as its dependent partner."""
+    with pytest.raises(ValueError, match="nested attribute"):
+        _check_nested_attribute_pairs(
+            [AttributeFilter(attribute=NESTED_TYPE, operator="exact_match", value="x")], "structure",
+        )
+
+
+def test_nested_attribute_pair_together_is_accepted():
+    _check_nested_attribute_pairs(
+        [
+            AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1),
+            AttributeFilter(attribute=NESTED_TYPE, operator="exact_match", value="x"),
+        ],
+        "structure",
+    )  # both present -> no raise
+
+
+def test_non_nested_attributes_are_unaffected():
+    _check_nested_attribute_pairs([AttributeFilter(attribute=GOOD, operator="less", value=2)], "structure")
+
+
+def test_nested_attribute_check_is_schema_scoped():
+    """A structure-only nested attribute isn't flagged when validated under the chemical
+    schema (it simply isn't in that schema's partner map, so it isn't "nested" there)."""
+    _check_nested_attribute_pairs(
+        [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "chemical",
+    )  # not a chemical-schema nested attribute -> no raise
+
+
+def test_nested_attribute_check_degrades_gracefully_on_load_failure(monkeypatch):
+    """If the day-cache can't be refreshed AND there's no prior cache to fall back to,
+    the check must skip (not raise) — a metadata-endpoint hiccup must never break an
+    otherwise-valid, unrelated search."""
+    def boom(*a, **k):
+        raise RuntimeError("network unreachable")
+    monkeypatch.setattr(nested_attributes, "load_nested_attribute_pairs", boom)
+    _check_nested_attribute_pairs(
+        [AttributeFilter(attribute=NESTED_VALUE, operator="greater", value=1)], "structure",
+    )  # load failure -> skipped, no raise
+
+
+def test_every_search_tool_that_takes_attributes_is_covered_by_wiring_test_below():
+    # Sanity: rcsb_search_by_attribute itself calls the nested check (not just the primitive).
+    src = inspect.getsource(search.rcsb_search_by_attribute)
+    assert "_check_nested_attribute_pairs" in src
+
+
 # --- advanced (raw body) ---------------------------------------------------
 def test_advanced_body_validates_text_terminals_and_ignores_malformed():
     good = {"query": {"type": "terminal", "service": "text",
@@ -113,6 +188,68 @@ def test_advanced_body_validates_text_terminals_and_ignores_malformed():
         {"type": "terminal", "service": "text", "parameters": {"attribute": "invented.path", "operator": "exact_match"}}]}}
     with pytest.raises(ValueError, match="not a searchable"):
         _validate_advanced_body(bad)
+
+
+# --- _collect_query_attributes: the parser feeding validate_nested_attributes ----------
+def _terminal(service, attribute, operator="exact_match"):
+    return {"type": "terminal", "service": service, "parameters": {"attribute": attribute, "operator": operator}}
+
+
+def test_collect_query_attributes_groups_by_schema():
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", GOOD),
+        _terminal("text_chem", "chem_comp.formula_weight"),
+    ]}}
+    assert _collect_query_attributes(body) == {
+        "structure": [GOOD], "chemical": ["chem_comp.formula_weight"],
+    }
+    print("ok: collect_query_attributes groups by schema")
+
+
+def test_collect_query_attributes_recurses_nested_groups():
+    """A nested pair can straddle two sibling terminals anywhere in the group tree, not just
+    two entries of the same flat list — so the collector must recurse into sub-groups."""
+    body = {"query": {"type": "group", "logical_operator": "or", "nodes": [
+        {"type": "group", "logical_operator": "and", "nodes": [
+            _terminal("text", NESTED_VALUE), _terminal("text", NESTED_TYPE),
+        ]},
+        _terminal("text", GOOD),
+    ]}}
+    result = _collect_query_attributes(body)
+    assert sorted(result["structure"]) == sorted([NESTED_VALUE, NESTED_TYPE, GOOD])
+    assert result["chemical"] == []
+    print("ok: collect_query_attributes recurses nested groups")
+
+
+def test_collect_query_attributes_ignores_non_text_and_malformed():
+    assert _collect_query_attributes({}) == {"structure": [], "chemical": []}
+    assert _collect_query_attributes({"query": {"type": "terminal", "service": "sequence"}}) == {
+        "structure": [], "chemical": [],
+    }
+    assert _collect_query_attributes({"query": {"type": "terminal", "service": "text"}}) == {
+        "structure": [], "chemical": [],
+    }  # missing parameters entirely -> skipped, not raised
+    print("ok: collect_query_attributes ignores non-text and malformed nodes")
+
+
+# --- nested-attribute pairing wired into the advanced (raw-body) path ------------------
+def test_advanced_body_rejects_orphan_nested_attribute_anywhere_in_the_query():
+    """An orphaned nested attribute must be caught even split across sibling terminals
+    that rcsb_search_by_attribute's flat AttributeFilter list would never see together."""
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+        _terminal("text", GOOD, operator="less"),
+    ]}}
+    with pytest.raises(ValueError, match="nested attribute"):
+        _validate_advanced_body(body)
+
+
+def test_advanced_body_accepts_nested_pair_across_sibling_terminals():
+    body = {"query": {"type": "group", "logical_operator": "and", "nodes": [
+        _terminal("text", NESTED_VALUE, operator="equals"),
+        _terminal("text", NESTED_TYPE),
+    ]}}
+    _validate_advanced_body(body)  # both partners present, even in separate terminals -> no raise
 
 
 # --- wiring guard: no search tool may skip validation ----------------------
@@ -130,7 +267,10 @@ def test_every_search_tool_validates_its_attributes():
     seen = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in tools:
-            calls = {c.func.id for c in ast.walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
-            seen[node.name] = bool(calls & validators)
+            # A Name reference anywhere (not just as a direct Call.func) — some tools now
+            # pass the validator to asyncio.to_thread(...) rather than calling it directly,
+            # so it appears as an argument, not a call target.
+            names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+            seen[node.name] = bool(names & validators)
     missing = sorted(t for t in tools if not seen.get(t))
     assert not missing, f"search tools that never validate their attributes: {missing}"

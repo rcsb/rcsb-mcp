@@ -11,12 +11,13 @@ module imports nothing back from server.
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from rcsb_mcp import queries
+from rcsb_mcp import nested_attributes, queries
 from rcsb_mcp.attribute_types import SearchAttribute, TextOperator
 from rcsb_mcp.client import _post_search, _search_editor
 from rcsb_mcp.tooling import READ_ONLY
@@ -174,12 +175,61 @@ def _validate_query_attributes(
         _check_attribute(sort_by, schema)
 
 
+def _check_nested_attribute_pairs(attributes: list[AttributeFilter], schema: str) -> None:
+    """Reject a filter list that uses a nested attribute without one of its required partners.
+
+    Some attributes are only meaningful queried together with a paired category/type
+    attribute — e.g. `rcsb_chem_comp_related.resource_accession_code` (a dependent value)
+    needs `rcsb_chem_comp_related.resource_name` (its parent/category) present in the SAME
+    `attributes` list, and vice versa. The Search API doesn't reject an unpaired one
+    outright, it just silently matches across unrelated contexts, so this is caught here
+    rather than left to a confusing, mismatched result downstream.
+
+    Thin adapter over rcsb_mcp.nested_attributes.validate_nested_attributes: this schema's
+    nested-attribute pairs are re-derived from the LIVE metadata schema at most once a day
+    (they aren't a vendored, generate-time catalog like SEARCH_ATTRIBUTES — the schema
+    changes too often for that), so the check stays current without a manual regenerate.
+    """
+    nested_attributes.validate_nested_attributes([f.attribute for f in attributes], schema)
+
+
+def _collect_query_attributes(query_body: Any) -> dict[str, list[str]]:
+    """Walk a raw advanced query body's `query` node and collect every `text`/`text_chem`
+    terminal's attribute path, grouped by schema ("structure" for `text`, "chemical" for
+    `text_chem`) — the flat per-schema lists `nested_attributes.validate_nested_attributes`
+    needs. A nested pair can straddle two sibling terminals anywhere in the group tree
+    (not necessarily inside the same AttributeFilter list rcsb_search_by_attribute sees),
+    so this walks the WHOLE query, recursing through "group" nodes into their "nodes".
+    Malformed nodes are skipped, not raised on — leave shape validation to `_validate_advanced_body`.
+    """
+    collected: dict[str, list[str]] = {"structure": [], "chemical": []}
+
+    def walk(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "group":
+            for child in node.get("nodes") or []:
+                walk(child)
+        elif node.get("type") == "terminal" and node.get("service") in ("text", "text_chem"):
+            params = node.get("parameters")
+            attr = params.get("attribute") if isinstance(params, dict) else None
+            if isinstance(attr, str) and attr:
+                schema = "chemical" if node["service"] == "text_chem" else "structure"
+                collected[schema].append(attr)
+
+    if isinstance(query_body, dict):
+        walk(query_body.get("query"))
+    return collected
+
+
 def _validate_advanced_body(query_body: Any) -> None:
-    """Best-effort validation of the attribute paths in a raw advanced query body.
+    """Best-effort validation of a raw advanced query body: attribute paths + operators,
+    plus nested-attribute pairing across the WHOLE query.
 
     Walks `text` / `text_chem` terminals and checks their parameters.attribute (+ operator)
     against the matching catalog; leaves everything else (services, group shape) to the API,
-    and never raises on a malformed body — only on a clearly-invalid attribute path.
+    and never raises on a malformed body — only on a clearly-invalid attribute path/operator
+    or an orphaned nested attribute (one from a pair without the other, anywhere in the query).
     """
     def walk(node: Any) -> None:
         if not isinstance(node, dict):
@@ -198,6 +248,10 @@ def _validate_advanced_body(query_body: Any) -> None:
 
     if isinstance(query_body, dict):
         walk(query_body.get("query"))
+
+    for schema, attrs in _collect_query_attributes(query_body).items():
+        if attrs:
+            nested_attributes.validate_nested_attributes(attrs, schema)
 
 
 def _format(
@@ -532,6 +586,9 @@ async def rcsb_search_by_attribute(
         all_hits/facets response variants: see the server instructions.
     """
     _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
+    # to_thread: on a cache miss this hits the network (see nested_attributes.download_schemas),
+    # which must not block the event loop other requests are running on.
+    await asyncio.to_thread(_check_nested_attribute_pairs, attributes, "chemical" if chemical else "structure")
     body = queries.build_combined_query(
         full_text=None,
         filters=_filter_dicts(attributes),
@@ -917,7 +974,7 @@ async def rcsb_search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
             language at https://search.rcsb.org/). Returns the normalized
             {total_count, returned, hits} result.
     """
-    _validate_advanced_body(query_body)
+    await asyncio.to_thread(_validate_advanced_body, query_body)
     raw = await _post_search(query_body)
     return _format(raw, query_body)
 
