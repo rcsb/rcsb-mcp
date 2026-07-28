@@ -5,7 +5,12 @@ description = "An MCP server for interrogating PDB structures — search, inspec
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.2.0",
+    # Upper bound is load-bearing: mcp 2.0.0 (2026-07-28) DELETED mcp.server.fastmcp
+    # (renamed to mcp.server.mcpserver, FastMCP -> MCPServer), so an unpinned resolve
+    # breaks `from mcp.server.fastmcp import FastMCP` in server.py at import time —
+    # red CI, and in the image a container that dies before it binds its port.
+    # Lift it only together with the 2.x migration.
+    "mcp>=1.2.0,<2",
     "httpx>=0.27",
     "uvicorn>=0.30",
     "jinja2>=3.1",
