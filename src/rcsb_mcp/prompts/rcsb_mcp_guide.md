@@ -12,7 +12,8 @@ RCSB Search, Data, and Sequence Coordinates APIs. You can:
 - RELATE sequences — map alignments and positional features across PDB, UniProt, and NCBI
   with the rcsb_seqcoord_* tools.
 
-Choosing a search tool:
+### Choosing a search tool
+
 - When the request resolves to a clear attribute and value (e.g. resolution < 2 Å,
   organism = Homo sapiens, method = X-RAY DIFFRACTION, released after a date), prefer a
   STRUCTURED search: NEVER invent, guess, or infer attribute paths, if you don't already know the exact attribute path, 
@@ -24,7 +25,8 @@ Choosing a search tool:
   rcsb_uniprot_protein.name.value (canonical UniProt name, UniProt-mapped entries only). For a gene
   name/symbol use rcsb_entity_source_organism.rcsb_gene_name.value.
 
-Other capabilities:
+### Faceting — breakdowns and distributions
+
 - For "break down / distribution / per X" questions (e.g. structures per experimental method,
   per release year, per organism), pass `facets` to any rcsb_search_* tool to aggregate the
   matches into buckets instead of returning hits; the response is {total_count, facets:[{name,
@@ -39,6 +41,9 @@ Other capabilities:
     - "cardinality": count of distinct values (returns {name, value}).
   A facet may carry a nested "facets" list to sub-aggregate within each bucket. Example:
   facets=[{"name":"Methods","aggregation_type":"terms","attribute":"exptl.method"}].
+
+### De-duplication and grouping
+
 - To DE-DUPLICATE redundant hits (one representative per cluster), set group_by on any
   rcsb_search_* tool (requires return_type="polymer_entity"):
   "seqid_30"/"seqid_50"/"seqid_70"/"seqid_90"/"seqid_95" (cluster by sequence-identity %) or
@@ -53,6 +58,9 @@ Other capabilities:
     - coverage: ranks each group member by sequence coverage of the UniProt protein, largest first.
   When group_by="uniprot", PREFER group_by_ranking="coverage" — it keeps the most relevant biological sequence
   covering most of the UniProt protein (coverage is valid only with group_by="uniprot").
+
+### Assembly / multimer composition
+
 - If request refers to assembly / complex / assembled complex / multi-subunit machine / multimer (or any
   other term indicating a structure composed of multiple subunits / proteins), add rcsb_assembly_info.*
   composition to attributes to the appropriate rcsb_search_* tool:
@@ -60,6 +68,9 @@ Other capabilities:
   - rcsb_assembly_info.polymer_entity_count_protein >= M (distinct subunits),
   - rcsb_assembly_info.polymer_composition exact_match "heteromeric protein" | "homomeric protein"
     combine these as needed.
+
+### Ontology resolvers (GO, InterPro, EC, MONDO, taxonomy)
+
 - For requests about a molecular FUNCTION ("kinase activity"), biological PROCESS ("DNA repair"),
   or cellular COMPONENT / location ("mitochondrial membrane"), first call rcsb_find_go_terms to resolve
   the phrase to a Gene Ontology id, then search with
@@ -93,7 +104,8 @@ Other capabilities:
   carries a "note" saying so. Also use full text for concepts no ontology covers (tissues, broad
   phenotypes, free-text descriptors).
 
-Return types and fetching details:
+### Return types and fetching details
+
 - Every search returns identifiers of ONE return_type. The six valid types — with an example
   id and the Data API tool that fetches their full details — are:
     entry              whole structure      "4HHB"     -> rcsb_get_entries

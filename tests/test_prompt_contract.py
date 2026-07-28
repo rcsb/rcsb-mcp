@@ -171,6 +171,51 @@ def test_assistant_prompt_leads_with_the_guide():
     ), "the policy half must FOLLOW the guide, never be interleaved with it"
 
 
+# Every phrase a tool description uses to point INTO the guide, with the header that
+# phrase has to land on. Counts are the references in src/rcsb_mcp/*.py at the time of
+# writing — 28 named pointers across 51 "server instructions" mentions. Renaming a header
+# without updating its citations sends the agent looking for a section that isn't there,
+# and nothing else would notice: the pointer is prose on one side and prose on the other.
+GUIDE_ANCHORS = [
+    ("Return types and fetching details", "Return types and fetching details", 7),
+    ("faceting", "Faceting", 7),
+    ("grouping", "grouping", 7),
+    ("resolver", "resolvers", 6),
+    ("assembly/multimer", "Assembly / multimer", 1),
+]
+
+
+def test_guide_headers_match_the_phrases_the_tools_cite():
+    """Each "see the <X> note in the server instructions" must have an <X> header."""
+    headers = [ln for ln in server.rcsb_mcp_guide().splitlines() if ln.startswith("#")]
+    blob = _norm(" ".join(headers)).lower()
+    missing = [
+        f"{cited!r} (cited ~{n}x) has no header containing {expected!r}"
+        for cited, expected, n in GUIDE_ANCHORS
+        if expected.lower() not in blob
+    ]
+    assert not missing, (
+        "a guide header no longer matches the phrase its citations use:\n  "
+        + "\n  ".join(missing)
+        + "\nHeaders present:\n  "
+        + "\n  ".join(headers)
+    )
+
+
+def test_guide_headers_nest_under_the_top_heading():
+    """One `##` naming the block, `###` for its sections — so the composed prompt's
+    `## Search Requirements` reads as a sibling of the guide, not a subsection of it."""
+    levels = [
+        len(ln) - len(ln.lstrip("#"))
+        for ln in server.rcsb_mcp_guide().splitlines()
+        if ln.startswith("#")
+    ]
+    assert levels and levels[0] == 2, "the guide must open with a single `##` heading"
+    assert all(lv == 3 for lv in levels[1:]), (
+        f"guide sections must all be `###` under that heading; found levels {levels}"
+    )
+
+
 def test_both_prompts_are_registered_and_distinct():
     """Two prompts with different jobs: the persona, and the tool-routing guidance."""
     import asyncio
