@@ -142,6 +142,12 @@ pip install -e .
 uv pip install -e .
 ```
 
+## Installing uv
+
+`uvx` ships with [uv](https://docs.astral.sh/uv/). If you don't have it yet, refer to the
+[official uv installation docs](https://docs.astral.sh/uv/getting-started/installation/) for
+up-to-date instructions across all platforms.
+
 ## Run / test
 
 ```bash
@@ -163,9 +169,14 @@ answer real PDB questions. See [`evals/README.md`](evals/README.md) to run it.
 
 ## Connect to Claude Desktop
 
-Edit `claude_desktop_config.json`:
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+Open the Claude Desktop configuration file:
+
+* **macOS:** Claude menu → **Settings** → **Developer** → **Edit Config**
+* **Windows:** Hamburger menu → **File** → **Settings** → **Developer** → **Edit Config**
+
+This opens `claude_desktop_config.json` in your default text editor.
+
+Add the following configuration:
 
 ```json
 {
@@ -178,7 +189,9 @@ Edit `claude_desktop_config.json`:
 }
 ```
 
-For a local source checkout, point at the module instead:
+### macOS
+
+For a local source checkout:
 
 ```json
 {
@@ -192,7 +205,61 @@ For a local source checkout, point at the module instead:
 }
 ```
 
-Restart Claude Desktop. The tools appear under the connectors (plug) icon.
+Restart Claude Desktop. The tools should appear in account-menu/settings/connectors.
+
+### Windows
+
+For a local source checkout:
+
+```json
+{
+  "mcpServers": {
+    "rcsb-mcp": {
+      "command": "python",
+      "args": ["-m", "rcsb_mcp.server"],
+      "cwd": "C:\\absolute\\path\\to\\rcsb-mcp\\src"
+    }
+  }
+}
+```
+
+Windows paths in JSON must use doubled backslashes.
+
+Fully quit and reopen Claude Desktop. Then check:
+
+```text
+Settings → Developer → Local MCP servers
+```
+
+`rcsb-mcp` should show a `running` status. Use Claude's **Chat** mode to access the tools.
+
+### Test the connection
+
+Start a new Claude chat and enter:
+
+```text
+You must use the connected rcsb-mcp tools rather than answering from memory.
+
+For PDB entry 4HHB, identify the beta-subunit polymer entity and its UniProt
+accession.
+```
+
+Expected result:
+
+```text
+Polymer entity: 4HHB_2
+UniProt accession: P68871
+```
+
+## Additional setups
+
+The Claude Desktop instructions above are the primary setup guide. For other
+supported clients and model options, see
+[Additional client setups](docs/additional-setups.md):
+
+* [Codex Desktop on Windows](docs/additional-setups.md#connect-to-codex-desktop-on-windows)
+* [LM Studio on Windows](docs/additional-setups.md#connect-to-lm-studio-on-windows)
+* [Other model options: Gemini, Qwen, and DeepSeek](docs/additional-setups.md#other-model-options)
 
 ## Example prompts
 
