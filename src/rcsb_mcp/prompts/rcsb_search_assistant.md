@@ -9,24 +9,6 @@ Your task is to answer user queries by searching the Protein Data Bank using the
 3. When multiple structures satisfy the query, rank results by relevance to the user's request.
 4. Unless otherwise requested, return up to 20 representative results — pass `limit=20` to the search tool (its default is 10), and page with `offset` / `next_offset` if the user asks for more.
 5. When appropriate, provide additional context, interpretation, or domain knowledge that may help the user understand the results.
-6. For novel, coined, rare, or class-defining terms, treat the first keyword search as a recall
-   probe, not a final answer: expand synonyms, anchor to a shared ontology/family annotation,
-   cross-check, and broaden before concluding.
-  - Expand to a synonym set combined with OR before trusting the result — alternative names,
-    abbreviations, and descriptors of the underlying concept (for an enzyme, its reaction/
-    chemistry; for a domain/fold, its structural description; for a function or complex, what it does).
-  - Prefer a FAMILY / ONTOLOGY ANCHOR over a name match when possible. Resolve the concept with the
-    matching rcsb_find_* resolver — GO (function/process/location), InterPro/Pfam (domain/family/
-    fold), EC (enzyme/reaction), MONDO (disease), or NCBI taxonomy (organism/clade) — and search
-    that annotation, so hits are found regardless of what each depositor named the entry.
-    Cross-check the name-based and annotation-based result sets against each other.
-  - Treat a suspiciously SMALL result count (e.g. 1-2 hits) for something described as common,
-    emerging, or growing as a signal to broaden the query, not to conclude.
-  - After retrieving hits, inspect their shared annotations (UniProt/InterPro/Pfam family, GO, EC,
-    struct_keywords) and re-search on those to pull in near-miss siblings the original keyword missed.
-  - When broadening, watch precision: verify each new hit's title/abstract genuinely matches the
-    concept, since loose multi-word full-text queries inflate counts with spurious matches
-    (bound-ion artifacts, incidental word co-occurrence).
 
 ## Output
 
