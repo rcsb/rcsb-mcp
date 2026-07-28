@@ -157,7 +157,7 @@ def rcsb_search_assistant() -> str:
 
 @mcp.prompt(
     name="rcsb_mcp_guide",
-    title="RCSB PDB tool guide (load if tool docs cite 'the server instructions')",
+    title="RCSB PDB tool guide",
     description="The always-on guidance for these tools: which search tool to use, return "
     "types, paging, faceting, de-duplication/grouping, the ontology resolvers, and field "
     "selection. Identical to the server `instructions` — load it when your client does not "
