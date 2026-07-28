@@ -38,7 +38,7 @@ REQUIRED_IN_TOOL = {
         "an empty result is a valid answer",            # don't fall back to keyword search
         "carries NO biological meaning",                # score caveat (attribute form)
         "EXCLUSIVE",                                     # range bound semantics
-        "NESTED boolean logic use rcsb_search_advanced",
+        "NESTED boolean groups are not supported",
     ],
     "rcsb_search_by_sequence": [
         "4HHB_1",                                        # returned id shape

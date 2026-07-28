@@ -32,7 +32,6 @@ Bank structures** — discover, inspect, and cross-reference — from LLM client
 | `rcsb_search_by_structure` | 3D shape-similarity search against a reference PDB assembly or chain. |
 | `rcsb_search_by_seqmotif` | Short **sequence**-motif search (PROSITE pattern, regex, or simple wildcards). |
 | `rcsb_search_strucmotif` | 3D **structural**-motif search: structures sharing a geometric arrangement of specific residues (e.g. a catalytic triad). |
-| `rcsb_search_advanced` | Escape hatch: run a raw Search API query body (`return_all_hits`, grouped results, deeply nested boolean queries, ...). |
 
 The two text tools (`rcsb_search_fulltext`, `rcsb_search_by_attribute`)
 also take `group_by_identity` (100/95/90/70/50/30) to return one representative
@@ -91,7 +90,6 @@ returns is verified against the live schema, so don't guess field names.
 | `rcsb_get_pubmed` | PubMed record (single, integer) | `6726807`                        |
 | `rcsb_get_group_provenance` | Grouping provenance (single) | `"provenance_sequence_identity"` |
 | `rcsb_describe_data_object` | Introspect an object's live GraphQL schema to build a `fields=` selection: browse a level, drill into a nested object with `into=`, or search by keyword with `query=` + `max_depth=` (flat, incl. nested + cross-object paths). Returns verified dotted paths. The Data API analogue of `rcsb_list_pdb_search_attributes`. | —                                |
-| `rcsb_data_graphql` | Escape hatch: run any GraphQL query against the Data API. | —                                |
 
 The Search API only returns identifiers, so a search is the first step: batch the
 returned ids into the matching `rcsb_get_*` tool to fetch titles, organisms, and
@@ -119,7 +117,6 @@ entry, query each polymer entity.
 | `rcsb_seqcoord_annotations` | Positional features for one sequence, from one or more annotation `sources` (`UNIPROT`, `PDB_ENTITY`, `PDB_INSTANCE`, `PDB_INTERFACE`). |
 | `rcsb_seqcoord_group_alignments` | Alignments among members of a sequence group (`MATCHING_UNIPROT_ACCESSION` / `SEQUENCE_IDENTITY`). |
 | `rcsb_seqcoord_group_annotations` | Annotations across a group; `summary=True` returns a positional summary. |
-| `rcsb_seqcoord_graphql` | Escape hatch: run any GraphQL query against the Sequence Coordinates API. |
 | `rcsb_describe_seqcoord_object` | Introspect the live schema to discover fields available on a seqcoord object (for use with `fields=`). |
 
 ## Install
@@ -220,7 +217,7 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Which PDB entities align to UniProt P69905, and over what ranges?" → `rcsb_seqcoord_alignments`
 - "What NCBI proteins map to 4HHB?" → `rcsb_seqcoord_alignments` per entity (`4HHB_1`, `4HHB_2`), `to_ref=NCBI_PROTEIN`
 - "Show UniProt features mapped onto PDB entity 4HHB_1." → `rcsb_seqcoord_annotations`
-- "Pull a field GraphQL doesn't expose by default / combine objects." → `rcsb_data_graphql`
+- "Pull a field the compact defaults don't include." → `rcsb_describe_data_object` to find the path, then the matching `rcsb_get_*` tool with `fields=`
 
 ## Report output (`RCSB_MCP_REPORT_BASE_URL`)
 

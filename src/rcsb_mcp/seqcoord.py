@@ -20,7 +20,6 @@ from rcsb_mcp.client import (
     SEQCOORD_GRAPHIQL_URL,
     SEQCOORD_GRAPHQL_URL,
     _graphiql_editor,
-    _post_graphql,
 )
 from rcsb_mcp.graphql import (
     DATA_FIELDS_RESULT_CAP,
@@ -56,7 +55,7 @@ async def rcsb_describe_seqcoord_object(
 
     The Sequence Coordinates analogue of rcsb_describe_data_object, with the same shape: the
     rcsb_seqcoord_* tools return a compact default selection; use this to find what else you can
-    request via their `fields=` argument (or via rcsb_seqcoord_graphql). Every path it returns is
+    request via their `fields=` argument. Every path it returns is
     verified against the live schema, so it is safe to pass to `fields=` directly.
 
     Browse a level (default), drill in / scope with `into`, or raise `max_depth` to flatten the
@@ -243,26 +242,6 @@ async def rcsb_seqcoord_group_annotations(
     }
 
 
-async def rcsb_seqcoord_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run an arbitrary GraphQL query against the RCSB Sequence Coordinates API.
-
-    Endpoint: https://sequence-coordinates.rcsb.org/graphql . Escape hatch for
-    fields/arguments the typed rcsb_seqcoord_* tools don't expose. Root fields:
-    alignments, annotations, group_alignments, group_annotations,
-    group_annotations_summary. Returns the raw {"data": ..., "errors": ...} payload.
-
-    Args:
-        query: A GraphQL query string. Prefer $variables over inlining values.
-        variables: Optional dict of GraphQL variables referenced by the query.
-    """
-    payload = await _post_graphql(query, variables, url=SEQCOORD_GRAPHQL_URL)
-    if isinstance(payload, dict):
-        payload["editor"] = _graphiql_editor(
-            SEQCOORD_GRAPHIQL_URL, {"query": query, "variables": variables}
-        )
-    return payload
-
-
 # rcsb_seqcoord_* (+ rcsb_describe_seqcoord_object) are the Sequence Coordinates tools;
 # register_seqcoord_tools wires each onto the passed FastMCP instance (equivalent to the
 # @mcp.tool decorator, but the functions stay importable/testable on their own). Original
@@ -273,7 +252,6 @@ _SEQCOORD_TOOLS = (
     rcsb_seqcoord_annotations,
     rcsb_seqcoord_group_alignments,
     rcsb_seqcoord_group_annotations,
-    rcsb_seqcoord_graphql,
 )
 
 

@@ -17,7 +17,6 @@ from rcsb_mcp.search import (
     AttributeFilter,
     _check_attribute,
     _check_operator,
-    _validate_advanced_body,
     _validate_query_attributes,
 )
 
@@ -101,32 +100,18 @@ def test_reserved_sort_score_is_allowed_but_a_guessed_sort_attribute_is_not():
         _validate_query_attributes(sort_by="resolution")  # guessed (real path is resolution_combined)
 
 
-# --- advanced (raw body) ---------------------------------------------------
-def test_advanced_body_validates_text_terminals_and_ignores_malformed():
-    good = {"query": {"type": "terminal", "service": "text",
-                      "parameters": {"attribute": GOOD, "operator": "less", "value": 2}}}
-    _validate_advanced_body(good)  # valid -> no raise
-    _validate_advanced_body({})  # malformed / no query -> no raise (API validates the rest)
-    _validate_advanced_body({"query": {"type": "terminal", "service": "sequence"}})  # non-text -> skipped
-
-    bad = {"query": {"type": "group", "logical_operator": "and", "nodes": [
-        {"type": "terminal", "service": "text", "parameters": {"attribute": "invented.path", "operator": "exact_match"}}]}}
-    with pytest.raises(ValueError, match="not a searchable"):
-        _validate_advanced_body(bad)
-
-
 # --- wiring guard: no search tool may skip validation ----------------------
 def test_every_search_tool_validates_its_attributes():
-    """A structural guard: each of the 9 search tools must call a validator, so a future
+    """A structural guard: each of the search tools must call a validator, so a future
     tool (or a refactor) can't silently ship a path straight to the API unvalidated."""
     src = inspect.getsource(search)
     tree = ast.parse(src)
     tools = {
         "rcsb_search_fulltext", "rcsb_search_by_attribute", "rcsb_search_by_sequence",
         "rcsb_search_by_chemical", "rcsb_search_by_structure", "rcsb_search_by_seqmotif",
-        "rcsb_search_strucmotif", "rcsb_search_advanced",
+        "rcsb_search_strucmotif",
     }
-    validators = {"_validate_query_attributes", "_validate_advanced_body"}
+    validators = {"_validate_query_attributes"}
     seen = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in tools:

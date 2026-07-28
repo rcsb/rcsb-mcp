@@ -20,7 +20,6 @@ from rcsb_mcp.client import (
     DATA_GRAPHIQL_URL,
     DATA_GRAPHQL_URL,
     _graphiql_editor,
-    _post_graphql,
 )
 from rcsb_mcp.graphql import (
     DATA_FIELDS_RESULT_CAP,
@@ -81,8 +80,8 @@ async def rcsb_describe_data_object(
 ) -> dict[str, Any]:
     """Discover the fields available on a Data API object, from the live GraphQL schema.
 
-    Use this to find exactly what to request in a rcsb_get_* tool's `fields=` argument (or in
-    rcsb_data_graphql). The rcsb_get_* default selections are compact summaries, but the
+    Use this to find exactly what to request in a rcsb_get_* tool's `fields=` argument.
+    The rcsb_get_* default selections are compact summaries, but the
     underlying GraphQL types have far more (e.g. CoreEntry has ~100 fields). Every path it
     returns is verified against the live schema, so it is safe to pass to `fields=` directly.
 
@@ -412,34 +411,7 @@ async def rcsb_get_group_provenance(group_provenance_id: str, fields: str | None
     return await _query_single("group_provenance", group_provenance_id, fields)
 
 
-async def rcsb_data_graphql(query: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run an arbitrary GraphQL query against the RCSB Data API (escape hatch).
-
-    Endpoint: https://data.rcsb.org/graphql . The rcsb_get_* tools cover every root
-    field with curated defaults; reach for this only when you need fields or
-    nesting they don't expose, or to combine several objects in one query.
-    Returns the raw {"data": ..., "errors": ...} payload so query/validation
-    errors are visible.
-
-    Example:
-        query='''query($ids:[String!]!){
-          assemblies(assembly_ids:$ids){ rcsb_id pdbx_struct_oper_list{ matrix } }
-        }'''
-        variables={"ids": ["4HHB-1"]}
-
-    Args:
-        query: A GraphQL query string. Prefer $variables over inlining values.
-        variables: Optional dict of GraphQL variables referenced by the query.
-    """
-    payload = await _post_graphql(query, variables)
-    if isinstance(payload, dict):
-        payload["editor"] = _graphiql_editor(
-            DATA_GRAPHIQL_URL, {"query": query, "variables": variables}
-        )
-    return payload
-
-
-# The rcsb_get_* / rcsb_describe_data_object / rcsb_data_graphql tools are the Data API tools;
+# The rcsb_get_* / rcsb_describe_data_object tools are the Data API tools;
 # register_data_tools wires each onto the passed FastMCP instance (equivalent to the @mcp.tool
 # decorator, but the functions stay importable/testable on their own). Original tool order is
 # preserved.
@@ -461,11 +433,10 @@ _DATA_TOOLS = (
     rcsb_get_uniprot,
     rcsb_get_pubmed,
     rcsb_get_group_provenance,
-    rcsb_data_graphql,
 )
 
 
 def register_data_tools(mcp) -> None:
-    """Attach the RCSB Data API tools (rcsb_get_* / rcsb_describe_data_object / rcsb_data_graphql) to a FastMCP server."""
+    """Attach the RCSB Data API tools (rcsb_get_* / rcsb_describe_data_object) to a FastMCP server."""
     for fn in _DATA_TOOLS:
         mcp.tool(annotations=READ_ONLY)(fn)

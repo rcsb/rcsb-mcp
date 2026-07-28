@@ -174,32 +174,6 @@ def _validate_query_attributes(
         _check_attribute(sort_by, schema)
 
 
-def _validate_advanced_body(query_body: Any) -> None:
-    """Best-effort validation of the attribute paths in a raw advanced query body.
-
-    Walks `text` / `text_chem` terminals and checks their parameters.attribute (+ operator)
-    against the matching catalog; leaves everything else (services, group shape) to the API,
-    and never raises on a malformed body — only on a clearly-invalid attribute path.
-    """
-    def walk(node: Any) -> None:
-        if not isinstance(node, dict):
-            return
-        if node.get("type") == "group":
-            for child in node.get("nodes") or []:
-                walk(child)
-        elif node.get("type") == "terminal" and node.get("service") in ("text", "text_chem"):
-            params = node.get("parameters")
-            attr = params.get("attribute") if isinstance(params, dict) else None
-            if isinstance(attr, str) and attr:
-                record = _check_attribute(attr, "chemical" if node["service"] == "text_chem" else "structure")
-                operator = params.get("operator")
-                if isinstance(operator, str) and operator:
-                    _check_operator(record, operator)
-
-    if isinstance(query_body, dict):
-        walk(query_body.get("query"))
-
-
 def _format(
     raw: dict[str, Any],
     body: dict[str, Any] | None = None,
@@ -304,8 +278,8 @@ async def rcsb_search_fulltext(
     with structured conditions (organism, resolution, method, dates, ...) in one query. When a
     request has NO keyword (only attributes), use rcsb_search_by_attribute; when it resolves to
     a clear attribute/value, prefer structured search (call rcsb_list_pdb_search_attributes for
-    the exact path — more precise, avoids spurious keyword matches). For NESTED boolean logic or
-    other services (sequence/structure/chemical/motif), use rcsb_search_advanced.
+    the exact path — more precise, avoids spurious keyword matches). For a sequence, structure,
+    chemical or motif match, use the matching rcsb_search_by_* tool (each also takes `attributes`).
 
     BEFORE keyword-searching a biological CONCEPT (disease/function/domain/enzyme/organism),
     resolve it to an ontology id and filter on the annotation instead — see the resolver and
@@ -472,7 +446,7 @@ async def rcsb_search_by_attribute(
     preferred over rcsb_search_fulltext whenever the request resolves to clear attribute(s)
     and value(s). NEVER invent, guess, or infer attributes.
     If you don't know a path or its operators, call rcsb_list_pdb_search_attributes
-    first. For NESTED boolean logic use rcsb_search_advanced.
+    first. All conditions share ONE logical_operator — NESTED boolean groups are not supported.
 
     For a biological concept, resolve it to an ontology id first and filter on the matching
     annotation (see the resolver guidance in the server instructions). If a resolver returns no
@@ -883,45 +857,6 @@ async def rcsb_search_by_seqmotif(
     return _format(raw, body, None if all_hits else offset)
 
 
-async def rcsb_search_advanced(query_body: dict[str, Any]) -> dict[str, Any]:
-    """Run a raw RCSB Search API query body (escape hatch).
-
-    Endpoint: https://search.rcsb.org/rcsbsearch/v2/query . The typed rcsb_search_* tools cover
-    the common cases (each carries total_count and takes `attributes` + `facets`); use this for
-    anything they don't — return_all_hits, group_by "groups", arbitrarily NESTED and/or
-    boolean groups, and queries that COMBINE several non-text services (sequence, structure,
-    chemical, seqmotif, strucmotif) under one group (e.g. a sequence-similarity match AND a
-    chemical-descriptor match — a single non-text service can already be refined with
-    `attributes` on its rcsb_search_by_* tool). Build the query from "group"
-    nodes (logical_operator + nodes) and "terminal" nodes (service + parameters); full query
-    language: https://search.rcsb.org/ . The body is {"query", "return_type",
-    "request_options"} and returns the normalized {total_count, returned, hits} result.
-
-    Example — "(Homo sapiens OR Mus musculus) AND released after 2019-08-20":
-        query_body={"query": {"type": "group", "logical_operator": "and", "nodes": [
-          {"type": "group", "logical_operator": "or", "nodes": [
-            {"type": "terminal", "service": "text", "parameters": {
-              "attribute": "rcsb_entity_source_organism.taxonomy_lineage.name",
-              "operator": "exact_match", "value": "Homo sapiens"}},
-            {"type": "terminal", "service": "text", "parameters": {
-              "attribute": "rcsb_entity_source_organism.taxonomy_lineage.name",
-              "operator": "exact_match", "value": "Mus musculus"}}]},
-          {"type": "terminal", "service": "text", "parameters": {
-            "attribute": "rcsb_accession_info.initial_release_date",
-            "operator": "greater", "value": "2019-08-20"}}]},
-          "return_type": "polymer_entity"}
-
-    Args:
-        query_body: A complete RCSB Search API request — {"query", "return_type",
-            "request_options"} — built from "group" and "terminal" nodes (full query
-            language at https://search.rcsb.org/). Returns the normalized
-            {total_count, returned, hits} result.
-    """
-    _validate_advanced_body(query_body)
-    raw = await _post_search(query_body)
-    return _format(raw, query_body)
-
-
 async def rcsb_search_strucmotif(
     entry_id: str,
     residue_ids: list[dict[str, Any]],
@@ -1039,7 +974,6 @@ _SEARCH_TOOLS = (
     rcsb_search_by_chemical,
     rcsb_search_by_structure,
     rcsb_search_by_seqmotif,
-    rcsb_search_advanced,
     rcsb_search_strucmotif,
 )
 
