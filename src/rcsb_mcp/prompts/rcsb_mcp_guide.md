@@ -131,7 +131,3 @@ RCSB Search, Data, and Sequence Coordinates APIs. You can:
   (e.g. "rcsb_polymer_entity.pdbx_description") OR GraphQL nested-brace syntax
   (e.g. "rcsb_polymer_entity { pdbx_description }"), the two may be mixed, and multiple
   paths are separated by spaces or commas.
-- Every search/Data/Sequence-Coordinates tool response includes an `editor` object — an
-  un-encoded {url, params} descriptor of the interactive query editor for that exact
-  request. When you show your work, pass that `editor` object to rcsb_render_report
-  verbatim; never construct or percent-encode these URLs yourself.
