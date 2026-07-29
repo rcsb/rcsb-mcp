@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import logging
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
@@ -23,6 +24,8 @@ from rcsb_mcp.client import _post_search, _search_editor
 from rcsb_mcp.tooling import READ_ONLY
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
+
+_log = logging.getLogger(__name__)
 
 
 ReturnType = Literal[
@@ -281,7 +284,7 @@ def _validate_nested_attribute_grouping(query_body: Any) -> None:
                 continue  # not a dependent/nested attribute at all
             co_present = sorted(present.intersection(valid_partners))
             if not any(frozenset((attr, partner)) in isolated_pairs for partner in co_present):
-                raise ValueError(
+                msg = (
                     f"'{attr}' and its partner ({', '.join(co_present)}) are both present in "
                     f"the query but not grouped together, alone, in a dedicated group node. "
                     f"The RCSB Search API only applies the nested indexing context to a pair "
@@ -289,6 +292,8 @@ def _validate_nested_attribute_grouping(query_body: Any) -> None:
                     f'in {{"type": "group", "logical_operator": "and", "nodes": [<{attr}>, '
                     f"<partner>]}}, separate from any other conditions."
                 )
+                _log.warning(msg)
+                raise ValueError(msg)
 
 
 def _validate_advanced_body(query_body: Any) -> None:
@@ -487,6 +492,7 @@ async def rcsb_search_fulltext(
         chemical=chemical,
         facets=facets,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -757,6 +763,7 @@ async def rcsb_search_by_sequence(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -846,6 +853,7 @@ async def rcsb_search_by_chemical(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -926,6 +934,7 @@ async def rcsb_search_by_structure(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -1004,6 +1013,7 @@ async def rcsb_search_by_seqmotif(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
@@ -1149,6 +1159,7 @@ async def rcsb_search_strucmotif(
         group_by=group_by,
         group_by_ranking=group_by_ranking,
     )
+    await asyncio.to_thread(_validate_nested_attribute_grouping, body)
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
