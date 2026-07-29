@@ -43,6 +43,11 @@ just a probe or two while iterating.
 
 ## How to read it
 
+> **First:** a transport error is scored as a wrong answer, and errors cluster in whichever
+> side runs SECOND — so a sequential A/B can invent a regression that isn't there. See
+> [bug 4](../README.md#known-harness-bugs) before believing any delta, and check `errors` in
+> the `--out` JSON.
+
 - It's a **regression** check: look for a probe whose rate DROPS old→new. A probe already
   <100% on both sides is a pre-existing model/assertion limitation, not caused by the change.
 - Pick **Haiku** (or your target small model) — strong models are too forgiving to surface a

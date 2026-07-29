@@ -87,10 +87,14 @@ not just a wrong answer.
 
 ## Known harness bugs
 
-Two defects in the `mcp-builder` harness (as of 2026-07-16, run with `claude-sonnet-5`)
-make the command above report a **confidently wrong** result instead of failing loudly.
-Neither is in this server. Patch your local copy before trusting a score — both fixes are
-small — and ideally push them upstream to the skill rather than forking it here.
+Bugs 1-3 are in the `mcp-builder` harness (as of 2026-07-16, run with `claude-sonnet-5`)
+and make the command above report a **confidently wrong** result instead of failing loudly.
+None of the three is in this server. Patch your local copy before trusting a score — the
+fixes are small — and ideally push them upstream to the skill rather than forking it here.
+Bug 4 is different: it is in **our own** `tool_selection` runner, and it is fixable here.
+
+All four share one failure mode worth internalising: *the suite prints a number no matter
+what went wrong.* Never read a score without reading what produced it.
 
 **1. Only the first tool call in a turn is answered** (`evaluation.py`, `agent_loop`).
 It does `tool_use = next(block for block in response.content if block.type == "tool_use")`
@@ -138,6 +142,45 @@ suite with answers that invite prose (keep them short, ID-shaped, single-valued)
 
 Model ids are also stale: the harness default is `claude-3-7-sonnet-20250219`, and the `-m`
 example above predates current models — always pass a current model explicitly.
+
+**4. `tool_selection/run_probes.py` scores a transport error as a WRONG ANSWER — and the
+error rate climbs with run position, so a sequential A/B penalises whichever side runs
+second.** This one is ours, in this repo, not `mcp-builder`.
+
+At [`run_probes.py`](tool_selection/run_probes.py) the rate is `passes / max(1, args.k)`: the
+denominator is the *requested* sample count. A sample whose API call raises is appended to
+`errors` and skipped with `continue`, so it never increments `passes` but still counts
+against the rate — a dropped connection is arithmetically identical to the model picking the
+wrong tool. `compare()` diffs those same `rate` values, so the A/B inherits the distortion.
+
+That would be a tolerable constant tax if the errors were evenly spread. They are not.
+Observed 2026-07-29 (`claude-haiku-4-5-20251001`, k=5 then k=8), every failure was the same
+error — `[SSL: SSLV3_ALERT_BAD_RECORD_MAC]` — and its frequency rose with position in the
+session:
+
+```
+run 1:   pos 1 = OLD   2 errors/60      pos 2 = NEW   12 errors/60
+run 2:   pos 1 = NEW  13 errors/96      pos 2 = OLD   27 errors/96
+```
+
+So the *same* change measured `0.92 -> 0.78` with the baseline first, and `0.67 -> 0.80`
+with the baseline second. Neither number was about the code under test. Pooled over only the
+samples that reached the model: 119/127 (94%) vs 124/131 (95%), z = +0.33 — indistinguishable.
+Read raw, the first run is a convincing 14-point regression that does not exist.
+
+*Fix:* divide by the samples that actually reached the model, and surface the attrition —
+
+```python
+rate = passes / max(1, len(observed))          # not args.k
+```
+
+then print the error count beside the rate so a run with heavy attrition is visibly
+untrustworthy. Better still, retry a couple of times on transport exceptions before
+giving up on a sample.
+
+Until that lands: **read `errors` in the `--out` JSON before believing any delta**, and run
+the two sides in both orders — if the winner follows the running order rather than the
+`--src`, you are looking at this bug and not at your change.
 
 ## Maintaining the suite
 
