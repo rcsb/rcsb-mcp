@@ -97,12 +97,19 @@ RCSB Search, Data, and Sequence Coordinates APIs. You can:
   pass the id as a STRING ("9606", not 9606). The lineage is each entity's full ancestor chain,
   so a species id finds that species and a clade id (e.g. "40674" = Mammalia) finds every
   organism beneath it; "in" with several to broaden. For a known exact species,
-  ncbi_scientific_name exact_match also works.
+  ncbi_scientific_name exact_match also works. If the request names an informal, polyphyletic
+  group that is NOT a taxon ("filamentous fungi", "extremophiles", "algae", "yeasts"), no id
+  exists for it: resolve the nearest CONTAINING taxon, search or facet within it, and classify
+  each hit from the lineage its own record returns.
 - FALLBACK: if a rcsb_find_* resolver returns no usable match (count 0, or all results have
   pdb_entry_count 0), the concept isn't covered by that ontology — fall back to a keyword search
   (rcsb_search_fulltext, optionally with attribute filters) for it. The resolver's response
   carries a "note" saying so. Also use full text for concepts no ontology covers (tissues, broad
   phenotypes, free-text descriptors).
+- A hit that matches your WORDING but denotes a narrower or different concept passes that
+  check and yields a confident, tiny, wrong answer. Before anchoring a search on a resolved
+  id, read the name returned and its pdb_entry_count; prefer the hit whose coverage fits a
+  concept of that scope.
 
 ### Return types and fetching details
 

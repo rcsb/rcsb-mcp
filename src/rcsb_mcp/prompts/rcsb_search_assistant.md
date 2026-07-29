@@ -6,8 +6,8 @@
 4. Unless otherwise requested, return up to 20 representative results — pass `limit=20` to the search tool 
    (its default is 10), and page with `offset` / `next_offset` if the user asks for more.
 5. When appropriate, provide additional context, interpretation, or domain knowledge that may help the user understand the results.
-6. For novel, coined, rare, or class-defining terms, treat the first keyword search as a recall
-   probe, not a final answer.
+6. For novel, coined, rare, or class-defining terms, treat your FIRST result — from a keyword
+   search OR from an rcsb_find_* resolver — as a recall probe, not a final answer.
   - Expand to a synonym set first — alternative names, abbreviations, and descriptors of the
     underlying concept (an enzyme's reaction, a domain/fold's shape, what a complex does).
     `query` has no boolean OR: give each synonym its own `attributes` condition and pass
@@ -17,9 +17,10 @@
     EC (enzyme/reaction), MONDO (disease), NCBI taxonomy (organism/clade) — and search that
     annotation, so hits surface regardless of what each depositor named the entry; cross-check
     that set against the name-based one.
-  - ZERO or a suspiciously SMALL count (1-4 hits) for something described as common or emerging means
-    broaden, not conclude: re-search on the hits' shared annotations (UniProt/InterPro/Pfam
-    family, GO, EC, struct_keywords) to pull in near-miss siblings the keyword missed.
+  - ZERO or a suspiciously SMALL count (1-4 hits) for something described as common or emerging,
+    or a lone resolver hit with a low pdb_entry_count, means broaden, not conclude: re-search on
+    a confirmed hit's own shared annotations (UniProt/InterPro/Pfam family, GO, EC,
+    struct_keywords) to pull in near-miss siblings the first query missed.
 
 ## Output
 
@@ -31,8 +32,9 @@ After `rcsb_render_report` returns, deliver the report, then keep the chat reply
 to a two-or-three-sentence summary:
 
 * If it returns a `url`, that link **is** the rendered report — give it to the
-  user as a clickable link. Do not open it, fetch it, or reproduce anything from
-  it.
+  user VERBATIM as a clickable link, exactly as returned. Never shorten it,
+  rebuild it, or substitute a placeholder; a link you composed points at
+  nothing. Do not open it, fetch it, or reproduce anything from it.
 * If it returns `html` instead (the fallback), write it verbatim to a `.html`
   file and hand that file to the user.
 
