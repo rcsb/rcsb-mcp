@@ -103,6 +103,7 @@ from rcsb_mcp.report.tools import register_report_tools
 from rcsb_mcp.resolvers import register_resolver_tools
 from rcsb_mcp.search import register_search_tools
 from rcsb_mcp.seqcoord import register_seqcoord_tools
+from rcsb_mcp.tooling import compact_tool_schemas
 
 
 async def _fetch_report_rows(query: str, root_field: str, ids: list[str]) -> list[dict[str, Any]]:
@@ -130,6 +131,10 @@ register_resolver_tools(mcp)
 register_search_tools(mcp)
 register_seqcoord_tools(mcp)
 register_data_tools(mcp)
+
+# LAST, once every tool is registered: drop the pydantic-generated schema keywords
+# that cost tokens in every request and say nothing (see tooling.SCHEMA_NOISE).
+compact_tool_schemas(mcp)
 
 
 # --------------------------------------------------------------------------- #
