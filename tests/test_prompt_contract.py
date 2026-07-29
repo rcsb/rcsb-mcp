@@ -106,20 +106,24 @@ def test_prompt_is_reachable_as_an_mcp_prompt():
     assert "## Search Requirements" in server.rcsb_search_assistant()
 
 
-def test_mcp_guide_prompt_is_the_instructions_verbatim():
-    """The guide prompt must BE the `instructions` text, not a copy of it.
+def test_mcp_guide_prompt_is_the_package_data_file():
+    """The guide prompt must BE prompts/rcsb_mcp_guide.md, not a copy of it.
 
-    27 of the 39 tool descriptions defer to "the server instructions" (~45 references).
-    `instructions` is returned on `initialize`, but the spec leaves injecting it to the
-    CLIENT and several do not — so those cross-references can point at text the agent
-    never received. The prompt is the fallback channel, which only helps if it carries
-    the SAME text; a copy would drift and the fallback would quietly go stale.
+    This replaces a drift guard between the prompt and FastMCP's `instructions` block,
+    which no longer exists — see the comment at the FastMCP() call. With `instructions`
+    gone the prompt is the ONLY channel carrying this text, so the thing worth pinning is
+    that it still comes from the editable package-data file rather than a literal that
+    someone pasted into code and will forget to update.
     """
-    guide = server.rcsb_mcp_guide()
-    assert guide == server.mcp.instructions, (
-        "rcsb_mcp_guide drifted from the instructions block; both must read the same "
-        "package-data file (prompts/rcsb_mcp_guide.md)."
+    from pathlib import Path
+
+    from rcsb_mcp import server as _s
+
+    on_disk = (Path(_s.__file__).resolve().parent / "prompts" / "rcsb_mcp_guide.md").read_text(
+        encoding="utf-8"
     )
+    guide = server.rcsb_mcp_guide()
+    assert guide == on_disk, "rcsb_mcp_guide drifted from prompts/rcsb_mcp_guide.md"
     assert guide.strip(), "the guide prompt is empty"
 
 

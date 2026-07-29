@@ -283,7 +283,7 @@ async def rcsb_search_fulltext(
 
     BEFORE keyword-searching a biological CONCEPT (disease/function/domain/enzyme/organism),
     resolve it to an ontology id and filter on the annotation instead — see the resolver and
-    assembly/multimer guidance in the server instructions. Matching spans ALL text annotations,
+    assembly/multimer guidance in the rcsb_mcp_guide prompt. Matching spans ALL text annotations,
     so judge each hit yourself; a high `score` is text-relevance, NOT biological importance —
     never tell the user one hit is better than another because its score is higher.
 
@@ -296,7 +296,7 @@ async def rcsb_search_fulltext(
             rcsb_search_by_attribute / rcsb_list_pdb_search_attributes for paths and operators).
         logical_operator: Combine the keyword with the attribute conditions (default "and").
         return_type: What to return (default "entry"); see the "Return types and fetching
-            details" note in the server instructions.
+            details" note in the rcsb_mcp_guide prompt.
         limit: Max number of hits to return (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
             the same query to fetch the next page.
@@ -307,7 +307,7 @@ async def rcsb_search_fulltext(
         chemical: Set True when `attributes` target chemical-component attributes (the text_chem
             service; usually pair with return_type="mol_definition").
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         sort_by: Attribute path to order the hits by; omit to sort by relevance score. Only
             SORTABLE attributes work: those listing exact_match (strings) or equals (numbers/
             dates) in rcsb_list_pdb_search_attributes; full-text-only attributes (e.g.
@@ -315,12 +315,12 @@ async def rcsb_search_fulltext(
         sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; hits are ids only — batch them into rcsb_get_entries (or the
         rcsb_get_* tool matching return_type). all_hits/facets response variants: see the
-        server instructions.
+        rcsb_mcp_guide prompt.
     """
     _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_combined_query(
@@ -377,7 +377,7 @@ async def rcsb_list_pdb_search_attributes(
             ("resolution", "comp_id"), not a phrase — a multi-word query only matches where
             those exact words are adjacent in a description. Omit to return everything.
         schema: Which catalog — "structure" (~675 attrs: entry/entity/assembly/instance) or
-            "chemical" (~57 attrs: chemical-component). See the server instructions for how to
+            "chemical" (~57 attrs: chemical-component). See the rcsb_mcp_guide prompt for how to
             search chemical attributes.
 
     Returns:
@@ -449,7 +449,7 @@ async def rcsb_search_by_attribute(
     first. All conditions share ONE logical_operator — NESTED boolean groups are not supported.
 
     For a biological concept, resolve it to an ontology id first and filter on the matching
-    annotation (see the resolver guidance in the server instructions). If a resolver returns no
+    annotation (see the resolver guidance in the rcsb_mcp_guide prompt). If a resolver returns no
     usable id, or a concept/annotation filter yields no hits, fall back to rcsb_search_fulltext
     for the concept. (For ordinary constraints — resolution, organism, dates — an empty result
     is a valid answer: report it, don't keyword-search instead.)
@@ -476,7 +476,7 @@ async def rcsb_search_by_attribute(
             include flags are true). See rcsb_list_pdb_search_attributes for paths/operators.
         logical_operator: Combine the conditions with "and" (default) or "or".
         return_type: What to return (default "entry"); see the "Return types and fetching
-            details" note in the server instructions. E.g. return_type="entry" with a ligand
+            details" note in the rcsb_mcp_guide prompt. E.g. return_type="entry" with a ligand
             attribute finds the structures that contain it.
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
@@ -485,12 +485,12 @@ async def rcsb_search_by_attribute(
             ignores limit, can't be combined with offset, and is refused above 10000 hits.
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         chemical: Set True for chemical-component attributes (paths from
             rcsb_list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
             Switches to the text_chem service; usually pair with return_type="mol_definition".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         sort_by: Attribute path to order the hits by. A pure attribute filter is a boolean match,
             so hits otherwise come back in near-arbitrary order — set this for "best resolution
             first", "newest first", etc. Only SORTABLE attributes work: those listing exact_match
@@ -503,7 +503,7 @@ async def rcsb_search_by_attribute(
         editor}; hits are ids only — batch them into rcsb_get_entries (or the
         rcsb_get_* tool matching return_type). The per-hit `score` is near-uniform for a pure
         attribute filter and carries NO biological meaning — don't rank hits by it.
-        all_hits/facets response variants: see the server instructions.
+        all_hits/facets response variants: see the rcsb_mcp_guide prompt.
     """
     _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
     body = queries.build_combined_query(
@@ -554,7 +554,7 @@ async def rcsb_search_by_sequence(
         identity_cutoff: Minimum sequence identity as a fraction 0-1 (e.g. 0.3 = 30%).
         evalue_cutoff: Maximum E-value to report.
         return_type: What to return (default "polymer_entity"); see the "Return types and
-            fetching details" note in the server instructions.
+            fetching details" note in the rcsb_mcp_guide prompt.
         limit: Max hits (1-100). Returns polymer_entity IDs like "4HHB_1" — fetch their
             details with rcsb_get_polymer_entities.
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
@@ -569,10 +569,10 @@ async def rcsb_search_by_sequence(
         logical_operator: Combine this match and the attribute conditions with "and"
             (default) or "or".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         sort_by: Attribute path to order the hits by, replacing the default similarity ordering
             (each hit's score is still returned); omit to keep it. Only SORTABLE attributes work:
             those listing exact_match (strings) or equals (numbers/dates) in
@@ -643,7 +643,7 @@ async def rcsb_search_by_chemical(
         match_subset: Formula queries only — match formulas that merely contain the
             requested atoms.
         return_type: What to return (default "mol_definition" = the chemical component); see the
-            "Return types and fetching details" note in the server instructions.
+            "Return types and fetching details" note in the rcsb_mcp_guide prompt.
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
             the same query to fetch the next page.
@@ -657,10 +657,10 @@ async def rcsb_search_by_chemical(
         logical_operator: Combine this match and the attribute conditions with "and"
             (default) or "or".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         sort_by: Attribute path to order the hits by, replacing the default score ordering (each
             hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
             listing exact_match (strings) or equals (numbers/dates) in
@@ -725,7 +725,7 @@ async def rcsb_search_by_structure(
             with assembly_id).
         return_type: What to return (defaults to "assembly" for an assembly reference or
             "polymer_instance" for a chain reference); see the "Return types and fetching
-            details" note in the server instructions.
+            details" note in the rcsb_mcp_guide prompt.
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
             the same query to fetch the next page.
@@ -739,10 +739,10 @@ async def rcsb_search_by_structure(
         logical_operator: Combine this match and the attribute conditions with "and"
             (default) or "or".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         sort_by: Attribute path to order the hits by, replacing the default shape-similarity
             ordering (each hit's score is still returned); omit to keep it. Only SORTABLE
             attributes work: those listing exact_match (strings) or equals (numbers/dates) in
@@ -803,7 +803,7 @@ async def rcsb_search_by_seqmotif(
         pattern_type: "prosite" (default), "regex", or "simple".
         sequence_type: "protein" (default), "dna", or "rna".
         return_type: What to return (default "polymer_entity"); see the "Return types and
-            fetching details" note in the server instructions.
+            fetching details" note in the rcsb_mcp_guide prompt.
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
             the same query to fetch the next page.
@@ -817,10 +817,10 @@ async def rcsb_search_by_seqmotif(
         logical_operator: Combine this match and the attribute conditions with "and"
             (default) or "or".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         sort_by: Attribute path to order the hits by, replacing the default score ordering (each
             hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
             listing exact_match (strings) or equals (numbers/dates) in
@@ -904,7 +904,7 @@ async def rcsb_search_strucmotif(
         atom_pairing_scheme: ALL, BACKBONE, SIDE_CHAIN (default), or PSEUDO_ATOMS.
         motif_pruning_strategy: NONE or KRUSKAL (default).
         return_type: What to return (default "assembly"); see the "Return types and fetching
-            details" note in the server instructions.
+            details" note in the rcsb_mcp_guide prompt.
         limit: Max hits (1-100).
         offset: Number of hits to skip, for paging; pass the response's next_offset back with
             the same query to fetch the next page.
@@ -918,10 +918,10 @@ async def rcsb_search_strucmotif(
         logical_operator: Combine this match and the attribute conditions with "and"
             (default) or "or".
         facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the server instructions for the spec).
+            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
         group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
             representative each (needs return_type="polymer_entity") — see the grouping note in
-            the server instructions.
+            the rcsb_mcp_guide prompt.
         sort_by: Attribute path to order the hits by, replacing the default score ordering (each
             hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
             listing exact_match (strings) or equals (numbers/dates) in

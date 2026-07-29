@@ -133,7 +133,7 @@ async def rcsb_find_go_terms(
     Use this when a request involves what a protein DOES or where it acts — "proteins that
     <do X> / are involved in / participate in / are responsible for ...", "localized to /
     located in ...". Resolve the phrase to a GO id here, then search by it — see the resolver
-    guidance in the server instructions for the attribute path and lineage semantics.
+    guidance in the rcsb_mcp_guide prompt for the attribute path and lineage semantics.
 
     Args:
         query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
@@ -194,7 +194,7 @@ async def rcsb_find_interpro_domains(
     Use this whenever a request references a protein DOMAIN, FAMILY, or fold — "structures
     containing / with a <domain>", "<domain>-containing proteins", "members of the <family>
     family". Resolve the phrase to an InterPro accession (IPRxxxxxx) here, then search by it —
-    see the resolver guidance in the server instructions for the attribute path and lineage
+    see the resolver guidance in the rcsb_mcp_guide prompt for the attribute path and lineage
     semantics.
 
     Args:
@@ -249,7 +249,7 @@ async def rcsb_find_enzyme_classes(
     Use this when a request references an enzyme, enzyme class, or reaction — including
     "enzymes that catalyze / break down / degrade / synthesize / hydrolyze / phosphorylate ...".
     Resolve the phrase to an EC number here, then search by it — see the resolver guidance in
-    the server instructions for the attribute path and lineage semantics.
+    the rcsb_mcp_guide prompt for the attribute path and lineage semantics.
 
     Args:
         query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
@@ -301,8 +301,8 @@ async def rcsb_find_disease_terms(
 
     Use for ANY request mentioning a disease/disorder/syndrome/condition — "structures involved
     in / associated with / linked to <disease>", "proteins implicated in <disease>". Resolve the
-    phrase to a MONDO id here, then search by it — see the resolver guidance in the server
-    instructions for the attribute path and lineage semantics.
+    phrase to a MONDO id here, then search by it — see the resolver guidance in the
+    rcsb_mcp_guide prompt for the attribute path and lineage semantics.
 
     Args:
         query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
@@ -357,7 +357,7 @@ async def rcsb_find_organisms(
     Use when a request restricts structures by SOURCE ORGANISM or any higher taxon — a common
     name you want as a canonical taxon ("human", "fruit fly"), or a CLADE, which a plain name
     search cannot expand. Resolve the phrase to a taxon id here, then search by it — see the
-    resolver guidance in the server instructions for the attribute path, lineage semantics and
+    resolver guidance in the rcsb_mcp_guide prompt for the attribute path, lineage semantics and
     the id-typing gotcha.
 
     Args:

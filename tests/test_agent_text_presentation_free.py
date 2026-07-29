@@ -33,9 +33,12 @@ def _agent_facing_texts() -> dict[str, str]:
     registered tool — its description plus its full serialized inputSchema (nested field
     descriptions included)."""
     tools = asyncio.run(server.mcp.list_tools())
+    # The guide is scanned via its PROMPT, not via `server.mcp.instructions` — the server no
+    # longer ships that block, and reading it here would silently degrade to "" and stop
+    # covering the guide at all while the test kept passing.
     texts = {
         "prompt:rcsb_search_assistant": server.rcsb_search_assistant() or "",
-        "server.instructions": getattr(server.mcp, "instructions", "") or "",
+        "prompt:rcsb_mcp_guide": server.rcsb_mcp_guide() or "",
     }
     for t in tools:
         texts[f"{t.name}.description"] = t.description or ""

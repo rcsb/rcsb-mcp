@@ -116,9 +116,15 @@ REQUIRED_IN_TOOL = {
     ],
 }
 
-# Shared guidance the docstrings now DELEGATE to via "see the server instructions" —
-# must survive in the always-on instructions block, or those pointers dangle.
-REQUIRED_IN_INSTRUCTIONS = [
+# Shared guidance the docstrings DELEGATE to via "see the rcsb_mcp_guide prompt" — must
+# survive in that prompt, or those pointers name something that does not contain the answer.
+#
+# This used to assert against FastMCP's `instructions` block. That was a false guarantee:
+# clients truncate it at 2048 chars or drop it, so 11 of the 17 phrases below sat past the
+# cut and the test was green against text no client ever received. The prompt is checked
+# instead because it is delivered whole or not at all — a weaker promise, honestly kept.
+# It does NOT prove the model saw this text; only a tool description can promise that.
+REQUIRED_IN_GUIDE_PROMPT = [
     "rcsb_find_disease_terms",                          # ontology resolver routing ...
     "rcsb_find_go_terms",
     "rcsb_find_interpro_domains",
@@ -155,11 +161,39 @@ def test_tool_gotchas_survive():
     )
 
 
-def test_shared_guidance_survives_in_instructions():
-    instr = _norm(getattr(server.mcp, "instructions", ""))
-    assert instr, "server has no instructions block"
-    missing = [p for p in REQUIRED_IN_INSTRUCTIONS if _norm(p) not in instr]
+def test_shared_guidance_survives_in_the_guide_prompt():
+    guide = _norm(server.rcsb_mcp_guide())
+    assert guide, "the rcsb_mcp_guide prompt is empty"
+    missing = [p for p in REQUIRED_IN_GUIDE_PROMPT if _norm(p) not in guide]
     assert not missing, (
-        "docstrings point to the server instructions for these, but they are missing "
-        "there:\n  " + "\n  ".join(missing)
+        "tool descriptions point at the rcsb_mcp_guide prompt for these, but they are "
+        "missing from it:\n  " + "\n  ".join(missing)
+    )
+
+
+def test_no_description_points_at_the_removed_instructions_block():
+    """The `instructions` channel is gone; a docstring still citing it sends the agent nowhere.
+
+    Kept as a distinct assertion from the one above because the failure modes differ: that
+    one catches guidance deleted from the guide, this one catches a REFERENCE left behind
+    when the destination moved.
+    """
+    stale = sorted(n for n, d in _descriptions().items()
+                   if "server instructions" in d or "instructions block" in d)
+    assert not stale, (
+        "these tool descriptions still cite the removed `instructions` block:\n  "
+        + "\n  ".join(stale)
+    )
+
+
+def test_the_server_ships_no_instructions_block():
+    """Deliberate: see the comment at the FastMCP() call in server.py.
+
+    Guarded so that re-adding it is a decision someone makes on purpose, rather than a
+    plausible-looking one-line 'fix' that silently reintroduces a channel the tool
+    descriptions are no longer allowed to depend on.
+    """
+    assert not getattr(server.mcp, "instructions", None), (
+        "server.py passes instructions= again — the guide is delivered as the "
+        "rcsb_mcp_guide prompt, which arrives whole or not at all"
     )

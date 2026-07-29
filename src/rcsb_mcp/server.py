@@ -66,13 +66,24 @@ def _transport_security() -> TransportSecuritySettings:
 # Prompt / guidance text, shipped as package data under prompts/ so it stays
 # editable without touching code and ships with the wheel.
 #
-# rcsb_mcp_guide.md is the SINGLE SOURCE for the always-on tool-routing guidance:
-# it is passed to FastMCP(instructions=...) AND exposed as the `rcsb_mcp_guide`
-# prompt. The duplication matters because `instructions` only reaches the model if
-# the CLIENT chooses to inject it -- several (Claude web among them) do not, which
-# leaves the ~45 "see the server instructions" cross-references in the tool
-# descriptions pointing at text the agent never received. The prompt is the
-# client-agnostic fallback: any MCP client can list and invoke it.
+# rcsb_mcp_guide.md is the SINGLE SOURCE for the tool-routing guidance, and it is
+# reachable ONLY as the `rcsb_mcp_guide` prompt (and, with the search/report policy
+# appended, as `rcsb_search_assistant`).
+#
+# It is deliberately NOT passed to FastMCP(instructions=...). That channel cannot be
+# relied on by a server offered as a public service: a client may inject it whole,
+# truncate it (Claude Code cuts at 2048 chars -- 77% of this guide), or drop it
+# entirely (Claude web), and the server cannot tell which happened. Shipping the
+# guide there bought partial delivery for some clients while making the whole
+# arrangement untestable -- the guard asserted against the full string, so it stayed
+# green against text no client ever received.
+#
+# A prompt is an addressable object: it arrives whole or not at all, the client lists
+# it by name, and the ~45 cross-references in tool descriptions now name something a
+# user can actually load. That is a weaker guarantee than a tool description (which
+# always arrives) but an HONEST one, which the truncated block was not. Making the
+# search guidance unconditionally delivered needs the rcsb_search_* merge -- see
+# evals and the memo; until then this is the reachable ceiling.
 # --------------------------------------------------------------------------- #
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
@@ -86,7 +97,6 @@ _MCP_GUIDE = _load_prompt("rcsb_mcp_guide.md")
 
 mcp = FastMCP(
     name="rcsb_mcp",
-    instructions=_MCP_GUIDE,
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
     # run stateless (any pod can serve any request — no per-session state to lose)
     # and answer with plain JSON instead of long-lived SSE streams. Both flags are
