@@ -86,7 +86,6 @@ RCSB Search, Data, and Sequence Coordinates APIs. You can:
   3.4.21"), first call rcsb_find_enzyme_classes to resolve it to an EC number, then search with
   rcsb_polymer_entity.rcsb_ec_lineage.id exact_match "<EC>" (hierarchical: a full EC finds that
   enzyme, a partial EC like "3.4.21" finds the whole sub-subclass; "in" with several to broaden).
-  Prefer higher pdb_entry_count.
 - For requests about a DISEASE or condition ("cystic fibrosis", "breast cancer"), first call
   rcsb_find_disease_terms to resolve it to a MONDO id, then search with
   rcsb_uniprot_annotation.annotation_lineage.id exact_match "MONDO:..." (UniProt-based disease

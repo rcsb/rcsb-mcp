@@ -80,14 +80,42 @@ async def _annotation_pdb_count(attribute: str, value: str) -> int | None:
         return None
 
 
+# A hit annotated on very few PDB entries is one of two things: a genuinely rare target,
+# where the small answer IS the answer — or a name match onto a concept narrower than the
+# caller meant. The second is the dangerous one, because it passes every emptiness check
+# below and yields a confident, tiny, WRONG answer: rcsb_find_interpro_domains("hormone-
+# sensitive lipase") returns exactly one confident hit, IPR010468 with pdb_entry_count 1 —
+# the mammalian N-terminal domain, not what the HSL family means in microbial esterase
+# nomenclature. Nothing available here can tell the two cases apart, so the note ADVISES
+# rather than warns, and the thresholds are deliberately tight: it stays silent unless there
+# was almost no choice to make AND the coverage is thin, so a rare-target query does not get
+# second-guessed on every call. Tune these two numbers, not the message.
+_LOW_COVERAGE_MAX_HITS = 2
+_LOW_COVERAGE_MAX_ENTRIES = 10
+
+
 def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | None:
-    """Advise a keyword fallback when an ontology resolver finds nothing usable."""
+    """Advise a keyword fallback when a resolver finds nothing usable — or when what it DID
+    find resolved cleanly but may not be the concept that was asked for."""
     if not items:
         return (f"No {label} matched this concept. Fall back to a keyword search "
                 "(rcsb_search_fulltext, optionally with attribute filters) for it.")
-    if all("pdb_entry_count" in it for it in items) and not any(it["pdb_entry_count"] for it in items):
+    # `pdb_entry_count` is absent when the caller passed with_pdb_counts=False, and None when
+    # the count query itself failed. Neither is evidence of absence, and conflating None with
+    # 0 would report "not annotated in the PDB" whenever the Search API was merely unreachable.
+    counts = [it["pdb_entry_count"] for it in items if isinstance(it.get("pdb_entry_count"), int)]
+    if len(counts) < len(items):
+        return None
+    if not any(counts):
         return (f"Matched {label}(s) but none are annotated in the PDB (pdb_entry_count 0). "
                 "A keyword search (rcsb_search_fulltext) may still surface relevant structures.")
+    best = max(counts)
+    if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
+        return (f"Best match covers only {best} PDB entr{'y' if best == 1 else 'ies'}. That is "
+                "expected for a rare target, but a match that fits your WORDING while denoting a "
+                "NARROWER concept than you meant looks exactly the same. Read the name that came "
+                "back before anchoring a search on this id; if it may be the wrong concept, "
+                "broaden the query or cross-check with rcsb_search_fulltext.")
     return None
 
 
