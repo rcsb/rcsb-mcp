@@ -143,9 +143,11 @@ suite with answers that invite prose (keep them short, ID-shaped, single-valued)
 Model ids are also stale: the harness default is `claude-3-7-sonnet-20250219`, and the `-m`
 example above predates current models — always pass a current model explicitly.
 
-**4. `tool_selection/run_probes.py` scores a transport error as a WRONG ANSWER — and the
-error rate climbs with run position, so a sequential A/B penalises whichever side runs
-second.** This one is ours, in this repo, not `mcp-builder`.
+**4. FIXED (2026-07-29) — `tool_selection/run_probes.py` scored a transport error as a WRONG
+ANSWER, and the error rate climbed with run position, so a sequential A/B penalised whichever
+side ran second.** This one was ours, in this repo, not `mcp-builder`. Kept on the record
+because it explains every result file written before the fix: **treat those numbers as
+unusable**, not merely noisy.
 
 At [`run_probes.py`](tool_selection/run_probes.py) the rate is `passes / max(1, args.k)`: the
 denominator is the *requested* sample count. A sample whose API call raises is appended to
@@ -168,19 +170,30 @@ with the baseline second. Neither number was about the code under test. Pooled o
 samples that reached the model: 119/127 (94%) vs 124/131 (95%), z = +0.33 — indistinguishable.
 Read raw, the first run is a convincing 14-point regression that does not exist.
 
-*Fix:* divide by the samples that actually reached the model, and surface the attrition —
+**What the fix did**, in three parts, because it was three defects wearing one coat:
 
-```python
-rate = passes / max(1, len(observed))          # not args.k
-```
+1. **The denominator.** `rate = passes / len(observed)`, never `/ args.k`. A probe where every
+   sample errored now reports `n/a` and `NaN` rather than `0%`, the per-probe line shows
+   `[N errored]`, the summary prints `graded X/Y samples`, and >5% attrition triggers a loud
+   `this run is NOT comparable`. `--compare` refuses to diff arms that lost samples or that
+   ran with different `--guide` values, and skips probes with no graded data.
+2. **Classified failures.** `except Exception` had made a 401 indistinguishable from a wrong
+   tool choice, so a bad key printed a confident `0.00`. Auth failures (401/403) now abort the
+   run with a message and no score; 429/529/5xx are treated as throttling and retried with
+   linear backoff (`--attempts`, default 3); malformed responses fail fast without retrying.
+3. **The likely root cause of the errors themselves.** Every sample used module-level
+   `httpx.post`, building a fresh `Client` — and a fresh TLS handshake — per call: 60–96
+   handshakes in quick succession. All 54 errored samples across four runs were the same TLS
+   integrity fault. The run now shares one pooled `httpx.Client`.
 
-then print the error count beside the rate so a run with heavy attrition is visibly
-untrustworthy. Better still, retry a couple of times on transport exceptions before
-giving up on a sample.
+A fourth thing surfaced while fixing it: `load_server` read `server.mcp.instructions`, which
+the server no longer ships. It was silently degrading to `""`, so every future run would have
+measured a no-guide arm while looking identical to the historical runs that had the full
+guide. The channel is now explicit — `--guide {guide,assistant,none}`, defaulting to the
+`rcsb_mcp_guide` prompt, which reproduces the old behaviour.
 
-Until that lands: **read `errors` in the `--out` JSON before believing any delta**, and run
-the two sides in both orders — if the winner follows the running order rather than the
-`--src`, you are looking at this bug and not at your change.
+Still true regardless: **read `errors` in the `--out` JSON before believing any delta.** If a
+winner follows the running order rather than the `--src`, suspect the harness first.
 
 ## Maintaining the suite
 
