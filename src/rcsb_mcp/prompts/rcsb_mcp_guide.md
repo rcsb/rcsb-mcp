@@ -40,9 +40,9 @@ population}]}]}. Each facet spec is a dict {"name", "aggregation_type", "attribu
 A facet may carry a nested "facets" list to sub-aggregate within each bucket. Example:
 facets=[{"name":"Methods","aggregation_type":"terms","attribute":"exptl.method"}].
 
-### De-duplication and grouping
+### Grouping / Clustering
 
-To DE-DUPLICATE redundant hits (one representative per cluster), set group_by on any
+To reduce redundancy among entry hits (one representative per cluster), set group_by on any
 rcsb_search_* tool (requires return_type="polymer_entity"): "seqid_30"/"seqid_50"/"seqid_70"/
 "seqid_90"/"seqid_95" (cluster by sequence-identity %) or "uniprot" (one per UniProt
 accession). Choose the representative with group_by_ranking:
@@ -53,7 +53,7 @@ accession). Choose the representative with group_by_ranking:
   - score: highest ElasticSearch score first. It does not measure biological relevance or
     quality of the structure, so don't rank structures by it.
   - coverage: largest sequence coverage of the UniProt protein first. Valid only with
-    group_by="uniprot", and PREFER it there — it keeps the most relevant biological sequence.
+    group_by="uniprot", and PREFER it there — distinguishes distinct proteins from redundant entries.
 
 ### Assembly / multimer composition
 
