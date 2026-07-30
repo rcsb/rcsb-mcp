@@ -1,12 +1,17 @@
 """RCSB Search API tools: discover PDB identifiers by keyword, structured attribute,
 sequence similarity, chemistry, 3D shape, sequence motif, or residue geometry.
 
-Self-contained like the sibling tool packages: the parameter type aliases (which the
-schema turns into JSON-schema enums / numeric bounds), the AttributeFilter model, the
-shared result/facet formatters, and the all_hits guard all live here. The tool
-functions are module-level (so they stay directly unit-testable); a FastMCP server
-attaches them with register_search_tools(mcp), the register-onto-mcp pattern. This
-module imports nothing back from server.
+Holds the tools themselves, the PER-MODALITY parameter vocabulary they take (SequenceType,
+ChemMatchType, Tolerance, ...), the shared result/facet formatters, and the all_hits guard.
+
+What each search returns and how it runs — attribute refinements, paging, sorting, faceting,
+grouping, return_type — is one `search_configuration` argument, and that model plus the
+vocabulary only it uses lives in :mod:`rcsb_mcp.search_config`. That module is a leaf, so the
+two do not import each other.
+
+The tool functions are module-level (so they stay directly unit-testable); a FastMCP server
+attaches them with register_search_tools(mcp), the register-onto-mcp pattern. This module
+imports nothing back from server.
 """
 
 from __future__ import annotations
@@ -17,17 +22,14 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 from rcsb_mcp import queries
-from rcsb_mcp.attribute_types import SearchAttribute, TextOperator
+from rcsb_mcp.attribute_types import SearchAttribute
 from rcsb_mcp.client import _post_search, _search_editor
+from rcsb_mcp.search_config import AttributeFilter, SearchConfiguration, _cfg
 from rcsb_mcp.tooling import READ_ONLY
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 
 
-ReturnType = Literal[
-    "entry", "polymer_entity", "non_polymer_entity",
-    "polymer_instance", "assembly", "mol_definition",
-]
 # TextOperator / AttributeValueType / SearchAttribute live in rcsb_mcp.attribute_types
 # so the catalog data modules can share them without an import cycle.
 SequenceType = Literal["protein", "dna", "rna"]
@@ -41,46 +43,11 @@ ChemQueryType = Literal["descriptor", "formula"]
 SeqmotifPatternType = Literal["simple", "prosite", "regex"]
 AtomPairingScheme = Literal["ALL", "BACKBONE", "SIDE_CHAIN", "PSEUDO_ATOMS"]
 MotifPruningStrategy = Literal["NONE", "KRUSKAL"]
-LogicalOperator = Literal["and", "or"]
-SortDirection = Literal["asc", "desc"]
-GroupBy = Literal["seqid_30", "seqid_50", "seqid_70", "seqid_90", "seqid_95", "uniprot"]
-GroupByRanking = Literal[
-    "resolution", "released_date", "entity_residue_count", "score", "coverage",
-]
 AttributeSchema = Literal["structure", "chemical"]
 
 
 # Numeric bounds (Annotated so the parameter default stays on the signature).
-Limit = Annotated[int, Field(ge=1, le=100)]
-Offset = Annotated[int, Field(ge=0)]
 Tolerance = Annotated[int, Field(ge=0, le=3)]
-
-
-class AttributeFilter(BaseModel):
-    """One structured attribute condition — a single `text`/`text_chem` terminal.
-
-    A list of these expresses a flat multi-attribute query (combined with one
-    AND/OR). Find a path/operators with rcsb_list_pdb_search_attributes.
-    """
-
-    attribute: str = Field(
-        description="Dotted RCSB attribute path, e.g. 'rcsb_entry_info.resolution_combined'."
-    )
-    operator: TextOperator = Field(
-        description="Type-specific operator (see rcsb_list_pdb_search_attributes): strings use "
-        "exact_match/in or contains_words/contains_phrase; numbers/dates use greater/"
-        "greater_or_equal/less/less_or_equal/equals/range; any type supports exists."
-    )
-    value: str | int | float | list | dict | None = Field(
-        default=None,
-        description="Comparison value; omit for 'exists'. A list for 'in'; a "
-        "{from,to,include_lower,include_upper} object for 'range'. A numeric string is "
-        "coerced to a number for numeric operators; dates take an ISO-8601 string.",
-    )
-    negation: bool = Field(default=False, description="Invert the match (NOT).")
-    case_sensitive: bool = Field(
-        default=False, description="Match the value case-sensitively (default insensitive)."
-    )
 
 
 def _filter_dicts(attributes: list[AttributeFilter] | None) -> list[dict[str, Any]] | None:
@@ -257,19 +224,7 @@ def _format_facets(raw: dict[str, Any], body: dict[str, Any] | None = None) -> d
 
 async def rcsb_search_fulltext(
     query: str,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    return_type: ReturnType = "entry",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    include_computed_models: bool = False,
-    chemical: bool = False,
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Search the PDB by free-text keywords (e.g. "CRISPR Cas9", "hemoglobin"), optionally
     refined with structured attribute filters.
@@ -291,60 +246,42 @@ async def rcsb_search_fulltext(
         query: Free-text terms matched (case-insensitively) against all text annotations. Quote
             a phrase to require adjacency (e.g. '"DNA polymerase"'); separate words narrow the
             results; trailing '*' is a prefix wildcard. AND/OR/NOT are NOT boolean operators here.
-        attributes: Optional structured conditions combined with the keyword — AttributeFilter
-            {attribute, operator, value, negation?, case_sensitive?} (see
-            rcsb_search_by_attribute / rcsb_list_pdb_search_attributes for paths and operators).
-        logical_operator: Combine the keyword with the attribute conditions (default "and").
-        return_type: What to return (default "entry"); see the "Return types and fetching
-            details" note in the rcsb_mcp_guide prompt.
-        limit: Max number of hits to return (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call, for an explicit "ALL ..." request.
-            Ignores limit and omits paging; can't be combined with offset (the Search API rejects
-            pagination here); refused above 10000 hits — narrow, aggregate with `facets`, or page.
-        include_computed_models: Also search computed structure models (AlphaFold etc.).
-        chemical: Set True when `attributes` target chemical-component attributes (the text_chem
-            service; usually pair with return_type="mol_definition").
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        sort_by: Attribute path to order the hits by; omit to sort by relevance score. Only
-            SORTABLE attributes work: those listing exact_match (strings) or equals (numbers/
-            dates) in rcsb_list_pdb_search_attributes; full-text-only attributes (e.g.
-            struct.title) and return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
+        search_configuration: Everything except the keyword — attribute refinements, paging,
+            sorting, faceting, grouping, return_type. Omit it entirely for a plain search;
+            its return_type defaults to "entry" here.
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; hits are ids only — batch them into rcsb_get_entries (or the
         rcsb_get_* tool matching return_type). all_hits/facets response variants: see the
         rcsb_mcp_guide prompt.
     """
-    _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "entry")
+    _validate_query_attributes(
+        chemical=cfg.chemical_attributes, attributes=cfg.attributes,
+        facets=cfg.facets, sort_by=cfg.sort_by,
+    )
     body = queries.build_combined_query(
         full_text=query,
-        filters=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        include_computed=include_computed_models,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
-        chemical=chemical,
-        facets=facets,
+        filters=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        include_computed=cfg.include_computed_models,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
+        chemical=cfg.chemical_attributes,
+        facets=cfg.facets,
     )
-    if all_hits:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 class _AttributeListResult(BaseModel):
@@ -429,74 +366,22 @@ async def rcsb_list_pdb_search_attributes(
 
 
 async def rcsb_search_by_attribute(
-    attributes: list[AttributeFilter],
-    logical_operator: LogicalOperator = "and",
-    return_type: ReturnType = "entry",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
-    chemical: bool = False,
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
+    search_configuration: SearchConfiguration,
 ) -> dict[str, Any]:
     """Search by one or more structured attribute conditions combined with a single AND/OR —
     preferred over rcsb_search_fulltext whenever the request resolves to clear attribute(s)
-    and value(s). NEVER invent, guess, or infer attributes.
-    If you don't know a path or its operators, call rcsb_list_pdb_search_attributes
-    first. All conditions share ONE logical_operator — NESTED boolean groups are not supported.
+    and value(s).
 
-    For a biological concept, resolve it to an ontology id first and filter on the matching
-    annotation (see the resolver guidance in the rcsb_mcp_guide prompt). If a resolver returns no
-    usable id, or a concept/annotation filter yields no hits, fall back to rcsb_search_fulltext
-    for the concept. (For ordinary constraints — resolution, organism, dates — an empty result
-    is a valid answer: report it, don't keyword-search instead.)
-
-    Example ("human X-ray structures better than 2 A"):
-        attributes=[
-            {"attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
-             "operator": "exact_match", "value": "Homo sapiens"},
-            {"attribute": "exptl.method", "operator": "exact_match", "value": "X-RAY DIFFRACTION"},
-            {"attribute": "rcsb_entry_info.resolution_combined", "operator": "less", "value": 2.0},
-        ]
-    Single-condition examples: a released-after-date filter ->
-    {"attribute": "rcsb_accession_info.initial_release_date", "operator": "greater",
-    "value": "2024-01-01T00:00:00Z"}; has any ligand (no value) ->
-    {"attribute": "rcsb_nonpolymer_entity.pdbx_description", "operator": "exists"}.
+    If a resolver returns no usable id, or a concept/annotation filter yields no hits, fall
+    back to rcsb_search_fulltext for that concept.
 
     Args:
-        attributes: One or more AttributeFilter conditions, each {attribute, operator, value,
-            negation?, case_sensitive?}. Operators are TYPE-SPECIFIC (strings use
-            exact_match/in or contains_words/contains_phrase; numbers/dates use greater/
-            greater_or_equal/less/less_or_equal/equals/range; any type supports exists). A
-            numeric value may be a number or a numeric string; a range value is a
-            {from, to, include_lower, include_upper} object (bounds EXCLUSIVE unless the
-            include flags are true). See rcsb_list_pdb_search_attributes for paths/operators.
-        logical_operator: Combine the conditions with "and" (default) or "or".
-        return_type: What to return (default "entry"); see the "Return types and fetching
-            details" note in the rcsb_mcp_guide prompt. E.g. return_type="entry" with a ligand
-            attribute finds the structures that contain it.
-        limit: Max hits (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        chemical: Set True for chemical-component attributes (paths from
-            rcsb_list_pdb_search_attributes(schema="chemical"), e.g. "chem_comp.formula_weight").
-            Switches to the text_chem service; usually pair with return_type="mol_definition".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        sort_by: Attribute path to order the hits by. A pure attribute filter is a boolean match,
-            so hits otherwise come back in near-arbitrary order — set this for "best resolution
-            first", "newest first", etc. Only SORTABLE attributes work: those listing exact_match
-            (strings) or equals (numbers/dates) in rcsb_list_pdb_search_attributes; full-text-only
-            attributes (e.g. struct.title) and return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: REQUIRED here — its `attributes` ARE the query (every rule for
+            building them is on that field). A pure attribute filter is a boolean match, so set
+            `sort_by` for "best resolution first" / "newest first", or hits come back in
+            near-arbitrary order. return_type defaults to "entry" — with a ligand attribute
+            that finds the structures containing it. Set chemical_attributes for
+            chemical-component paths, from rcsb_list_pdb_search_attributes(schema="chemical").
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
@@ -505,28 +390,41 @@ async def rcsb_search_by_attribute(
         attribute filter and carries NO biological meaning — don't rank hits by it.
         all_hits/facets response variants: see the rcsb_mcp_guide prompt.
     """
-    _validate_query_attributes(chemical=chemical, attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "entry")
+    # `attributes` IS the query for this tool, but it lives in an object shared with six
+    # searches that treat it as optional refinement — so the schema cannot mark it required
+    # here. Fail loudly rather than issuing a query that matches the whole archive.
+    if not cfg.attributes:
+        raise ValueError(
+            "rcsb_search_by_attribute needs search_configuration.attributes — the conditions "
+            "ARE the query. For a keyword search use rcsb_search_fulltext instead."
+        )
+    _validate_query_attributes(
+        chemical=cfg.chemical_attributes, attributes=cfg.attributes,
+        facets=cfg.facets, sort_by=cfg.sort_by,
+    )
     body = queries.build_combined_query(
         full_text=None,
-        filters=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
-        chemical=chemical,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
+        filters=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        include_computed=cfg.include_computed_models,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
+        chemical=cfg.chemical_attributes,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
     )
-    if all_hits:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 async def rcsb_search_by_sequence(
@@ -534,17 +432,7 @@ async def rcsb_search_by_sequence(
     sequence_type: SequenceType = "protein",
     identity_cutoff: Annotated[float, Field(ge=0.0, le=1.0)] = 0.3,
     evalue_cutoff: Annotated[float, Field(ge=0.0)] = 1.0,
-    return_type: ReturnType = "polymer_entity",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Find PDB polymer entities similar to a given sequence (MMseqs2, BLAST-like).
 
@@ -553,61 +441,41 @@ async def rcsb_search_by_sequence(
         sequence_type: "protein", "dna", or "rna".
         identity_cutoff: Minimum sequence identity as a fraction 0-1 (e.g. 0.3 = 30%).
         evalue_cutoff: Maximum E-value to report.
-        return_type: What to return (default "polymer_entity"); see the "Return types and
-            fetching details" note in the rcsb_mcp_guide prompt.
-        limit: Max hits (1-100). Returns polymer_entity IDs like "4HHB_1" — fetch their
-            details with rcsb_get_polymer_entities.
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-            Ignored when `facets` is set.
-        attributes: Optional structured filters AND/OR-combined with this match — a list of
-            AttributeFilter {attribute, operator, value, negation?, case_sensitive?} (e.g.
-            restrict to an organism or resolution). See rcsb_search_by_attribute /
-            rcsb_list_pdb_search_attributes for paths and operators.
-        logical_operator: Combine this match and the attribute conditions with "and"
-            (default) or "or".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        sort_by: Attribute path to order the hits by, replacing the default similarity ordering
-            (each hit's score is still returned); omit to keep it. Only SORTABLE attributes work:
-            those listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title) and
-            return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: Everything except the sequence — attribute refinements, paging,
+            sorting, faceting, grouping, return_type. Omit it entirely for a plain search. Its
+            return_type defaults to "polymer_entity" here, so hits are IDs like "4HHB_1" —
+            fetch their details with rcsb_get_polymer_entities. Setting `sort_by` REPLACES the
+            default similarity ordering (each hit's score is still returned).
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
-    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "polymer_entity")
+    _validate_query_attributes(attributes=cfg.attributes, facets=cfg.facets, sort_by=cfg.sort_by)
     body = queries.build_sequence_query(
         sequence,
         sequence_type=sequence_type,
         identity_cutoff=identity_cutoff,
         evalue_cutoff=evalue_cutoff,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        attributes=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        attributes=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
     )
-    if all_hits and not facets:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits and not cfg.facets:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 async def rcsb_search_by_chemical(
@@ -616,17 +484,7 @@ async def rcsb_search_by_chemical(
     descriptor_type: DescriptorType = "SMILES",
     match_type: ChemMatchType = "graph-relaxed",
     match_subset: bool = False,
-    return_type: ReturnType = "mol_definition",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Search PDB chemical components by structure (SMILES/InChI) or formula.
 
@@ -642,78 +500,48 @@ async def rcsb_search_by_chemical(
             fingerprint-similarity (similar molecules).
         match_subset: Formula queries only — match formulas that merely contain the
             requested atoms.
-        return_type: What to return (default "mol_definition" = the chemical component); see the
-            "Return types and fetching details" note in the rcsb_mcp_guide prompt.
-        limit: Max hits (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-            Ignored when `facets` is set.
-        attributes: Optional structured filters AND/OR-combined with this match — a list of
-            AttributeFilter {attribute, operator, value, negation?, case_sensitive?} (e.g.
-            restrict to an organism or resolution). See rcsb_search_by_attribute /
-            rcsb_list_pdb_search_attributes for paths and operators.
-        logical_operator: Combine this match and the attribute conditions with "and"
-            (default) or "or".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        sort_by: Attribute path to order the hits by, replacing the default score ordering (each
-            hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
-            listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title) and
-            return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: Everything except the descriptor/formula — attribute refinements,
+            paging, sorting, faceting, grouping, return_type. Omit it entirely for a plain
+            search; its return_type defaults to "mol_definition" (the chemical component
+            itself) here. Setting `sort_by` REPLACES the default score ordering.
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
-    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "mol_definition")
+    _validate_query_attributes(attributes=cfg.attributes, facets=cfg.facets, sort_by=cfg.sort_by)
     body = queries.build_chemical_query(
         value,
         query_type=query_type,
         descriptor_type=descriptor_type,
         match_type=match_type,
         match_subset=match_subset,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        attributes=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        attributes=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
     )
-    if all_hits and not facets:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits and not cfg.facets:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 async def rcsb_search_by_structure(
     entry_id: str,
     assembly_id: str | None = None,
     asym_id: str | None = None,
-    return_type: ReturnType | None = None,
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Find structures with a similar 3D shape to a reference PDB structure.
 
@@ -723,77 +551,49 @@ async def rcsb_search_by_structure(
             Defaults to assembly "1" when neither assembly_id nor asym_id is given.
         asym_id: Use this single chain as the reference instead (mutually exclusive
             with assembly_id).
-        return_type: What to return (defaults to "assembly" for an assembly reference or
-            "polymer_instance" for a chain reference); see the "Return types and fetching
-            details" note in the rcsb_mcp_guide prompt.
-        limit: Max hits (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-            Ignored when `facets` is set.
-        attributes: Optional structured filters AND/OR-combined with this match — a list of
-            AttributeFilter {attribute, operator, value, negation?, case_sensitive?} (e.g.
-            restrict to an organism or resolution). See rcsb_search_by_attribute /
-            rcsb_list_pdb_search_attributes for paths and operators.
-        logical_operator: Combine this match and the attribute conditions with "and"
-            (default) or "or".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        sort_by: Attribute path to order the hits by, replacing the default shape-similarity
-            ordering (each hit's score is still returned); omit to keep it. Only SORTABLE
-            attributes work: those listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title) and
-            return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: Everything except the reference — attribute refinements, paging,
+            sorting, faceting, grouping, return_type. Omit it entirely for a plain search. Its
+            return_type defaults to the unit matching the reference: "assembly" for an assembly
+            reference, "polymer_instance" for a chain. Setting `sort_by` REPLACES the default
+            shape-similarity ordering (each hit's score is still returned).
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
-    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
+    # NOTE: no default_return_type — build_structure_query resolves None itself, choosing
+    # assembly vs polymer_instance from the reference the caller gave.
+    cfg, rt = _cfg(search_configuration, None)
+    _validate_query_attributes(attributes=cfg.attributes, facets=cfg.facets, sort_by=cfg.sort_by)
     body = queries.build_structure_query(
         entry_id,
         assembly_id=assembly_id,
         asym_id=asym_id,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        attributes=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        attributes=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
     )
-    if all_hits and not facets:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits and not cfg.facets:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 async def rcsb_search_by_seqmotif(
     pattern: str,
     pattern_type: SeqmotifPatternType = "prosite",
     sequence_type: SequenceType = "protein",
-    return_type: ReturnType = "polymer_entity",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Find polymers containing a short sequence motif (PROSITE / regex / simple).
 
@@ -802,59 +602,39 @@ async def rcsb_search_by_seqmotif(
             (prosite), "C..H[LIVF]" (regex), or "NXS" (simple wildcards).
         pattern_type: "prosite" (default), "regex", or "simple".
         sequence_type: "protein" (default), "dna", or "rna".
-        return_type: What to return (default "polymer_entity"); see the "Return types and
-            fetching details" note in the rcsb_mcp_guide prompt.
-        limit: Max hits (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-            Ignored when `facets` is set.
-        attributes: Optional structured filters AND/OR-combined with this match — a list of
-            AttributeFilter {attribute, operator, value, negation?, case_sensitive?} (e.g.
-            restrict to an organism or resolution). See rcsb_search_by_attribute /
-            rcsb_list_pdb_search_attributes for paths and operators.
-        logical_operator: Combine this match and the attribute conditions with "and"
-            (default) or "or".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        sort_by: Attribute path to order the hits by, replacing the default score ordering (each
-            hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
-            listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title) and
-            return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: Everything except the motif — attribute refinements, paging,
+            sorting, faceting, grouping, return_type. Omit it entirely for a plain search; its
+            return_type defaults to "polymer_entity" here. Setting `sort_by` REPLACES the
+            default score ordering.
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
-    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "polymer_entity")
+    _validate_query_attributes(attributes=cfg.attributes, facets=cfg.facets, sort_by=cfg.sort_by)
     body = queries.build_seqmotif_query(
         pattern,
         pattern_type=pattern_type,
         sequence_type=sequence_type,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        attributes=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        attributes=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
     )
-    if all_hits and not facets:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits and not cfg.facets:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 async def rcsb_search_strucmotif(
@@ -866,17 +646,7 @@ async def rcsb_search_strucmotif(
     rmsd_cutoff: Annotated[float, Field(ge=0.0)] = 2.0,
     atom_pairing_scheme: AtomPairingScheme = "SIDE_CHAIN",
     motif_pruning_strategy: MotifPruningStrategy = "KRUSKAL",
-    return_type: ReturnType = "assembly",
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    attributes: list[AttributeFilter] | None = None,
-    logical_operator: LogicalOperator = "and",
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    search_configuration: SearchConfiguration | None = None,
 ) -> dict[str, Any]:
     """Find structures containing a 3D STRUCTURAL MOTIF — a geometric arrangement of
     specific residues — like the one in a reference structure.
@@ -903,37 +673,18 @@ async def rcsb_search_strucmotif(
         rmsd_cutoff: Maximum RMSD of accepted hits (default 2.0).
         atom_pairing_scheme: ALL, BACKBONE, SIDE_CHAIN (default), or PSEUDO_ATOMS.
         motif_pruning_strategy: NONE or KRUSKAL (default).
-        return_type: What to return (default "assembly"); see the "Return types and fetching
-            details" note in the rcsb_mcp_guide prompt.
-        limit: Max hits (1-100).
-        offset: Number of hits to skip, for paging; pass the response's next_offset back with
-            the same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call (for an explicit "ALL ..." request);
-            ignores limit, can't be combined with offset, and is refused above 10000 hits.
-            Ignored when `facets` is set.
-        attributes: Optional structured filters AND/OR-combined with this match — a list of
-            AttributeFilter {attribute, operator, value, negation?, case_sensitive?} (e.g.
-            restrict to an organism or resolution). See rcsb_search_by_attribute /
-            rcsb_list_pdb_search_attributes for paths and operators.
-        logical_operator: Combine this match and the attribute conditions with "and"
-            (default) or "or".
-        facets: Optional aggregation specs to return a breakdown / distribution instead of hits
-            (see the faceting note in the rcsb_mcp_guide prompt for the spec).
-        group_by, group_by_ranking: Collapse redundant polymer_entity hits into clusters, one
-            representative each (needs return_type="polymer_entity") — see the grouping note in
-            the rcsb_mcp_guide prompt.
-        sort_by: Attribute path to order the hits by, replacing the default score ordering (each
-            hit's score is still returned); omit to keep it. Only SORTABLE attributes work: those
-            listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title) and
-            return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
+        search_configuration: Everything except the motif definition — attribute refinements,
+            paging, sorting, faceting, grouping, return_type. Omit it entirely for a plain
+            search; its return_type defaults to "assembly" here, the most general unit for a 3D
+            motif (symmetry mates exist only at assembly level). Setting `sort_by` REPLACES the
+            default score ordering.
 
     Returns:
         {total_count, returned, offset, has_more, next_offset, hits:[{id, score}],
         editor}; with `facets`, instead returns {total_count, facets, editor}.
     """
-    _validate_query_attributes(attributes=attributes, facets=facets, sort_by=sort_by)
+    cfg, rt = _cfg(search_configuration, "assembly")
+    _validate_query_attributes(attributes=cfg.attributes, facets=cfg.facets, sort_by=cfg.sort_by)
     body = queries.build_strucmotif_query(
         entry_id,
         residue_ids,
@@ -943,24 +694,24 @@ async def rcsb_search_strucmotif(
         rmsd_cutoff=rmsd_cutoff,
         atom_pairing_scheme=atom_pairing_scheme,
         motif_pruning_strategy=motif_pruning_strategy,
-        return_type=return_type,
-        rows=limit,
-        start=offset,
-        all_hits=all_hits,
-        attributes=_filter_dicts(attributes),
-        logical_operator=logical_operator,
-        facets=facets,
-        sort_by=sort_by,
-        sort_direction=sort_direction,
-        group_by=group_by,
-        group_by_ranking=group_by_ranking,
+        return_type=rt,
+        rows=cfg.limit,
+        start=cfg.offset,
+        all_hits=cfg.all_hits,
+        attributes=_filter_dicts(cfg.attributes),
+        logical_operator=cfg.logical_operator,
+        facets=cfg.facets,
+        sort_by=cfg.sort_by,
+        sort_direction=cfg.sort_direction,
+        group_by=cfg.group_by,
+        group_by_ranking=cfg.group_by_ranking,
     )
-    if all_hits and not facets:
-        await _guard_all_hits(body, offset)
+    if cfg.all_hits and not cfg.facets:
+        await _guard_all_hits(body, cfg.offset)
     raw = await _post_search(body)
-    if facets:
+    if cfg.facets:
         return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    return _format(raw, body, None if cfg.all_hits else cfg.offset)
 
 
 # rcsb_search_* are the discovery tools; register_search_tools wires each onto the

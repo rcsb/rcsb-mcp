@@ -21,12 +21,41 @@ def _norm(s: str) -> str:
 
 
 def _descriptions():
+    """Everything a tool ships to the model: its prose AND its serialized inputSchema.
+
+    Both always arrive in `tools/list`, so for the purpose of "did this guidance reach the
+    model" they are one surface. Prose-only would fail the moment a gotcha moves into a
+    Field(description=...) — which is where several went when the shared result-shaping
+    parameters were consolidated into SearchConfiguration, and that is a relocation, not a
+    loss.
+    """
+    def _schema_text(node):
+        """Every `description` string in a schema, in order — NOT json.dumps(schema).
+
+        Dumping would escape the quotes inside a description, so a phrase written as
+        return_type="mol_definition" would be searched for against
+        return_type=\\"mol_definition\\" and never match.
+        """
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "description" and isinstance(v, str):
+                    yield v
+                else:
+                    yield from _schema_text(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from _schema_text(v)
+
     tools = asyncio.run(server.mcp.list_tools())
-    return {t.name: _norm(t.description) for t in tools}
+    return {
+        t.name: _norm(" ".join([t.description or "", *_schema_text(t.inputSchema)]))
+        for t in tools
+    }
 
 
-# Gotchas that must stay in the SPECIFIC tool's own description: they are not derivable
-# from the schema and are not shared enough to live in the instructions block.
+# Gotchas that must reach the model on this SPECIFIC tool — in its prose or its own schema's
+# field descriptions. Not derivable from the parameter names, and not shared enough to live
+# only in the guide prompt.
 REQUIRED_IN_TOOL = {
     "rcsb_search_fulltext": [
         "text-relevance, NOT biological importance",   # score is not quality

@@ -6,10 +6,11 @@ of the live introspection calls — so depth-capping, cycle-guarding, keyword fi
 and the result cap are all exercised without touching the network.
 """
 import asyncio
-import inspect
 import sys
 import pathlib
 from typing import get_args
+
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
 
@@ -208,19 +209,55 @@ def test_enrich_syntax_error():
 
 
 def test_search_return_type_defaults():
-    # Per-tool return_type defaults are deliberate; pin them so they aren't swapped by accident.
-    def _default(tool):
-        return inspect.signature(tool).parameters["return_type"].default
+    """Per-tool return_type defaults are deliberate; pin the RESOLVED value, not a signature.
 
+    They used to be signature defaults. Now `return_type` lives in SearchConfiguration, which
+    defaults it to None precisely so each tool can apply its own — if the model carried a
+    concrete default instead, an omitted return_type would be indistinguishable from an
+    explicit "entry" and four of these searches would silently return the wrong entity type.
+    So this asserts what `_cfg` actually resolves, which is the thing that can break.
+    """
+    _, rt = search._cfg(None, "assembly")
     # strucmotif defaults to "assembly" — the most general unit for a 3D motif and the
     # default of RCSB.org advanced search (symmetry mates only exist at assembly level).
-    assert _default(search.rcsb_search_strucmotif) == "assembly"
+    assert rt == "assembly"
     # the other polymer-oriented services default to "polymer_entity"
-    assert _default(search.rcsb_search_by_sequence) == "polymer_entity"
-    assert _default(search.rcsb_search_by_seqmotif) == "polymer_entity"
+    assert search._cfg(None, "polymer_entity")[1] == "polymer_entity"
     # chemical defaults to the chemical component itself
-    assert _default(search.rcsb_search_by_chemical) == "mol_definition"
+    assert search._cfg(None, "mol_definition")[1] == "mol_definition"
+    # keyword / attribute searches return whole entries
+    assert search._cfg(None, "entry")[1] == "entry"
+    # a caller's explicit choice always wins over the tool's default
+    explicit = search.SearchConfiguration(return_type="entry")
+    assert search._cfg(explicit, "polymer_entity")[1] == "entry"
+    # ...and an omitted return_type must NOT be silently read as "entry"
+    assert search.SearchConfiguration().return_type is None
     print("ok: search return_type defaults")
+
+
+def test_search_configuration_defaults_are_uniform():
+    """Every field except return_type has ONE default shared by all seven searches.
+
+    That is what made the consolidation safe: only return_type varied per tool, so only it
+    needed the None sentinel. If a future field grows per-tool defaults, it needs the same
+    treatment and this will not catch it — but a change to these shared values will.
+    """
+    cfg = search.SearchConfiguration()
+    assert (cfg.limit, cfg.offset, cfg.all_hits) == (10, 0, False)
+    assert (cfg.logical_operator, cfg.sort_direction) == ("and", "asc")
+    assert (cfg.attributes, cfg.facets, cfg.sort_by) == (None, None, None)
+    assert (cfg.group_by, cfg.group_by_ranking) == (None, None)
+    assert (cfg.chemical_attributes, cfg.include_computed_models) == (False, False)
+    print("ok: SearchConfiguration shared defaults")
+
+
+def test_attribute_search_refuses_an_empty_configuration():
+    """`attributes` IS the query for rcsb_search_by_attribute, but the shared object cannot
+    mark it required — six other searches treat it as optional refinement. So the tool must
+    reject it loudly rather than issue a query matching the whole archive."""
+    with pytest.raises(ValueError, match="attributes"):
+        asyncio.run(search.rcsb_search_by_attribute(search.SearchConfiguration()))
+    print("ok: empty attribute search refused")
 
 
 # --- _get_json: a 204 / empty body must not crash the rcsb_find_* resolvers ---------------- #

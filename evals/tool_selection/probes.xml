@@ -21,9 +21,17 @@
                                                compare against booleans)
         <arg name="n" set="true"/>             args[n] is present and non-empty
         <arg name="n" contains="s"/>           s is a substring of str(args[n])
-        <attribute path="p" operator="o"/>     args["attributes"] contains an entry whose
+        <attribute path="p" operator="o"/>     the attribute filters contain an entry whose
                                                attribute path contains p (and whose operator
                                                is o, when given)
+
+    `name` may be DOTTED to reach into a nested argument, e.g.
+    name="search_configuration.limit". The result-shaping parameters (return_type, limit,
+    offset, all_hits, sort_by, sort_direction, facets, group_by, group_by_ranking,
+    attributes, logical_operator, chemical_attributes, include_computed_models) all live
+    under `search_configuration` now; each tool's own payload stays flat. A missing
+    intermediate reads as unset, so default="d" still expresses "the caller omitted the whole
+    object and took the defaults".
 
     Assertions are deliberately tolerant (substring / operator matching) so a
     correct-but-differently-phrased call still passes.
@@ -61,16 +69,16 @@
   <probe id="group-by-uniprot" probes="group_by=uniprot mechanic: must also set return_type=polymer_entity">
     <prompt>Using the InterPro id IPR000719 (protein-kinase domain) directly — no concept lookup needed — search PDB polymer entities carrying that domain and return ONE representative per UniProt accession, keeping the best-resolution structure.</prompt>
     <expect>
-      <arg name="group_by" set="true"/>
-      <arg name="return_type" equals="polymer_entity"/>
+      <arg name="search_configuration.group_by" set="true"/>
+      <arg name="search_configuration.return_type" equals="polymer_entity"/>
     </expect>
   </probe>
 
   <probe id="sort-sortable" probes="sort_by sortability + direction">
     <prompt>Show human hemoglobin structures, best resolution first.</prompt>
     <expect>
-      <arg name="sort_by" contains="resolution_combined"/>
-      <arg name="sort_direction" equals="asc" default="asc"/>
+      <arg name="search_configuration.sort_by" contains="resolution_combined"/>
+      <arg name="search_configuration.sort_direction" equals="asc" default="asc"/>
     </expect>
   </probe>
 
@@ -117,7 +125,7 @@
   <probe id="all-hits" probes="all_hits vs paging on an explicit ALL request">
     <prompt>Give me ALL human structures released in 2024 — the complete list.</prompt>
     <expect>
-      <arg name="all_hits" equals="true"/>
+      <arg name="search_configuration.all_hits" equals="true"/>
     </expect>
   </probe>
 

@@ -68,6 +68,23 @@ def _eq(actual, expected, ignore_case=False):
     return a == e
 
 
+def _dig(args, dotted):
+    """Look up a possibly-NESTED argument, e.g. "search_configuration.group_by".
+
+    The result-shaping parameters (return_type, limit, sort_by, group_by, facets, ...) moved
+    off the flat signature into a single `search_configuration` object, so a probe asserting
+    on them has to reach one level in. A missing intermediate yields None, which reads the
+    same as an unset argument — an omitted search_configuration means the caller took every
+    default, which is exactly what `default=` on the assertion expresses.
+    """
+    node = args
+    for part in dotted.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
 def check(expect, tool, args):
     """Evaluate a probe's <expect> assertion against the model's first tool call."""
     if expect is None:
@@ -82,7 +99,9 @@ def check(expect, tool, args):
     for el in expect:
         if el.tag == "arg":
             name = el.get("name")
-            val = args.get(name, el.get("default")) if el.get("default") is not None else args.get(name)
+            val = _dig(args, name)
+            if val is None and el.get("default") is not None:
+                val = el.get("default")
             if el.get("set") == "true":
                 if val is None or val == "" or val == [] or val == {}:
                     return False
@@ -95,7 +114,10 @@ def check(expect, tool, args):
         elif el.tag == "attribute":
             path, op = el.get("path"), el.get("operator")
             hit = False
-            for a in args.get("attributes") or []:
+            # `attributes` moved into search_configuration too; accept either shape so this
+            # runner still grades an OLD --src checkout on the split arm of an A/B.
+            filters = _dig(args, "search_configuration.attributes") or args.get("attributes") or []
+            for a in filters:
                 if isinstance(a, dict) and path in str(a.get("attribute", "")):
                     if op is None or a.get("operator") == op:
                         hit = True
