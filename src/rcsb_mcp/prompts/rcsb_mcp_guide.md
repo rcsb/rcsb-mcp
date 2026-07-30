@@ -42,7 +42,7 @@ facets=[{"name":"Methods","aggregation_type":"terms","attribute":"exptl.method"}
 
 ### Grouping / Clustering
 
-To reduce redundancy among entry hits (one representative per cluster), set group_by on any
+To reduce redundancy among polymer hits (one representative per cluster), set group_by on any
 rcsb_search_* tool (requires return_type="polymer_entity"): "seqid_30"/"seqid_50"/"seqid_70"/
 "seqid_90"/"seqid_95" (cluster by sequence-identity %) or "uniprot" (one per UniProt
 accession). Choose the representative with group_by_ranking:
