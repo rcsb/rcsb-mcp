@@ -408,8 +408,8 @@ async def rcsb_query_attribute(
     constraints — resolution, organism, dates — an empty result is a valid answer: report
     it, don't keyword-search instead.
 
-    An attribute path works as the `query` for the right rcsb_get_* tool: every attribute from
-    is also a Data API field, pasting one in rcsb_describe_data_object tells you which tool fetches
+    An attribute path also works as the `query` for rcsb_describe_data_object: every attribute
+    here is also a Data API field, so pasting one in tells you which rcsb_get_* tool fetches
     the value.
 
     Example ("human X-ray structures better than 2 A"):
