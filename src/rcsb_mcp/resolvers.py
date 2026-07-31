@@ -135,8 +135,7 @@ async def rcsb_find_go_terms(
     rcsb_polymer_entity_annotation.annotation_lineage.id, id AS A STRING ("GO:0004672").
     The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
     it; use `in` with several ids to broaden.
-    For ONLY that exact term without descendants use annotation_id instead; add
-    .type="GO" to be explicit.
+    For ONLY that exact term without descendants use annotation_id instead.
 
     Args:
         query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
@@ -198,8 +197,8 @@ async def rcsb_find_interpro_domains(
     containing / with a <domain>", "<domain>-containing proteins", "members of the <family>
     family". Resolve the phrase to an InterPro accession (IPRxxxxxx) here, then filter on it
     with rcsb_query_attribute: exact_match on
-    rcsb_polymer_entity_annotation.annotation_id, accession AS A STRING ("IPR000719"); add
-    .type="InterPro" to be explicit.
+    rcsb_polymer_entity_annotation.annotation_id, accession AS A STRING ("IPR000719").
+    InterPro lineage paths are not available.
 
     Args:
         query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
