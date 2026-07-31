@@ -99,7 +99,7 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
     find resolved cleanly but may not be the concept that was asked for."""
     if not items:
         return (f"No {label} matched this concept. Fall back to a keyword search "
-                "(rcsb_search_fulltext, optionally with attribute filters) for it.")
+                "(rcsb_query_fulltext, optionally composed with attribute filters) for it.")
     # `pdb_entry_count` is absent when the caller passed with_pdb_counts=False, and None when
     # the count query itself failed. Neither is evidence of absence, and conflating None with
     # 0 would report "not annotated in the PDB" whenever the Search API was merely unreachable.
@@ -108,14 +108,12 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
         return None
     if not any(counts):
         return (f"Matched {label}(s) but none are annotated in the PDB (pdb_entry_count 0). "
-                "A keyword search (rcsb_search_fulltext) may still surface relevant structures.")
+                "A keyword search (rcsb_query_fulltext) may still surface relevant structures.")
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
         return (f"Best match covers only {best} PDB entr{'y' if best == 1 else 'ies'}. That is "
-                "expected for a rare target, but a match that fits your WORDING while denoting a "
-                "NARROWER concept than you meant looks exactly the same. Read the name that came "
-                "back before anchoring a search on this id; if it may be the wrong concept, "
-                "broaden the query or cross-check with rcsb_search_fulltext.")
+                "expected for a rare target. Read the name that came back before anchoring a search on this id; "
+                "if it may be the wrong concept, broaden the query or cross-check with rcsb_query_fulltext.")
     return None
 
 

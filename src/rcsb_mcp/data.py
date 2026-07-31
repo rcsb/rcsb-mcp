@@ -174,9 +174,13 @@ async def rcsb_get_entries(entry_ids: list[str], fields: str | None = None) -> d
 
 
 async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch polymer entities (protein/nucleic-acid molecules) metadata and biological annotations.
+    """Fetch polymer entities (protein/nucleic-acid molecules) — description, length,
+    weight, and source organism.
 
     Default fields: description, length, weight, and source organism.
+
+    Polymer-based (sequence) annotations can be fetched adding rcsb_polymer_entity_annotation.* fields,
+    and positional features adding rcsb_polymer_entity_feature.*
 
     Args:
         entity_ids: entry + entity number, e.g. ["4HHB_1"] — exactly what
@@ -221,6 +225,9 @@ async def rcsb_get_branched_entities(entity_ids: list[str], fields: str | None =
 
 async def rcsb_get_polymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
     """Fetch polymer entity instances (individual chains), e.g. ["4HHB.A"] (entry.asym_id).
+
+        Instance-based (chain) annotations can be fetched adding rcsb_polymer_instance_annotation.* fields,
+        and positional features rcsb_polymer_instance_feature.*
 
         Default fields: the entry/entity/chain identifiers and modeled-residue count.
 
@@ -268,6 +275,9 @@ async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None
     """Fetch biological assemblies, e.g. ["4HHB-1"] (entry-assembly).
 
     Default fields: composition counts and oligomeric state.
+
+    Assembly-based (complex) annotations can be fetched adding rcsb_assembly_annotation.* fields,
+    and positional features rcsb_assembly_feature.*
 
     Args:
         assembly_ids: entry-assembly, e.g. ["4HHB-1"]. Unknown IDs are returned under

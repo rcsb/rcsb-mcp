@@ -28,13 +28,13 @@ def _hits(*counts: int | None, n: int | None = None) -> list[dict]:
 def test_no_hits_advises_keyword_fallback():
     note = _resolver_fallback_note([], "InterPro entry")
     assert note and "No InterPro entry matched" in note
-    assert "rcsb_search_fulltext" in note
+    assert "rcsb_query_fulltext" in note
 
 
 def test_all_zero_counts_advises_keyword_fallback():
     note = _resolver_fallback_note(_hits(0, 0, 0), "GO term")
     assert note and "none are annotated in the PDB" in note
-    assert "rcsb_search_fulltext" in note
+    assert "rcsb_query_fulltext" in note
 
 
 # --- resolved, but maybe the wrong concept ------------------------------------
@@ -43,8 +43,7 @@ def test_lone_low_coverage_hit_is_flagged():
     note = _resolver_fallback_note(_hits(1), "InterPro entry")
     assert note, "a single hit covering one entry must not pass silently"
     assert "only 1 PDB entry" in note, note
-    assert "NARROWER" in note
-    assert "rcsb_search_fulltext" in note
+    assert "rcsb_query_fulltext" in note
 
 
 def test_the_flag_advises_rather_than_forbids():
