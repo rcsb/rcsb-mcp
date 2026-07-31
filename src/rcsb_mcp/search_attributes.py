@@ -155,7 +155,38 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "For standard polymer components, the type of the monomer. Note that monomers that will form polymers are of three types: linking monomers, monomers with some type of N-terminal (or 5') cap and monomers with some type of C-terminal (or 3') cap."
+        "description": "For standard polymer components, the type of the monomer. Note that monomers that will form polymers are of three types: linking monomers, monomers with some type of N-terminal (or 5') cap and monomers with some type of C-terminal (or 3') cap.",
+        "enum": [
+            "D-beta-peptide, C-gamma linking",
+            "D-gamma-peptide, C-delta linking",
+            "D-peptide COOH carboxy terminus",
+            "D-peptide NH3 amino terminus",
+            "D-peptide linking",
+            "D-saccharide",
+            "D-saccharide, alpha linking",
+            "D-saccharide, beta linking",
+            "DNA OH 3 prime terminus",
+            "DNA OH 5 prime terminus",
+            "DNA linking",
+            "L-DNA linking",
+            "L-RNA linking",
+            "L-beta-peptide, C-gamma linking",
+            "L-gamma-peptide, C-delta linking",
+            "L-peptide COOH carboxy terminus",
+            "L-peptide NH3 amino terminus",
+            "L-peptide linking",
+            "L-saccharide",
+            "L-saccharide, alpha linking",
+            "L-saccharide, beta linking",
+            "RNA OH 3 prime terminus",
+            "RNA OH 5 prime terminus",
+            "RNA linking",
+            "non-polymer",
+            "other",
+            "peptide linking",
+            "peptide-like",
+            "saccharide"
+        ]
     },
     {
         "attribute": "citation.book_title",
@@ -237,7 +268,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Flag to indicate a primary citation."
+        "description": "Flag to indicate a primary citation.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "citation.rcsb_journal_abbrev",
@@ -267,7 +302,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Flag to indicate that this citation will not be published."
+        "description": "Flag to indicate that this citation will not be published.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "citation.year",
@@ -362,7 +401,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Y/N if using serial crystallography experiment in which multiple crystals contribute to each diffraction frame in the experiment."
+        "description": "Y/N if using serial crystallography experiment in which multiple crystals contribute to each diffraction frame in the experiment.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "diffrn_detector.details",
@@ -571,7 +614,16 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The DrugBank drug groups determine their drug development status."
+        "description": "The DrugBank drug groups determine their drug development status.",
+        "enum": [
+            "approved",
+            "experimental",
+            "illicit",
+            "investigational",
+            "nutraceutical",
+            "vet_approved",
+            "withdrawn"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.approved",
@@ -581,7 +633,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Indicates whether this drug has been approved by the regulating government."
+        "description": "Indicates whether this drug has been approved by the regulating government.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.country",
@@ -591,7 +647,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The country where this commercially available drug has been approved."
+        "description": "The country where this commercially available drug has been approved.",
+        "enum": [
+            "Canada",
+            "EU",
+            "US"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.ended_marketing_on",
@@ -946,7 +1007,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The refinement protocol used."
+        "description": "The refinement protocol used.",
+        "enum": [
+            "AB INITIO MODEL",
+            "BACKBONE TRACE",
+            "FLEXIBLE FIT",
+            "OTHER",
+            "RIGID BODY FIT"
+        ]
     },
     {
         "attribute": "em_3d_fitting.ref_space",
@@ -956,7 +1024,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A flag to indicate whether fitting was carried out in real or reciprocal refinement space."
+        "description": "A flag to indicate whether fitting was carried out in real or reciprocal refinement space.",
+        "enum": [
+            "REAL",
+            "RECIPROCAL"
+        ]
     },
     {
         "attribute": "em_3d_fitting.target_criteria",
@@ -1066,7 +1138,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Indicates details on how the half-map used for resolution determination (usually by FSC) have been generated."
+        "description": "Indicates details on how the half-map used for resolution determination (usually by FSC) have been generated.",
+        "enum": [
+            "HALF-MAPS REFINED AGAINST SAME DATA",
+            "HALF-MAPS REFINED INDEPENDENTLY",
+            "HALF-MAPS REFINED INDEPENDENTLY WITH FREQUENCY RANGE OMITTED",
+            "HALF-MAPS REFINED WITH FREQUENCY RANGE OMITTED",
+            "OTHER"
+        ]
     },
     {
         "attribute": "em_3d_reconstruction.resolution",
@@ -1101,7 +1180,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The type of symmetry applied to the reconstruction"
+        "description": "The type of symmetry applied to the reconstruction",
+        "enum": [
+            "2D CRYSTAL",
+            "3D CRYSTAL",
+            "HELICAL",
+            "POINT"
+        ]
     },
     {
         "attribute": "em_ctf_correction.details",
@@ -1391,7 +1476,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The type of source (e.g., natural source) for the component (sample or sample subcomponent)"
+        "description": "The type of source (e.g., natural source) for the component (sample or sample subcomponent)",
+        "enum": [
+            "MULTIPLE SOURCES",
+            "NATURAL",
+            "RECOMBINANT",
+            "SYNTHETIC"
+        ]
     },
     {
         "attribute": "em_experiment.aggregation_state",
@@ -1401,7 +1492,16 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The aggregation/assembly state of the imaged specimen."
+        "description": "The aggregation/assembly state of the imaged specimen.",
+        "enum": [
+            "2D ARRAY",
+            "3D ARRAY",
+            "CELL",
+            "FILAMENT",
+            "HELICAL ARRAY",
+            "PARTICLE",
+            "TISSUE"
+        ]
     },
     {
         "attribute": "em_experiment.reconstruction_method",
@@ -1411,7 +1511,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The reconstruction method used in the EM experiment."
+        "description": "The reconstruction method used in the EM experiment.",
+        "enum": [
+            "CRYSTALLOGRAPHY",
+            "HELICAL",
+            "SINGLE PARTICLE",
+            "SUBTOMOGRAM AVERAGING",
+            "TOMOGRAPHY"
+        ]
     },
     {
         "attribute": "em_helical_entity.angular_rotation_per_subunit",
@@ -1491,7 +1598,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The detector mode used during image recording."
+        "description": "The detector mode used during image recording.",
+        "enum": [
+            "COUNTING",
+            "INTEGRATING",
+            "OTHER",
+            "SUPER-RESOLUTION"
+        ]
     },
     {
         "attribute": "em_image_recording.film_or_detector_model",
@@ -1573,7 +1686,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The type of procedure used to align the microscope electron beam."
+        "description": "The type of procedure used to align the microscope electron beam.",
+        "enum": [
+            "BASIC",
+            "COMA FREE",
+            "NONE",
+            "OTHER",
+            "ZEMLIN TABLEAU"
+        ]
     },
     {
         "attribute": "em_imaging.c2_aperture_diameter",
@@ -1643,7 +1763,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Cryogen type used to maintain the specimen stage temperature during imaging in the microscope."
+        "description": "Cryogen type used to maintain the specimen stage temperature during imaging in the microscope.",
+        "enum": [
+            "HELIUM",
+            "NITROGEN"
+        ]
     },
     {
         "attribute": "em_imaging.date",
@@ -1683,7 +1807,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The mode of illumination."
+        "description": "The mode of illumination.",
+        "enum": [
+            "FLOOD BEAM",
+            "OTHER",
+            "SPOT SCAN"
+        ]
     },
     {
         "attribute": "em_imaging.microscope_model",
@@ -1695,7 +1824,87 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "The name of the model of microscope."
+        "description": "The name of the model of microscope.",
+        "enum": [
+            "FEI MORGAGNI",
+            "FEI POLARA 300",
+            "FEI TALOS ARCTICA",
+            "FEI TECNAI 10",
+            "FEI TECNAI 12",
+            "FEI TECNAI 20",
+            "FEI TECNAI ARCTICA",
+            "FEI TECNAI F20",
+            "FEI TECNAI F30",
+            "FEI TECNAI SPHERA",
+            "FEI TECNAI SPIRIT",
+            "FEI TITAN",
+            "FEI TITAN KRIOS",
+            "FEI/PHILIPS CM10",
+            "FEI/PHILIPS CM12",
+            "FEI/PHILIPS CM120T",
+            "FEI/PHILIPS CM200FEG",
+            "FEI/PHILIPS CM200FEG/SOPHIE",
+            "FEI/PHILIPS CM200FEG/ST",
+            "FEI/PHILIPS CM200FEG/UT",
+            "FEI/PHILIPS CM200T",
+            "FEI/PHILIPS CM300FEG/HE",
+            "FEI/PHILIPS CM300FEG/ST",
+            "FEI/PHILIPS CM300FEG/T",
+            "FEI/PHILIPS EM400",
+            "FEI/PHILIPS EM420",
+            "HITACHI EF2000",
+            "HITACHI EF3000",
+            "HITACHI H-9500SD",
+            "HITACHI H3000 UHVEM",
+            "HITACHI H7600",
+            "HITACHI HF2000",
+            "HITACHI HF3000",
+            "JEOL 1000EES",
+            "JEOL 100B",
+            "JEOL 100CX",
+            "JEOL 1010",
+            "JEOL 1200",
+            "JEOL 1200EX",
+            "JEOL 1200EXII",
+            "JEOL 1230",
+            "JEOL 1400",
+            "JEOL 1400/HR + YPS FEG",
+            "JEOL 2000EX",
+            "JEOL 2000EXII",
+            "JEOL 2010",
+            "JEOL 2010F",
+            "JEOL 2010HC",
+            "JEOL 2010HT",
+            "JEOL 2010UHR",
+            "JEOL 2011",
+            "JEOL 2100",
+            "JEOL 2100F",
+            "JEOL 2200FS",
+            "JEOL 2200FSC",
+            "JEOL 3000SFF",
+            "JEOL 3100FEF",
+            "JEOL 3100FFC",
+            "JEOL 3200FS",
+            "JEOL 3200FSC",
+            "JEOL 4000",
+            "JEOL 4000EX",
+            "JEOL CRYO ARM 200",
+            "JEOL CRYO ARM 300",
+            "JEOL KYOTO-3000SFF",
+            "SHUIMU TOTEM 120S",
+            "SHUIMU TOTEM 200S",
+            "SHUIMU TOTEM 300S",
+            "SIEMENS SULEIKA",
+            "TFS GLACIOS",
+            "TFS KRIOS",
+            "TFS TALOS",
+            "TFS TALOS F200C",
+            "TFS TALOS L120C",
+            "TFS TITAN THEMIS",
+            "TFS TUNDRA",
+            "ZEISS LEO912",
+            "ZEISS LIBRA120PLUS"
+        ]
     },
     {
         "attribute": "em_imaging.mode",
@@ -1705,7 +1914,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The mode of imaging."
+        "description": "The mode of imaging.",
+        "enum": [
+            "4D-STEM",
+            "BRIGHT FIELD",
+            "DARK FIELD",
+            "DIFFRACTION",
+            "OTHER"
+        ]
     },
     {
         "attribute": "em_imaging.nominal_cs",
@@ -1820,7 +2036,35 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The name of the model of specimen holder used during imaging."
+        "description": "The name of the model of specimen holder used during imaging.",
+        "enum": [
+            "FEI TITAN KRIOS AUTOGRID HOLDER",
+            "FISCHIONE 2550",
+            "FISCHIONE INSTRUMENTS DUAL AXIS TOMOGRAPHY HOLDER",
+            "GATAN 626 SINGLE TILT LIQUID NITROGEN CRYO TRANSFER HOLDER",
+            "GATAN 910 MULTI-SPECIMEN SINGLE TILT CRYO TRANSFER HOLDER",
+            "GATAN 914 HIGH TILT LIQUID NITROGEN CRYO TRANSFER TOMOGRAPHY HOLDER",
+            "GATAN 915 DOUBLE TILT LIQUID NITROGEN CRYO TRANSFER HOLDER",
+            "GATAN CHDT 3504 DOUBLE TILT HIGH RESOLUTION NITROGEN COOLING HOLDER",
+            "GATAN CT3500 SINGLE TILT LIQUID NITROGEN CRYO TRANSFER HOLDER",
+            "GATAN CT3500TR SINGLE TILT ROTATION LIQUID NITROGEN CRYO TRANSFER HOLDER",
+            "GATAN ELSA 698 SINGLE TILT LIQUID NITROGEN CRYO TRANSFER HOLDER",
+            "GATAN HC 3500 SINGLE TILT HEATING/NITROGEN COOLING HOLDER",
+            "GATAN HCHDT 3010 DOUBLE TILT HIGH RESOLUTION HELIUM COOLING HOLDER",
+            "GATAN HCHST 3008 SINGLE TILT HIGH RESOLUTION HELIUM COOLING HOLDER",
+            "GATAN HELIUM",
+            "GATAN LIQUID NITROGEN",
+            "GATAN UHRST 3500 SINGLE TILT ULTRA HIGH RESOLUTION NITROGEN COOLING HOLDER",
+            "GATAN ULTDT ULTRA LOW TEMPERATURE DOUBLE TILT HELIUM COOLING HOLDER",
+            "GATAN ULTST ULTRA LOW TEMPERATURE SINGLE TILT HELIUM COOLING HOLDER",
+            "HOME BUILD",
+            "JEOL",
+            "JEOL 3200FSC CRYOHOLDER",
+            "JEOL CRYOSPECPORTER",
+            "OTHER",
+            "PHILIPS ROTATION HOLDER",
+            "SIDE ENTRY, EUCENTRIC"
+        ]
     },
     {
         "attribute": "em_imaging.temperature",
@@ -1900,7 +2144,29 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The purpose of the software."
+        "description": "The purpose of the software.",
+        "enum": [
+            "CLASSIFICATION",
+            "CRYSTALLOGRAPHY MERGING",
+            "CTF CORRECTION",
+            "DIFFRACTION INDEXING",
+            "EWALD SPHERE CORRECTION",
+            "FINAL EULER ASSIGNMENT",
+            "IMAGE ACQUISITION",
+            "INITIAL EULER ASSIGNMENT",
+            "LATTICE DISTORTION CORRECTION",
+            "LAYERLINE INDEXING",
+            "MASKING",
+            "MODEL FITTING",
+            "MODEL REFINEMENT",
+            "MOLECULAR REPLACEMENT",
+            "OTHER",
+            "PARTICLE SELECTION",
+            "RECONSTRUCTION",
+            "SERIES ALIGNMENT",
+            "SYMMETRY DETERMINATION",
+            "VOLUME SELECTION"
+        ]
     },
     {
         "attribute": "em_software.name",
@@ -1935,7 +2201,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "'YES' indicates that the specimen has been shadowed."
+        "description": "'YES' indicates that the specimen has been shadowed.",
+        "enum": [
+            "NO",
+            "YES"
+        ]
     },
     {
         "attribute": "em_specimen.staining_applied",
@@ -1945,7 +2215,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "'YES' indicates that the specimen has been stained."
+        "description": "'YES' indicates that the specimen has been stained.",
+        "enum": [
+            "NO",
+            "YES"
+        ]
     },
     {
         "attribute": "em_specimen.vitrification_applied",
@@ -1955,7 +2229,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "'YES' indicates that the specimen was vitrified by cryopreservation."
+        "description": "'YES' indicates that the specimen was vitrified by cryopreservation.",
+        "enum": [
+            "NO",
+            "YES"
+        ]
     },
     {
         "attribute": "em_staining.details",
@@ -1985,7 +2263,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "type of staining"
+        "description": "type of staining",
+        "enum": [
+            "NEGATIVE",
+            "NONE",
+            "POSITIVE"
+        ]
     },
     {
         "attribute": "em_vitrification.chamber_temperature",
@@ -2010,7 +2293,18 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This is the name of the cryogen."
+        "description": "This is the name of the cryogen.",
+        "enum": [
+            "ETHANE",
+            "ETHANE-PROPANE",
+            "FREON 12",
+            "FREON 22",
+            "HELIUM",
+            "METHANE",
+            "NITROGEN",
+            "OTHER",
+            "PROPANE"
+        ]
     },
     {
         "attribute": "em_vitrification.humidity",
@@ -2037,7 +2331,25 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "The type of instrument used in the vitrification process."
+        "description": "The type of instrument used in the vitrification process.",
+        "enum": [
+            "CRYOSOL VITROJET",
+            "EMS-002 RAPID IMMERSION FREEZER",
+            "FEI VITROBOT MARK I",
+            "FEI VITROBOT MARK II",
+            "FEI VITROBOT MARK III",
+            "FEI VITROBOT MARK IV",
+            "GATAN CRYOPLUNGE 3",
+            "HOMEMADE PLUNGER",
+            "LEICA EM CPC",
+            "LEICA EM GP",
+            "LEICA KF80",
+            "LEICA PLUNGER",
+            "REICHERT-JUNG PLUNGER",
+            "SPOTITON",
+            "SPT LABTECH CHAMELEON",
+            "ZEISS PLUNGE FREEZER CRYOBOX"
+        ]
     },
     {
         "attribute": "em_vitrification.method",
@@ -2072,7 +2384,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A coarse-grained polymer entity type."
+        "description": "A coarse-grained polymer entity type.",
+        "enum": [
+            "DNA",
+            "NA-hybrid",
+            "Other",
+            "Protein",
+            "RNA"
+        ]
     },
     {
         "attribute": "entity_poly.rcsb_mutation_count",
@@ -2461,7 +2780,22 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The method used in the experiment."
+        "description": "The method used in the experiment.",
+        "enum": [
+            "ELECTRON CRYSTALLOGRAPHY",
+            "ELECTRON MICROSCOPY",
+            "EPR",
+            "FIBER DIFFRACTION",
+            "FLUORESCENCE TRANSFER",
+            "INFRARED SPECTROSCOPY",
+            "NEUTRON DIFFRACTION",
+            "POWDER DIFFRACTION",
+            "SOLID-STATE NMR",
+            "SOLUTION NMR",
+            "SOLUTION SCATTERING",
+            "THEORETICAL MODEL",
+            "X-RAY DIFFRACTION"
+        ]
     },
     {
         "attribute": "exptl_crystal.density_Matthews",
@@ -2606,7 +2940,68 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The value identifies the full name of center."
+        "description": "The value identifies the full name of center.",
+        "enum": [
+            "Accelerated Technologies Center for Gene to 3D Structure",
+            "Assembly, Dynamics and Evolution of Cell-Cell and Cell-Matrix Adhesions",
+            "Atoms-to-Animals: The Immune Function Network",
+            "Bacterial targets at IGS-CNRS, France",
+            "Berkeley Structural Genomics Center",
+            "Center for Eukaryotic Structural Genomics",
+            "Center for High-Throughput Structural Biology",
+            "Center for Membrane Proteins of Infectious Diseases",
+            "Center for Structural Biology of Infectious Diseases",
+            "Center for Structural Genomics of Infectious Diseases",
+            "Center for Structures of Membrane Proteins",
+            "Center for the X-ray Structure Determination of Human Transporters",
+            "Chaperone-Enabled Studies of Epigenetic Regulation Enzymes",
+            "Enzyme Discovery for Natural Product Biosynthesis",
+            "GPCR Network",
+            "Integrated Center for Structure and Function Innovation",
+            "Israel Structural Proteomics Center",
+            "Joint Center for Structural Genomics",
+            "Marseilles Structural Genomics Program @ AFMB",
+            "Medical Structural Genomics of Pathogenic Protozoa",
+            "Membrane Protein Structural Biology Consortium",
+            "Membrane Protein Structures by Solution NMR",
+            "Midwest Center for Macromolecular Research",
+            "Midwest Center for Structural Genomics",
+            "Mitochondrial Protein Partnership",
+            "Montreal-Kingston Bacterial Structural Genomics Initiative",
+            "Mycobacterium Tuberculosis Structural Proteomics Project",
+            "New York Consortium on Membrane Protein Structure",
+            "New York SGX Research Center for Structural Genomics",
+            "New York Structural GenomiX Research Consortium",
+            "New York Structural Genomics Research Consortium",
+            "Northeast Structural Genomics Consortium",
+            "Nucleocytoplasmic Transport: a Target for Cellular Control",
+            "Ontario Centre for Structural Proteomics",
+            "Oxford Protein Production Facility",
+            "Paris-Sud Yeast Structural Genomics",
+            "Partnership for Nuclear Receptor Signaling Code Biology",
+            "Partnership for Stem Cell Biology",
+            "Partnership for T-Cell Biology",
+            "Program for the Characterization of Secreted Effector Proteins",
+            "Protein Structure Factory",
+            "RIKEN Structural Genomics/Proteomics Initiative",
+            "Scottish Structural Proteomics Facility",
+            "Seattle Structural Genomics Center for Infectious Disease",
+            "South Africa Structural Targets Annotation Database",
+            "Southeast Collaboratory for Structural Genomics",
+            "Structural Genomics Consortium",
+            "Structural Genomics Consortium for Research on Gene Expression",
+            "Structural Genomics of Pathogenic Protozoa Consortium",
+            "Structural Proteomics in Europe",
+            "Structural Proteomics in Europe 2",
+            "Structure 2 Function Project",
+            "Structure, Dynamics and Activation Mechanisms of Chemokine Receptors",
+            "Structure-Function Analysis of Polymorphic CDI Toxin-Immunity Protein Complexes",
+            "Structure-Function Studies of Tight Junction Membrane Proteins",
+            "Structures of Mtb Proteins Conferring Susceptibility to Known Mtb Inhibitors",
+            "TB Structural Genomics Consortium",
+            "Transcontinental EM Initiative for Membrane Protein Structure",
+            "Transmembrane Protein Center"
+        ]
     },
     {
         "attribute": "pdbx_SG_project.initial_of_center",
@@ -2616,7 +3011,67 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The value identifies the full name of center."
+        "description": "The value identifies the full name of center.",
+        "enum": [
+            "ATCG3D",
+            "BIGS",
+            "BSGC",
+            "BSGI",
+            "CEBS",
+            "CELLMAT",
+            "CESG",
+            "CHSAM",
+            "CHTSB",
+            "CSBID",
+            "CSGID",
+            "CSMP",
+            "GPCR",
+            "IFN",
+            "ISFI",
+            "ISPC",
+            "JCSG",
+            "MCMR",
+            "MCSG",
+            "MPID",
+            "MPP",
+            "MPSBC",
+            "MPSbyNMR",
+            "MSGP",
+            "MSGPP",
+            "MTBI",
+            "NESG",
+            "NHRs",
+            "NPCXstals",
+            "NYCOMPS",
+            "NYSGRC",
+            "NYSGXRC",
+            "NatPro",
+            "OCSP",
+            "OPPF",
+            "PCSEP",
+            "PSF",
+            "RSGI",
+            "S2F",
+            "SASTAD",
+            "SECSG",
+            "SGC",
+            "SGCGES",
+            "SGPP",
+            "SPINE",
+            "SPINE-2",
+            "SSGCID",
+            "SSPF",
+            "STEMCELL",
+            "TBSGC",
+            "TCELL",
+            "TEMIMPS",
+            "TJMP",
+            "TMPC",
+            "TransportPDB",
+            "UC4CDI",
+            "XMTB",
+            "YSG"
+        ]
     },
     {
         "attribute": "pdbx_SG_project.project_name",
@@ -2626,7 +3081,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The value identifies the Structural Genomics project."
+        "description": "The value identifies the Structural Genomics project.",
+        "enum": [
+            "Enzyme Function Initiative",
+            "NIAID, National Institute of Allergy and Infectious Diseases",
+            "NPPSFA, National Project on Protein Structural and Functional Analyses",
+            "PSI, Protein Structure Initiative",
+            "PSI:Biology"
+        ]
     },
     {
         "attribute": "pdbx_audit_support.country",
@@ -2678,7 +3140,27 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The identifying content type of the related entry."
+        "description": "The identifying content type of the related entry.",
+        "enum": [
+            "associated EM volume",
+            "associated NMR restraints",
+            "associated SAS data",
+            "associated structure factors",
+            "complete structure",
+            "consensus EM volume",
+            "derivative structure",
+            "ensemble",
+            "focused EM volume",
+            "minimized average structure",
+            "native structure",
+            "other",
+            "other EM volume",
+            "protein target sequence and/or protocol data",
+            "re-refinement",
+            "representative structure",
+            "split",
+            "unspecified"
+        ]
     },
     {
         "attribute": "pdbx_database_related.db_id",
@@ -2698,7 +3180,19 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The name of the database containing the related entry."
+        "description": "The name of the database containing the related entry.",
+        "enum": [
+            "BIOISIS",
+            "BMCD",
+            "BMRB",
+            "EMDB",
+            "NDB",
+            "PDB",
+            "PDB-Dev",
+            "SASBDB",
+            "TargetDB",
+            "TargetTrack"
+        ]
     },
     {
         "attribute": "pdbx_database_status.pdb_format_compatible",
@@ -2708,7 +3202,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A flag indicating that the entry is compatible with the PDB format. A value of 'N' indicates that the no PDB format data file is corresponding to this entry is available in the PDB archive."
+        "description": "A flag indicating that the entry is compatible with the PDB format. A value of 'N' indicates that the no PDB format data file is corresponding to this entry is available in the PDB archive.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "pdbx_deposit_group.group_description",
@@ -2748,7 +3246,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Text to describe a grouping of entries in multiple collections"
+        "description": "Text to describe a grouping of entries in multiple collections",
+        "enum": [
+            "changed state",
+            "ground state",
+            "undefined"
+        ]
     },
     {
         "attribute": "pdbx_entity_branch.rcsb_branched_component_count",
@@ -2773,7 +3276,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The type of this branched oligosaccharide."
+        "description": "The type of this branched oligosaccharide.",
+        "enum": [
+            "oligosaccharide"
+        ]
     },
     {
         "attribute": "pdbx_entity_branch_descriptor.descriptor",
@@ -2795,7 +3301,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This data item contains the descriptor type."
+        "description": "This data item contains the descriptor type.",
+        "enum": [
+            "Glycam Condensed Core Sequence",
+            "Glycam Condensed Sequence",
+            "LINUCS",
+            "WURCS"
+        ]
     },
     {
         "attribute": "pdbx_entity_nonpoly.name",
@@ -2825,7 +3337,21 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This item identifies the resource of initial model used for refinement"
+        "description": "This item identifies the resource of initial model used for refinement",
+        "enum": [
+            "AlphaFold",
+            "ITasser",
+            "InsightII",
+            "ModelArchive",
+            "Modeller",
+            "Other",
+            "PDB",
+            "PDB-Dev",
+            "PHYRE",
+            "Robetta",
+            "RoseTTAFold",
+            "SwissModel"
+        ]
     },
     {
         "attribute": "pdbx_initial_refinement_model.type",
@@ -2835,7 +3361,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This item describes the type of the initial model was generated"
+        "description": "This item describes the type of the initial model was generated",
+        "enum": [
+            "experimental model",
+            "in silico model",
+            "integrative model",
+            "other"
+        ]
     },
     {
         "attribute": "pdbx_molecule_features.class",
@@ -2847,7 +3379,57 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Broadly defines the function of the molecule."
+        "description": "Broadly defines the function of the molecule.",
+        "enum": [
+            "Antagonist",
+            "Anthelmintic",
+            "Antibiotic",
+            "Antibiotic, Anthelmintic",
+            "Antibiotic, Antimicrobial",
+            "Antibiotic, Antineoplastic",
+            "Anticancer",
+            "Anticoagulant",
+            "Anticoagulant, Antithrombotic",
+            "Antifungal",
+            "Antigen",
+            "Antiinflammatory",
+            "Antimicrobial",
+            "Antimicrobial, Antiparasitic, Antibiotic",
+            "Antimicrobial, Antiretroviral",
+            "Antimicrobial, Antitumor",
+            "Antineoplastic",
+            "Antiparasitic",
+            "Antiretroviral",
+            "Antithrombotic",
+            "Antitumor",
+            "Antiviral",
+            "CASPASE inhibitor",
+            "Chaperone binding",
+            "Drug delivery",
+            "Enzyme inhibitor",
+            "Glycan component",
+            "Growth factor",
+            "Immunosuppressant",
+            "Inducer",
+            "Inhibitor",
+            "Lantibiotic",
+            "Metabolism",
+            "Metal transport",
+            "Nutrient",
+            "Oxidation-reduction",
+            "Protein binding",
+            "Receptor",
+            "Substrate analog",
+            "Synthetic opioid",
+            "Thrombin inhibitor",
+            "Thrombin inhibitor, Trypsin inhibitor",
+            "Toxin",
+            "Transition state mimetic",
+            "Transport activator",
+            "Trypsin inhibitor",
+            "Unknown",
+            "Water retention"
+        ]
     },
     {
         "attribute": "pdbx_molecule_features.details",
@@ -2994,7 +3576,57 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Broadly defines the function of the entity."
+        "description": "Broadly defines the function of the entity.",
+        "enum": [
+            "Antagonist",
+            "Anthelmintic",
+            "Antibiotic",
+            "Antibiotic, Anthelmintic",
+            "Antibiotic, Antimicrobial",
+            "Antibiotic, Antineoplastic",
+            "Anticancer",
+            "Anticoagulant",
+            "Anticoagulant, Antithrombotic",
+            "Antifungal",
+            "Antigen",
+            "Antiinflammatory",
+            "Antimicrobial",
+            "Antimicrobial, Antiparasitic, Antibiotic",
+            "Antimicrobial, Antiretroviral",
+            "Antimicrobial, Antitumor",
+            "Antineoplastic",
+            "Antiparasitic",
+            "Antiretroviral",
+            "Antithrombotic",
+            "Antitumor",
+            "Antiviral",
+            "CASPASE inhibitor",
+            "Chaperone binding",
+            "Drug delivery",
+            "Enzyme inhibitor",
+            "Glycan component",
+            "Growth factor",
+            "Immunosuppressant",
+            "Inducer",
+            "Inhibitor",
+            "Lantibiotic",
+            "Metabolism",
+            "Metal transport",
+            "Nutrient",
+            "Oxidation-reduction",
+            "Protein binding",
+            "Receptor",
+            "Substrate analog",
+            "Synthetic opioid",
+            "Thrombin inhibitor",
+            "Thrombin inhibitor, Trypsin inhibitor",
+            "Toxin",
+            "Transition state mimetic",
+            "Transport activator",
+            "Trypsin inhibitor",
+            "Unknown",
+            "Water retention"
+        ]
     },
     {
         "attribute": "pdbx_reference_molecule.description",
@@ -3034,7 +3666,41 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Defines the structural classification of the entity."
+        "description": "Defines the structural classification of the entity.",
+        "enum": [
+            "Amino acid",
+            "Aminoglycoside",
+            "Ansamycin",
+            "Anthracycline",
+            "Anthraquinone",
+            "Chalkophore",
+            "Chalkophore, Polypeptide",
+            "Chromophore",
+            "Cyclic depsipeptide",
+            "Cyclic lipopeptide",
+            "Cyclic peptide",
+            "Glycopeptide",
+            "Heterocyclic",
+            "Imino sugar",
+            "Keto acid",
+            "Lipoglycopeptide",
+            "Lipopeptide",
+            "Macrolide",
+            "Non-polymer",
+            "Nucleoside",
+            "Oligopeptide",
+            "Oligosaccharide",
+            "Peptaibol",
+            "Peptide-like",
+            "Polycyclic",
+            "Polypeptide",
+            "Polysaccharide",
+            "Quinolone",
+            "Siderophore",
+            "Thiolactone",
+            "Thiopeptide",
+            "Unknown"
+        ]
     },
     {
         "attribute": "pdbx_reference_molecule_family.name",
@@ -3074,7 +3740,15 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "There are two types of twinning: merohedral or hemihedral non-merohedral or epitaxial For merohedral twinning the diffraction patterns from the different domains are completely superimposable. Hemihedral twinning is a special case of merohedral twinning. It only involves two distinct domains. Pseudo-merohedral twinning is a subclass merohedral twinning in which lattice is coincidentally superimposable. In the case of non-merohedral or epitaxial twinning the reciprocal lattices do not superimpose exactly. In this case the diffraction pattern consists of two (or more) interpenetrating lattices, which can in principle be separated."
+        "description": "There are two types of twinning: merohedral or hemihedral non-merohedral or epitaxial For merohedral twinning the diffraction patterns from the different domains are completely superimposable. Hemihedral twinning is a special case of merohedral twinning. It only involves two distinct domains. Pseudo-merohedral twinning is a subclass merohedral twinning in which lattice is coincidentally superimposable. In the case of non-merohedral or epitaxial twinning the reciprocal lattices do not superimpose exactly. In this case the diffraction pattern consists of two (or more) interpenetrating lattices, which can in principle be separated.",
+        "enum": [
+            "epitaxial",
+            "hemihedral",
+            "merohedral",
+            "non-merohedral",
+            "pseudo-merohedral",
+            "tetartohedral"
+        ]
     },
     {
         "attribute": "pdbx_serial_crystallography_measurement.collimation",
@@ -3104,7 +3778,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "The description of the mechanism by which the specimen in placed in the path of the source."
+        "description": "The description of the mechanism by which the specimen in placed in the path of the source.",
+        "enum": [
+            "fixed target",
+            "injection"
+        ]
     },
     {
         "attribute": "pdbx_serial_crystallography_sample_delivery_fixed_target.description",
@@ -3304,7 +3982,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A filtered description of the macromolecular assembly."
+        "description": "A filtered description of the macromolecular assembly.",
+        "enum": [
+            "author_and_software_defined_assembly",
+            "author_defined_assembly",
+            "software_defined_assembly"
+        ]
     },
     {
         "attribute": "pdbx_struct_assembly_auth_evidence.details",
@@ -3324,7 +4007,28 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Provides the experimental method to determine the state of this assembly"
+        "description": "Provides the experimental method to determine the state of this assembly",
+        "enum": [
+            "NMR Distance Restraints",
+            "NMR relaxation study",
+            "SAXS",
+            "assay for oligomerization",
+            "cross-linking",
+            "electron microscopy",
+            "equilibrium centrifugation",
+            "fluorescence resonance energy transfer",
+            "gel filtration",
+            "homology",
+            "immunoprecipitation",
+            "isothermal titration calorimetry",
+            "light scattering",
+            "mass spectrometry",
+            "microscopy",
+            "native gel electrophoresis",
+            "none",
+            "scanning transmission electron microscopy",
+            "surface plasmon resonance"
+        ]
     },
     {
         "attribute": "pdbx_vrpt_summary_em.Q_score",
@@ -3454,7 +4158,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A code indicating the current availibility of experimental data in the repository."
+        "description": "A code indicating the current availibility of experimental data in the repository.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_accession_info.initial_release_date",
@@ -3516,7 +4224,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "MCSA"
+        ]
     },
     {
         "attribute": "rcsb_assembly_container_identifiers.assembly_id",
@@ -3661,7 +4372,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Nucleic acid polymer entity type categories describing the generated assembly."
+        "description": "Nucleic acid polymer entity type categories describing the generated assembly.",
+        "enum": [
+            "DNA (only)",
+            "DNA/RNA (only)",
+            "NA-hybrid (only)",
+            "Other",
+            "RNA (only)"
+        ]
     },
     {
         "attribute": "rcsb_assembly_info.nonpolymer_atom_count",
@@ -3731,7 +4449,23 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Categories describing the polymer entity composition for the generated assembly."
+        "description": "Categories describing the polymer entity composition for the generated assembly.",
+        "enum": [
+            "DNA",
+            "DNA/RNA",
+            "NA-hybrid",
+            "NA/oligosaccharide",
+            "RNA",
+            "heteromeric protein",
+            "homomeric protein",
+            "oligosaccharide",
+            "other",
+            "other type composition",
+            "other type pair",
+            "protein/NA",
+            "protein/NA/oligosaccharide",
+            "protein/oligosaccharide"
+        ]
     },
     {
         "attribute": "rcsb_assembly_info.polymer_entity_count",
@@ -3936,7 +4670,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Selected polymer entity type categories describing the generated assembly."
+        "description": "Selected polymer entity type categories describing the generated assembly.",
+        "enum": [
+            "Nucleic acid (only)",
+            "Other",
+            "Protein (only)",
+            "Protein/NA"
+        ]
     },
     {
         "attribute": "rcsb_assembly_info.solvent_atom_count",
@@ -4016,7 +4756,17 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Binding affinity measurement given in one of the following types: The concentration constants: IC50: the concentration of ligand that reduces enzyme activity by 50%; EC50: the concentration of compound that generates a half-maximal response; The binding constant: Kd: dissociation constant; Ka: association constant; Ki: enzyme inhibition constant; The thermodynamic parameters: delta G: Gibbs free energy of binding (for association reaction); delta H: change in enthalpy associated with a chemical reaction; delta S: change in entropy associated with a chemical reaction."
+        "description": "Binding affinity measurement given in one of the following types: The concentration constants: IC50: the concentration of ligand that reduces enzyme activity by 50%; EC50: the concentration of compound that generates a half-maximal response; The binding constant: Kd: dissociation constant; Ka: association constant; Ki: enzyme inhibition constant; The thermodynamic parameters: delta G: Gibbs free energy of binding (for association reaction); delta H: change in enthalpy associated with a chemical reaction; delta S: change in entropy associated with a chemical reaction.",
+        "enum": [
+            "&Delta;G",
+            "&Delta;H",
+            "-T&Delta;S",
+            "EC50",
+            "IC50",
+            "Ka",
+            "Kd",
+            "Ki"
+        ]
     },
     {
         "attribute": "rcsb_binding_affinity.value",
@@ -4244,7 +4994,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference resource name"
+        "description": "Reference resource name",
+        "enum": [
+            "GlyCosmos",
+            "GlyGen",
+            "GlyTouCan"
+        ]
     },
     {
         "attribute": "rcsb_branched_entity_feature_summary.count",
@@ -4314,7 +5069,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Type or category of the feature."
+        "description": "Type or category of the feature.",
+        "enum": [
+            "mutation"
+        ]
     },
     {
         "attribute": "rcsb_branched_entity_instance_container_identifiers.asym_id",
@@ -4475,7 +5233,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "CATH",
+            "SCOP"
+        ]
     },
     {
         "attribute": "rcsb_branched_instance_feature_summary.count",
@@ -4545,7 +5307,21 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Type or category of the feature."
+        "description": "Type or category of the feature.",
+        "enum": [
+            "BINDING_SITE",
+            "CATH",
+            "MOGUL_ANGLE_OUTLIER",
+            "MOGUL_BOND_OUTLIER",
+            "RSCC_OUTLIER",
+            "RSRZ_OUTLIER",
+            "SCOP",
+            "STEREO_OUTLIER",
+            "UNOBSERVED_ATOM_XYZ",
+            "UNOBSERVED_RESIDUE_XYZ",
+            "ZERO_OCCUPANCY_ATOM_XYZ",
+            "ZERO_OCCUPANCY_RESIDUE_XYZ"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_id",
@@ -4626,7 +5402,17 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "ATC",
+            "Carbohydrate Anomer",
+            "Carbohydrate Isomer",
+            "Carbohydrate Primary Carbonyl Group",
+            "Carbohydrate Ring",
+            "Generating Enzyme",
+            "Modification Type",
+            "PSI-MOD"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_container_identifiers.comp_id",
@@ -4786,7 +5572,18 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The resource name for the related chemical reference."
+        "description": "The resource name for the related chemical reference.",
+        "enum": [
+            "CAS",
+            "CCDC/CSD",
+            "COD",
+            "ChEBI",
+            "ChEMBL",
+            "DrugBank",
+            "Pharos",
+            "PubChem",
+            "RESID"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_synonyms.name",
@@ -4806,7 +5603,23 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The provenance of this synonym."
+        "description": "The provenance of this synonym.",
+        "enum": [
+            "ACDLabs",
+            "Author",
+            "ChEBI",
+            "ChEMBL",
+            "DrugBank",
+            "GMML",
+            "Lexichem",
+            "OpenEye OEToolkits",
+            "OpenEye/Lexichem",
+            "PDB Reference Data",
+            "PDB Reference Data (Preferred)",
+            "PDB-CARE",
+            "PubChem",
+            "RESID"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_synonyms.type",
@@ -4816,7 +5629,19 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This data item contains the synonym type."
+        "description": "This data item contains the synonym type.",
+        "enum": [
+            "Brand Name",
+            "Common Name",
+            "Condensed IUPAC Carbohydrate Symbol",
+            "IUPAC Carbohydrate Symbol",
+            "Preferred Common Name",
+            "Preferred Name",
+            "Preferred Synonym",
+            "SNFG Carbohydrate Symbol",
+            "Synonym",
+            "Systematic Name"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_target.name",
@@ -4846,7 +5671,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Source database for the computed structure model."
+        "description": "Source database for the computed structure model.",
+        "enum": [
+            "AlphaFoldDB",
+            "ModelArchive"
+        ]
     },
     {
         "attribute": "rcsb_entity_host_organism.common_name",
@@ -5021,7 +5850,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The source type for the entity"
+        "description": "The source type for the entity",
+        "enum": [
+            "genetically engineered",
+            "natural",
+            "synthetic"
+        ]
     },
     {
         "attribute": "rcsb_entity_source_organism.taxonomy_lineage.depth",
@@ -5108,7 +5942,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Method used to establish group membership"
+        "description": "Method used to establish group membership",
+        "enum": [
+            "matching_deposit_group_id"
+        ]
     },
     {
         "attribute": "rcsb_entry_group_membership.group_id",
@@ -5398,7 +6235,16 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The category of experimental method(s) used to determine the structure entry."
+        "description": "The category of experimental method(s) used to determine the structure entry.",
+        "enum": [
+            "EM",
+            "Integrative",
+            "Multiple methods",
+            "NMR",
+            "Neutron",
+            "Other",
+            "X-ray"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.experimental_method_count",
@@ -5423,7 +6269,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Multi-scale modeling flag for integrative structures."
+        "description": "Multi-scale modeling flag for integrative structures.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.ihm_multi_state_flag",
@@ -5433,7 +6283,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Multi-state modeling flag for integrative structures."
+        "description": "Multi-state modeling flag for integrative structures.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.ihm_ordered_state_flag",
@@ -5443,7 +6297,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Ordered-state modeling flag for integrative structures."
+        "description": "Ordered-state modeling flag for integrative structures.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.ihm_structure_description",
@@ -5508,7 +6366,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Nucleic acid polymer entity type categories describing the entry."
+        "description": "Nucleic acid polymer entity type categories describing the entry.",
+        "enum": [
+            "DNA (only)",
+            "DNA/RNA (only)",
+            "NA-hybrid (only)",
+            "Other",
+            "RNA (only)"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.nonpolymer_entity_count",
@@ -5563,7 +6428,23 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Categories describing the polymer entity composition for the entry."
+        "description": "Categories describing the polymer entity composition for the entry.",
+        "enum": [
+            "DNA",
+            "DNA/RNA",
+            "NA-hybrid",
+            "NA/oligosaccharide",
+            "RNA",
+            "heteromeric protein",
+            "homomeric protein",
+            "oligosaccharide",
+            "other",
+            "other type composition",
+            "other type pair",
+            "protein/NA",
+            "protein/NA/oligosaccharide",
+            "protein/oligosaccharide"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.polymer_entity_count",
@@ -5753,7 +6634,15 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Selected polymer entity type categories describing the entry."
+        "description": "Selected polymer entity type categories describing the entry.",
+        "enum": [
+            "Nucleic acid (only)",
+            "Oligosaccharide (only)",
+            "Other",
+            "Protein (only)",
+            "Protein/NA",
+            "Protein/Oligosaccharide"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.software_programs_combined",
@@ -5788,7 +6677,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Indicates if the structure was determined using experimental or computational methods."
+        "description": "Indicates if the structure was determined using experimental or computational methods.",
+        "enum": [
+            "computational",
+            "experimental",
+            "integrative"
+        ]
     },
     {
         "attribute": "rcsb_entry_info.structure_determination_methodology_priority",
@@ -5813,7 +6707,16 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Internal identifier for external resources"
+        "description": "Internal identifier for external resources",
+        "enum": [
+            "BMRB",
+            "EM DATA RESOURCE",
+            "NAKB",
+            "NDB",
+            "OLDERADO",
+            "PROTEIN DIFFRACTION",
+            "SB GRID"
+        ]
     },
     {
         "attribute": "rcsb_genomic_lineage.id",
@@ -5843,7 +6746,33 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Name of input dataset used in integrative modeling."
+        "description": "Name of input dataset used in integrative modeling.",
+        "enum": [
+            "2DEM class average",
+            "3DEM volume",
+            "CX-MS data",
+            "Comparative model",
+            "Crosslinking-MS data",
+            "DNA footprinting data",
+            "De Novo model",
+            "EM raw micrographs",
+            "EPR data",
+            "Ensemble FRET data",
+            "Experimental model",
+            "H/D exchange data",
+            "Hydroxyl radical footprinting data",
+            "Integrative model",
+            "Mass Spectrometry data",
+            "Mutagenesis data",
+            "NMR data",
+            "Other",
+            "Predicted contacts",
+            "Quantitative measurements of genetic interactions",
+            "SAS data",
+            "Single molecule FRET data",
+            "X-ray diffraction data",
+            "Yeast two-hybrid screening data"
+        ]
     },
     {
         "attribute": "rcsb_ihm_dataset_source_db_reference.accession_code",
@@ -5863,7 +6792,26 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Name of the source database for the input dataset."
+        "description": "Name of the source database for the input dataset.",
+        "enum": [
+            "AlphaFoldDB",
+            "BMRB",
+            "BMRbig",
+            "BioGRID",
+            "EMDB",
+            "EMPIAR",
+            "MASSIVE",
+            "ModelArchive",
+            "Other",
+            "PDB",
+            "PDB-Dev",
+            "PRIDE",
+            "ProXL",
+            "ProteomeXchange",
+            "SASBDB",
+            "iProX",
+            "jPOSTrepo"
+        ]
     },
     {
         "attribute": "rcsb_ligand_neighbors.distance",
@@ -5918,7 +6866,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A flag to indicate the nature of the ligand interaction is covalent or metal-coordination."
+        "description": "A flag to indicate the nature of the ligand interaction is covalent or metal-coordination.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_ma_qa_metric_global.ma_qa_metric_global.type",
@@ -5928,7 +6880,22 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The type of global QA metric."
+        "description": "The type of global QA metric.",
+        "enum": [
+            "PAE",
+            "contact probability",
+            "distance",
+            "energy",
+            "ipTM",
+            "normalized score",
+            "other",
+            "pLDDT",
+            "pLDDT all-atom",
+            "pLDDT all-atom in [0,1]",
+            "pLDDT in [0,1]",
+            "pTM",
+            "zscore"
+        ]
     },
     {
         "attribute": "rcsb_ma_qa_metric_global.ma_qa_metric_global.value",
@@ -6119,7 +7086,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "SUBJECT_OF_INVESTIGATION"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_entity_container_identifiers.chem_ref_def_id",
@@ -6169,7 +7139,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the feature."
+        "description": "A type or category of the feature.",
+        "enum": [
+            "SUBJECT_OF_INVESTIGATION"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_entity_feature_summary.count",
@@ -6194,7 +7167,10 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Type or category of the feature."
+        "description": "Type or category of the feature.",
+        "enum": [
+            "SUBJECT_OF_INVESTIGATION"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_entity_instance_container_identifiers.asym_id",
@@ -6365,7 +7341,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "HAS_COVALENT_LINKAGE",
+            "HAS_METAL_COORDINATION_LINKAGE",
+            "HAS_NO_COVALENT_LINKAGE",
+            "IS_RSCC_OUTLIER",
+            "IS_RSRZ_OUTLIER"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_instance_validation_score.Q_score",
@@ -6435,7 +7418,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This molecular instance is ranked as the best quality instance of this nonpolymer entity."
+        "description": "This molecular instance is ranked as the best quality instance of this nonpolymer entity.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_instance_validation_score.is_subject_of_investigation",
@@ -6445,7 +7432,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This molecular entity is identified as the subject of the current study."
+        "description": "This molecular entity is identified as the subject of the current study.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_nonpolymer_instance_validation_score.mogul_angle_outliers",
@@ -6664,7 +7655,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Combined list of enzyme class associated provenance sources."
+        "description": "Combined list of enzyme class associated provenance sources.",
+        "enum": [
+            "PDB Primary Data",
+            "UniProt"
+        ]
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_macromolecular_names_combined.name",
@@ -6795,7 +7790,19 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "CARD",
+            "GO",
+            "GlyCosmos",
+            "GlyGen",
+            "InterPro",
+            "MemProtMD",
+            "OPM",
+            "PDBTM",
+            "Pfam",
+            "mpstruc"
+        ]
     },
     {
         "attribute": "rcsb_polymer_entity_container_identifiers.chem_comp_monomers",
@@ -6875,7 +7882,18 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database name"
+        "description": "Reference database name",
+        "enum": [
+            "EMBL",
+            "GenBank",
+            "NDB",
+            "NORINE",
+            "PDB",
+            "PIR",
+            "PRF",
+            "RefSeq",
+            "UniProt"
+        ]
     },
     {
         "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.entity_sequence_coverage",
@@ -6975,7 +7993,24 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Type or category of the feature."
+        "description": "Type or category of the feature.",
+        "enum": [
+            "CARD_MODEL",
+            "IMGT_ANTIBODY_DESCRIPTION",
+            "IMGT_ANTIBODY_DOMAIN_NAME",
+            "IMGT_ANTIBODY_GENE_ALLELE_NAME",
+            "IMGT_ANTIBODY_ORGANISM_NAME",
+            "IMGT_ANTIBODY_PROTEIN_NAME",
+            "IMGT_ANTIBODY_RECEPTOR_DESCRIPTION",
+            "IMGT_ANTIBODY_RECEPTOR_TYPE",
+            "Pfam",
+            "SABDAB_ANTIBODY_ANTIGEN_NAME",
+            "SABDAB_ANTIBODY_NAME",
+            "SABDAB_ANTIBODY_TARGET",
+            "artifact",
+            "modified_monomer",
+            "mutation"
+        ]
     },
     {
         "attribute": "rcsb_polymer_entity_group_membership.aggregation_method",
@@ -6985,7 +8020,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Method used to establish group membership"
+        "description": "Method used to establish group membership",
+        "enum": [
+            "matching_uniprot_accession",
+            "sequence_identity"
+        ]
     },
     {
         "attribute": "rcsb_polymer_entity_group_membership.group_id",
@@ -7171,7 +8210,14 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "CATH",
+            "ECOD",
+            "GlyGen",
+            "SCOP",
+            "SCOP2"
+        ]
     },
     {
         "attribute": "rcsb_polymer_instance_feature_summary.count",
@@ -7241,7 +8287,81 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Type or category of the feature."
+        "description": "Type or category of the feature.",
+        "enum": [
+            "ANGLE_OUTLIER",
+            "ANGLE_OUTLIERS",
+            "AVERAGE_OCCUPANCY",
+            "BEND",
+            "BINDING_SITE",
+            "BOND_OUTLIER",
+            "BOND_OUTLIERS",
+            "C-MANNOSYLATION_SITE",
+            "CATH",
+            "CHIRAL_OUTLIERS",
+            "CIS-PEPTIDE",
+            "CLASHES",
+            "ECOD",
+            "HELIX_P",
+            "HELX_LH_PP_P",
+            "HELX_RH_3T_P",
+            "HELX_RH_AL_P",
+            "HELX_RH_PI_P",
+            "LIGAND_COVALENT_LINKAGE",
+            "LIGAND_INTERACTION",
+            "LIGAND_METAL_COORDINATION_LINKAGE",
+            "MA_QA_METRIC_LOCAL_TYPE_CONTACT_PROBABILITY",
+            "MA_QA_METRIC_LOCAL_TYPE_DISTANCE",
+            "MA_QA_METRIC_LOCAL_TYPE_ENERGY",
+            "MA_QA_METRIC_LOCAL_TYPE_IPTM",
+            "MA_QA_METRIC_LOCAL_TYPE_NORMALIZED_SCORE",
+            "MA_QA_METRIC_LOCAL_TYPE_OTHER",
+            "MA_QA_METRIC_LOCAL_TYPE_PAE",
+            "MA_QA_METRIC_LOCAL_TYPE_PLDDT",
+            "MA_QA_METRIC_LOCAL_TYPE_PLDDT_ALL-ATOM",
+            "MA_QA_METRIC_LOCAL_TYPE_PLDDT_ALL-ATOM_[0,1]",
+            "MA_QA_METRIC_LOCAL_TYPE_PLDDT_[0,1]",
+            "MA_QA_METRIC_LOCAL_TYPE_PTM",
+            "MA_QA_METRIC_LOCAL_TYPE_ZSCORE",
+            "MEMBRANE_SEGMENT",
+            "MOGUL_ANGLE_OUTLIER",
+            "MOGUL_ANGLE_OUTLIERS",
+            "MOGUL_BOND_OUTLIER",
+            "MOGUL_BOND_OUTLIERS",
+            "MOGUL_RING_OUTLIERS",
+            "MOGUL_TORSION_OUTLIERS",
+            "N-GLYCOSYLATION_SITE",
+            "NATOMS_EDS",
+            "O-GLYCOSYLATION_SITE",
+            "OWAB",
+            "PLANE_OUTLIERS",
+            "Q_SCORE",
+            "RAMACHANDRAN_OUTLIER",
+            "ROTAMER_OUTLIER",
+            "RSCC",
+            "RSCC_OUTLIER",
+            "RSR",
+            "RSRZ",
+            "RSRZ_OUTLIER",
+            "S-GLYCOSYLATION_SITE",
+            "SABDAB_ANTIBODY_HEAVY_CHAIN_SUBCLASS",
+            "SABDAB_ANTIBODY_LIGHT_CHAIN_SUBCLASS",
+            "SABDAB_ANTIBODY_LIGHT_CHAIN_TYPE",
+            "SCOP",
+            "SCOP2B_SUPERFAMILY",
+            "SCOP2_FAMILY",
+            "SCOP2_SUPERFAMILY",
+            "SHEET",
+            "STEREO_OUTLIER",
+            "STRN",
+            "SYMM_CLASHES",
+            "TURN_TY1_P",
+            "UNASSIGNED_SEC_STRUCT",
+            "UNOBSERVED_ATOM_XYZ",
+            "UNOBSERVED_RESIDUE_XYZ",
+            "ZERO_OCCUPANCY_ATOM_XYZ",
+            "ZERO_OCCUPANCY_RESIDUE_XYZ"
+        ]
     },
     {
         "attribute": "rcsb_polymer_struct_conn.connect_type",
@@ -7251,7 +8371,19 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The connection type."
+        "description": "The connection type.",
+        "enum": [
+            "covalent bond",
+            "covalent modification of a nucleotide base",
+            "covalent modification of a nucleotide phosphate",
+            "covalent modification of a nucleotide sugar",
+            "covalent residue modification",
+            "disulfide bridge",
+            "hydrogen bond",
+            "ionic interaction",
+            "metal coordination",
+            "mismatched base pairs"
+        ]
     },
     {
         "attribute": "rcsb_polymer_struct_conn.role",
@@ -7261,7 +8393,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The chemical or structural role of the interaction"
+        "description": "The chemical or structural role of the interaction",
+        "enum": [
+            "C-Mannosylation",
+            "N-Glycosylation",
+            "O-Glycosylation",
+            "S-Glycosylation"
+        ]
     },
     {
         "attribute": "rcsb_polymer_struct_conn.value_order",
@@ -7271,7 +8409,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The chemical bond order associated with the specified atoms in this contact."
+        "description": "The chemical bond order associated with the specified atoms in this contact.",
+        "enum": [
+            "doub",
+            "quad",
+            "sing",
+            "trip"
+        ]
     },
     {
         "attribute": "rcsb_primary_citation.book_title",
@@ -7460,7 +8604,30 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The list of content types associated with this entry."
+        "description": "The list of content types associated with this entry.",
+        "enum": [
+            "2fo-fc Map",
+            "Combined NMR data (NEF)",
+            "Combined NMR data (NMR-STAR)",
+            "FASTA sequence",
+            "Map Coefficients",
+            "NMR chemical shifts",
+            "NMR restraints V1",
+            "NMR restraints V2",
+            "assembly PDB",
+            "assembly mmCIF",
+            "entry PDB",
+            "entry PDB bundle",
+            "entry PDBML",
+            "entry mmCIF",
+            "fo-fc Map",
+            "structure factors",
+            "validation 2fo-fc coefficients",
+            "validation data mmCIF",
+            "validation fo-fc coefficients",
+            "validation report",
+            "validation slider image"
+        ]
     },
     {
         "attribute": "rcsb_struct_symmetry.clusters.avg_rmsd",
@@ -7485,7 +8652,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The granularity at which the symmetry calculation is performed. In 'Global Symmetry' all polymeric subunits in assembly are used. In 'Local Symmetry' only a subset of polymeric subunits is considered. In 'Pseudo Symmetry' the threshold for subunits similarity is relaxed."
+        "description": "The granularity at which the symmetry calculation is performed. In 'Global Symmetry' all polymeric subunits in assembly are used. In 'Local Symmetry' only a subset of polymeric subunits is considered. In 'Pseudo Symmetry' the threshold for subunits similarity is relaxed.",
+        "enum": [
+            "Global Symmetry",
+            "Local Symmetry",
+            "Pseudo Symmetry"
+        ]
     },
     {
         "attribute": "rcsb_struct_symmetry.oligomeric_state",
@@ -7515,7 +8687,16 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Symmetry type refers to point group or helical symmetry of identical polymeric subunits. Contains point group types (e.g. Cyclic, Dihedral) or Helical for helical symmetry."
+        "description": "Symmetry type refers to point group or helical symmetry of identical polymeric subunits. Contains point group types (e.g. Cyclic, Dihedral) or Helical for helical symmetry.",
+        "enum": [
+            "Asymmetric",
+            "Cyclic",
+            "Dihedral",
+            "Helical",
+            "Icosahedral",
+            "Octahedral",
+            "Tetrahedral"
+        ]
     },
     {
         "attribute": "rcsb_struct_symmetry_lineage.depth",
@@ -7605,7 +8786,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A flag to indicate the nature of the target interaction is covalent or metal-coordination."
+        "description": "A flag to indicate the nature of the target interaction is covalent or metal-coordination.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "rcsb_uniprot_annotation.annotation_id",
@@ -7686,7 +8871,13 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "disease",
+            "phenotype",
+            "GO",
+            "InterPro"
+        ]
     },
     {
         "attribute": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers.database_accession",
@@ -7726,7 +8917,12 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "UniProt-mapped Resource"
+        "description": "UniProt-mapped Resource",
+        "enum": [
+            "IMPC",
+            "GTEX",
+            "PHAROS"
+        ]
     },
     {
         "attribute": "rcsb_uniprot_protein.name.value",
@@ -7958,7 +9154,31 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The major computing language in which the software is coded."
+        "description": "The major computing language in which the software is coded.",
+        "enum": [
+            "Ada",
+            "Awk",
+            "Basic",
+            "C",
+            "C++",
+            "C/C++",
+            "Fortran",
+            "Fortran 77",
+            "Fortran 90",
+            "Fortran_77",
+            "Java",
+            "Java & Fortran",
+            "Other",
+            "Pascal",
+            "Perl",
+            "Python",
+            "Python/C++",
+            "Tcl",
+            "assembler",
+            "csh",
+            "ksh",
+            "sh"
+        ]
     },
     {
         "attribute": "software.name",
@@ -7978,7 +9198,15 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The classification of the software according to the most common types."
+        "description": "The classification of the software according to the most common types.",
+        "enum": [
+            "filter",
+            "jiffy",
+            "library",
+            "other",
+            "package",
+            "program"
+        ]
     },
     {
         "attribute": "struct.pdbx_CASP_flag",
@@ -7988,7 +9216,11 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The item indicates whether the entry is a CASP target, a CASD-NMR target, or similar target participating in methods development experiments."
+        "description": "The item indicates whether the entry is a CASP target, a CASD-NMR target, or similar target participating in methods development experiments.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "struct.pdbx_model_details",
@@ -8048,7 +9280,17 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The cell settings for this space-group symmetry."
+        "description": "The cell settings for this space-group symmetry.",
+        "enum": [
+            "cubic",
+            "hexagonal",
+            "monoclinic",
+            "orthorhombic",
+            "rhombohedral",
+            "tetragonal",
+            "triclinic",
+            "trigonal"
+        ]
     },
     {
         "attribute": "symmetry.pdbx_full_space_group_name_H_M",

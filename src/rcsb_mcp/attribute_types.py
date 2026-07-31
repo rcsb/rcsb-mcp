@@ -11,16 +11,17 @@ schema guarantees and tests/test_server.py::test_attribute_catalogs_conform pins
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 # typing_extensions, not typing: pydantic refuses to build a schema from a
 # typing.TypedDict on Python < 3.12, and SearchAttribute is used as a field type
 # in server._AttributeListResult. That raises at IMPORT time, so on the 3.11 base
 # image the server dies before binding its port. See tests/test_python_support.py.
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 # The value type of a searchable attribute, from the Search API metadata schema.
 AttributeValueType = Literal["date", "integer", "number", "string"]
+
 
 # The full set of attribute/text comparison operators from the spec enum. This is
 # the single source: server.py types AttributeFilter.operator with it, queries.py
@@ -35,11 +36,18 @@ TextOperator = Literal[
 class SearchAttribute(TypedDict):
     """One searchable RCSB attribute, as published by the Search API metadata schema.
 
-    Every key is always present: the catalogs carry no optional fields and no empty
-    values. `attribute` is unique within a catalog.
+    `attribute` is unique within a catalog. Every key except `enum` is always present;
+    the catalogs carry no other optional fields and no empty values.
     """
 
     attribute: str
     type: AttributeValueType
     operators: list[TextOperator]
     description: str
+    # The complete set of allowed values, on the ~15% of attributes that constrain them.
+    # This is the only part of a filter nothing used to check, and the only one whose
+    # failure is SILENT: a wrong path or operator is rejected, but a wrong VALUE builds a
+    # query the API happily answers with zero hits — which reads as "no such structures
+    # exist" rather than "you spelled it wrong". Measured: exptl.method="cryo-EM" returns
+    # 0, where "ELECTRON MICROSCOPY" returns 35,660.
+    enum: NotRequired[list[Any]]

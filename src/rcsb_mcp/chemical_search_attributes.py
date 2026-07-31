@@ -43,7 +43,38 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "For standard polymer components, the type of the monomer. Note that monomers that will form polymers are of three types: linking monomers, monomers with some type of N-terminal (or 5') cap and monomers with some type of C-terminal (or 3') cap."
+        "description": "For standard polymer components, the type of the monomer. Note that monomers that will form polymers are of three types: linking monomers, monomers with some type of N-terminal (or 5') cap and monomers with some type of C-terminal (or 3') cap.",
+        "enum": [
+            "D-beta-peptide, C-gamma linking",
+            "D-gamma-peptide, C-delta linking",
+            "D-peptide COOH carboxy terminus",
+            "D-peptide NH3 amino terminus",
+            "D-peptide linking",
+            "D-saccharide",
+            "D-saccharide, alpha linking",
+            "D-saccharide, beta linking",
+            "DNA OH 3 prime terminus",
+            "DNA OH 5 prime terminus",
+            "DNA linking",
+            "L-DNA linking",
+            "L-RNA linking",
+            "L-beta-peptide, C-gamma linking",
+            "L-gamma-peptide, C-delta linking",
+            "L-peptide COOH carboxy terminus",
+            "L-peptide NH3 amino terminus",
+            "L-peptide linking",
+            "L-saccharide",
+            "L-saccharide, alpha linking",
+            "L-saccharide, beta linking",
+            "RNA OH 3 prime terminus",
+            "RNA OH 5 prime terminus",
+            "RNA linking",
+            "non-polymer",
+            "other",
+            "peptide linking",
+            "peptide-like",
+            "saccharide"
+        ]
     },
     {
         "attribute": "drugbank_container_identifiers.drugbank_id",
@@ -123,7 +154,16 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The DrugBank drug groups determine their drug development status."
+        "description": "The DrugBank drug groups determine their drug development status.",
+        "enum": [
+            "approved",
+            "experimental",
+            "illicit",
+            "investigational",
+            "nutraceutical",
+            "vet_approved",
+            "withdrawn"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.approved",
@@ -133,7 +173,11 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Indicates whether this drug has been approved by the regulating government."
+        "description": "Indicates whether this drug has been approved by the regulating government.",
+        "enum": [
+            "N",
+            "Y"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.country",
@@ -143,7 +187,12 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The country where this commercially available drug has been approved."
+        "description": "The country where this commercially available drug has been approved.",
+        "enum": [
+            "Canada",
+            "EU",
+            "US"
+        ]
     },
     {
         "attribute": "drugbank_info.drug_products.ended_marketing_on",
@@ -275,7 +324,57 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Broadly defines the function of the entity."
+        "description": "Broadly defines the function of the entity.",
+        "enum": [
+            "Antagonist",
+            "Anthelmintic",
+            "Antibiotic",
+            "Antibiotic, Anthelmintic",
+            "Antibiotic, Antimicrobial",
+            "Antibiotic, Antineoplastic",
+            "Anticancer",
+            "Anticoagulant",
+            "Anticoagulant, Antithrombotic",
+            "Antifungal",
+            "Antigen",
+            "Antiinflammatory",
+            "Antimicrobial",
+            "Antimicrobial, Antiparasitic, Antibiotic",
+            "Antimicrobial, Antiretroviral",
+            "Antimicrobial, Antitumor",
+            "Antineoplastic",
+            "Antiparasitic",
+            "Antiretroviral",
+            "Antithrombotic",
+            "Antitumor",
+            "Antiviral",
+            "CASPASE inhibitor",
+            "Chaperone binding",
+            "Drug delivery",
+            "Enzyme inhibitor",
+            "Glycan component",
+            "Growth factor",
+            "Immunosuppressant",
+            "Inducer",
+            "Inhibitor",
+            "Lantibiotic",
+            "Metabolism",
+            "Metal transport",
+            "Nutrient",
+            "Oxidation-reduction",
+            "Protein binding",
+            "Receptor",
+            "Substrate analog",
+            "Synthetic opioid",
+            "Thrombin inhibitor",
+            "Thrombin inhibitor, Trypsin inhibitor",
+            "Toxin",
+            "Transition state mimetic",
+            "Transport activator",
+            "Trypsin inhibitor",
+            "Unknown",
+            "Water retention"
+        ]
     },
     {
         "attribute": "pdbx_reference_molecule.description",
@@ -315,7 +414,41 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Defines the structural classification of the entity."
+        "description": "Defines the structural classification of the entity.",
+        "enum": [
+            "Amino acid",
+            "Aminoglycoside",
+            "Ansamycin",
+            "Anthracycline",
+            "Anthraquinone",
+            "Chalkophore",
+            "Chalkophore, Polypeptide",
+            "Chromophore",
+            "Cyclic depsipeptide",
+            "Cyclic lipopeptide",
+            "Cyclic peptide",
+            "Glycopeptide",
+            "Heterocyclic",
+            "Imino sugar",
+            "Keto acid",
+            "Lipoglycopeptide",
+            "Lipopeptide",
+            "Macrolide",
+            "Non-polymer",
+            "Nucleoside",
+            "Oligopeptide",
+            "Oligosaccharide",
+            "Peptaibol",
+            "Peptide-like",
+            "Polycyclic",
+            "Polypeptide",
+            "Polysaccharide",
+            "Quinolone",
+            "Siderophore",
+            "Thiolactone",
+            "Thiopeptide",
+            "Unknown"
+        ]
     },
     {
         "attribute": "pdbx_reference_molecule_family.name",
@@ -426,7 +559,17 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "enum": [
+            "ATC",
+            "Carbohydrate Anomer",
+            "Carbohydrate Isomer",
+            "Carbohydrate Primary Carbonyl Group",
+            "Carbohydrate Ring",
+            "Generating Enzyme",
+            "Modification Type",
+            "PSI-MOD"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_container_identifiers.comp_id",
@@ -586,7 +729,18 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The resource name for the related chemical reference."
+        "description": "The resource name for the related chemical reference.",
+        "enum": [
+            "CAS",
+            "CCDC/CSD",
+            "COD",
+            "ChEBI",
+            "ChEMBL",
+            "DrugBank",
+            "Pharos",
+            "PubChem",
+            "RESID"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_synonyms.name",
@@ -606,7 +760,23 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The provenance of this synonym."
+        "description": "The provenance of this synonym.",
+        "enum": [
+            "ACDLabs",
+            "Author",
+            "ChEBI",
+            "ChEMBL",
+            "DrugBank",
+            "GMML",
+            "Lexichem",
+            "OpenEye OEToolkits",
+            "OpenEye/Lexichem",
+            "PDB Reference Data",
+            "PDB Reference Data (Preferred)",
+            "PDB-CARE",
+            "PubChem",
+            "RESID"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_synonyms.type",
@@ -616,7 +786,19 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This data item contains the synonym type."
+        "description": "This data item contains the synonym type.",
+        "enum": [
+            "Brand Name",
+            "Common Name",
+            "Condensed IUPAC Carbohydrate Symbol",
+            "IUPAC Carbohydrate Symbol",
+            "Preferred Common Name",
+            "Preferred Name",
+            "Preferred Synonym",
+            "SNFG Carbohydrate Symbol",
+            "Synonym",
+            "Systematic Name"
+        ]
     },
     {
         "attribute": "rcsb_chem_comp_target.name",

@@ -136,12 +136,20 @@ def build_catalog(schema: dict) -> list[dict]:
         if attr in out:  # keep first occurrence
             continue
         typ = _type_of(leaf)
-        out[attr] = {
+        record = {
             "attribute": attr,
             "type": typ,
             "operators": _operators_of(leaf.get("rcsb_search_context", []), typ),
             "description": _description_of(leaf),
         }
+        # Allowed values, where the schema constrains them (~15% of attributes). Emitted
+        # LAST and only when present, so the 85% without one are byte-identical to before.
+        # Kept whole and unsorted: this is the authoritative set the API matches against,
+        # and a truncated or reordered list would be worse than none — the caller would
+        # pick from what it was shown and never learn a value was omitted.
+        if leaf.get("enum"):
+            record["enum"] = list(leaf["enum"])
+        out[attr] = record
     return [out[k] for k in sorted(out)]
 
 

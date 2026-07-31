@@ -144,6 +144,51 @@ def _check_operator(record: SearchAttribute, operator: str) -> None:
         )
 
 
+# Operators that compare a value against the attribute's own vocabulary. `contains_words`
+# and `contains_phrase` are excluded on purpose — those match text WITHIN a value, so a
+# fragment is a legitimate query, not a mistake. `exists` carries no value at all.
+_ENUM_CHECKED_OPERATORS = frozenset({"exact_match", "in", "equals"})
+
+
+def _check_value(record: SearchAttribute, operator: str, value: Any, case_sensitive: bool) -> None:
+    """Reject a value the attribute does not allow, when its vocabulary is published.
+
+    This is the only part of a filter that used to go unchecked, and the only one whose
+    failure is SILENT. A bad path or operator is refused outright; a bad VALUE builds a
+    perfectly legal query that the Search API answers with zero hits — and an empty result
+    on an attribute filter is a legitimate answer the tools explicitly tell the agent to
+    report rather than work around. So `exptl.method="cryo-EM"` does not error: it reports
+    that the PDB holds no cryo-EM structures. It holds 35,660.
+
+    Comparison is case-INSENSITIVE by default because the API is; when the caller asked for
+    `case_sensitive`, the exact spelling is required, since anything else is another silent
+    zero. Non-string values (numeric or boolean enums) are compared by their string form so
+    one path handles every type.
+    """
+    allowed = record.get("enum")
+    if not allowed or operator not in _ENUM_CHECKED_OPERATORS:
+        return
+    # `in` takes a list of alternatives; every one of them has to be real.
+    values = value if (operator == "in" and isinstance(value, list)) else [value]
+    by_lower = {str(a).lower(): a for a in allowed}
+    for v in values:
+        if v is None:
+            continue
+        canonical = by_lower.get(str(v).lower())
+        if canonical is None:
+            close = difflib.get_close_matches(str(v), [str(a) for a in allowed], n=3, cutoff=0.4)
+            hint = f" Did you mean: {', '.join(close)}?" if close else ""
+            raise ValueError(
+                f"'{v}' is not a valid value for '{record['attribute']}'. Allowed values: "
+                f"{', '.join(repr(str(a)) for a in allowed)}.{hint}"
+            )
+        if case_sensitive and str(v) != str(canonical):
+            raise ValueError(
+                f"'{v}' is not spelled as '{record['attribute']}' publishes it and you asked "
+                f"for a case-sensitive match, which would return nothing. Use {canonical!r}."
+            )
+
+
 def _check_facet(facet: Any, schema: str) -> None:
     """Validate a facet's aggregation attribute, recursing into nested sub-facets."""
     if not isinstance(facet, dict):
@@ -167,7 +212,9 @@ def _validate_query_attributes(
     than a misleading Search-API error several calls later."""
     schema = "chemical" if chemical else "structure"
     for f in attributes or []:
-        _check_operator(_check_attribute(f.attribute, schema), f.operator)
+        record = _check_attribute(f.attribute, schema)
+        _check_operator(record, f.operator)
+        _check_value(record, f.operator, f.value, f.case_sensitive)
     for facet in facets or []:
         _check_facet(facet, schema)
     if sort_by and sort_by not in _RESERVED_SORT:
@@ -377,6 +424,11 @@ async def rcsb_query_attribute(
             be a number or a numeric string; a range value is a {from, to, include_lower,
             include_upper} object whose bounds are EXCLUSIVE unless the include flags say
             otherwise. Omit `value` for `exists`.
+            Some attributes accept only a FIXED SET of values — exptl.method is
+            "X-RAY DIFFRACTION" / "ELECTRON MICROSCOPY" / ..., not "cryo-EM". Don't guess
+            those either: rcsb_list_pdb_search_attributes returns them as `enum`. A value
+            outside the set is rejected here, so you can correct it, rather than matching
+            nothing and looking like an empty result.
         logical_operator: Combine these conditions with "and" (default) or "or". They all
             share this one operator; for a query needing BOTH — e.g. (human OR mouse) AND
             high-resolution — build each group separately and join them with
@@ -819,11 +871,14 @@ async def rcsb_list_pdb_search_attributes(
 
     Returns:
         {count, match_mode, attributes, note?}. `attributes` holds {attribute, type, operators,
-        description} records — the RCSB/PDB attribute path (e.g.
+        description, enum?} records — the RCSB/PDB attribute path (e.g.
         "rcsb_entry_info.resolution_combined"), its value type (string/number/integer/date), the
         operators it supports (exact_match, greater, range, exists, ...), and a human-readable
-        description. `match_mode` is "exact" (the query matched), "none" (nothing matched — read
-        `note`, the query shape is the usual cause), or "all" (query omitted, whole catalog).
+        description. `enum` appears on the ~15% of attributes that accept only a FIXED SET of
+        values (e.g. exptl.method); when it does, use one of those values verbatim — anything
+        else matches nothing. `match_mode` is "exact" (the query matched), "none" (nothing
+        matched — read `note`, the query shape is the usual cause), or "all" (query omitted,
+        whole catalog).
     """
     try:
         catalog = ATTRIBUTE_CATALOGS[schema]

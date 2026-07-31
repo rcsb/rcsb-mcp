@@ -336,15 +336,26 @@ def test_attribute_catalogs_conform():
         paths = [e["attribute"] for e in catalog]
         assert len(paths) == len(set(paths)), f"{name}: duplicate attribute paths"
         for e in catalog:
-            assert set(e) == {"attribute", "type", "operators", "description"}, \
+            # `enum` is the one optional key — carried only by attributes whose schema
+            # publishes a closed vocabulary. Everything else is always present.
+            assert set(e) - {"enum"} == {"attribute", "type", "operators", "description"}, \
                 f"{name}: unexpected keys on {e.get('attribute')!r}"
             assert e["type"] in types, f"{name}: bad type on {e['attribute']!r}: {e['type']!r}"
             unknown = set(e["operators"]) - ops
             assert not unknown, f"{name}: unknown operators on {e['attribute']!r}: {sorted(unknown)}"
             assert e["operators"], f"{name}: no operators on {e['attribute']!r}"
             assert e["attribute"] and e["description"], f"{name}: empty field on {e!r}"
+            if "enum" in e:
+                # An empty or single-item enum would be emitted noise; a duplicate would
+                # mean the generator mangled the schema's list.
+                assert isinstance(e["enum"], list) and e["enum"], \
+                    f"{name}: empty enum on {e['attribute']!r}"
+                vals = [str(v) for v in e["enum"]]
+                assert len(vals) == len(set(vals)), f"{name}: duplicate enum values on {e['attribute']!r}"
+    enums = [e for e in SEARCH_ATTRIBUTES if "enum" in e]
+    assert enums, "the structure catalog must carry enums — value validation depends on them"
     print(f"ok: attribute catalogs conform ({len(SEARCH_ATTRIBUTES)} structure, "
-          f"{len(CHEMICAL_SEARCH_ATTRIBUTES)} chemical)")
+          f"{len(CHEMICAL_SEARCH_ATTRIBUTES)} chemical; {len(enums)} with an enum)")
 
 
 def _list_attrs(**kw):
