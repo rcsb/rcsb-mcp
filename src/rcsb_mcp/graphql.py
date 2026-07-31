@@ -21,7 +21,9 @@ import re
 from typing import Any
 
 from rcsb_mcp import queries
+from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 from rcsb_mcp.client import DATA_GRAPHQL_URL, _post_graphql
+from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 
 
 async def _graphql_field(body: dict[str, Any], field: str, url: str = DATA_GRAPHQL_URL) -> Any:
@@ -149,6 +151,36 @@ SEARCH_DEFAULT_DEPTH = 3
 BROWSE_DEFAULT_DEPTH = 1
 
 
+# --- Which Data API fields can also be FILTERED on -----------------------------
+# Every Search API attribute is also a Data API field (measured: 732 of 732; the reverse
+# is 732 of 24,689, so ~3%). Discovering a field therefore told the agent nothing about
+# whether it could search by it, and wanting to filter meant starting over at
+# rcsb_list_pdb_search_attributes. Marking the overlap closes that loop for the cost of one
+# key on 3% of rows.
+#
+# Derived from the COMMITTED catalogs, which are the same set rcsb_list_pdb_search_attributes
+# serves, so the flag can never promise an attribute that tool would deny. A field renamed in
+# the Data API simply stops matching — it loses the flag rather than gaining a wrong one.
+_SEARCHABLE_ATTRIBUTES = frozenset(
+    a["attribute"] for a in (*SEARCH_ATTRIBUTES, *CHEMICAL_SEARCH_ATTRIBUTES)
+)
+# Attributes deep enough for a suffix match to mean something. The two schemas disagree on
+# one prefix — DrugBank is `drugbank_info.*` to Search and `drugbank.drugbank_info.*` to the
+# Data API — so 22 attributes only match as a suffix. But a SINGLE-segment attribute
+# (`rcsb_id`, `rcsb_pubmed_abstract_text`) is only meaningful at an object's root: suffix-
+# matching it would flag every `polymer_entities.rcsb_id`, `assemblies.rcsb_id` and so on as
+# filterable, which they are not.
+_SEARCHABLE_SUFFIXES = frozenset(a for a in _SEARCHABLE_ATTRIBUTES if "." in a)
+
+
+def is_searchable_path(path: str) -> bool:
+    """Whether this Data API field can also be filtered on with rcsb_query_attribute."""
+    if path in _SEARCHABLE_ATTRIBUTES:
+        return True
+    segments = path.split(".")
+    return any(".".join(segments[i:]) in _SEARCHABLE_SUFFIXES for i in range(1, len(segments)))
+
+
 def resolve_max_depth(max_depth: int | None, query: str | None) -> int:
     """The depth to walk: what the caller asked for, else browse-vs-search's default."""
     if max_depth is not None:
@@ -212,7 +244,7 @@ async def _flatten_object_fields(
                 d = _field_descriptor(raw)
                 path = f"{prefix}.{d['name']}" if prefix else d["name"]
                 if ql is None or ql in path.lower() or ql in (d["description"] or "").lower():
-                    results.append({
+                    row = {
                         "path": f"{path_prefix}.{path}" if path_prefix else path,
                         "kind": d["kind"], "type": d["type"],
                         "list": d["list"], "description": d["description"],
@@ -220,7 +252,14 @@ async def _flatten_object_fields(
                         # search_all_objects pops it — but it is the only exact way to tell
                         # whether two paths reach the same field. See _field_identity.
                         "_parent_type": type_name,
-                    })
+                    }
+                    # Data API only: "searchable" is a relationship between THIS schema and
+                    # the Search API's, and the Sequence Coordinates endpoint has neither.
+                    # Absent rather than false on the 97% that are not, so they cost nothing.
+                    if url == DATA_GRAPHQL_URL and d["kind"] == "scalar" \
+                            and is_searchable_path(row["path"]):
+                        row["searchable"] = True
+                    results.append(row)
                     if len(results) >= max_results:
                         return results, True
                 if (d["kind"] == "object" and d["type"] and depth < max_depth

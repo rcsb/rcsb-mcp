@@ -252,3 +252,91 @@ def test_naming_an_object_still_scopes_to_it(monkeypatch):
     assert r["object_key"] == "chem_comps"
     assert [f["path"] for f in r["fields"]] == ["chem_comp.formula_weight"]
     assert not any("tool" in f for f in r["fields"])
+
+
+# --------------------------------------------------------------------------- #
+# `searchable`: which Data API fields can ALSO be filtered on
+# --------------------------------------------------------------------------- #
+# Every Search API attribute is also a Data API field — measured 732 of 732, with 0 genuinely
+# absent — while only ~3% of the 24,689 Data paths are searchable. So the flag is a real
+# subset relation, not a heuristic, and it closes the loop between "I can read this field"
+# and "I can filter on it".
+from rcsb_mcp.graphql import is_searchable_path  # noqa: E402
+from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES  # noqa: E402
+from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES  # noqa: E402
+
+
+def test_every_committed_search_attribute_is_recognised():
+    """The flag must agree with rcsb_list_pdb_search_attributes exactly — it is the same set,
+    so a field flagged here can never be one that tool would deny."""
+    missed = [a["attribute"] for a in (*SEARCH_ATTRIBUTES, *CHEMICAL_SEARCH_ATTRIBUTES)
+              if not is_searchable_path(a["attribute"])]
+    assert not missed, f"catalog attributes not recognised as searchable: {missed[:5]}"
+
+
+def test_the_drugbank_prefix_difference_is_handled():
+    """The two schemas root DrugBank differently: `drugbank_info.*` to Search,
+    `drugbank.drugbank_info.*` to the Data API. 22 attributes only match as a suffix, so
+    exact matching alone silently drops the flag for all of them."""
+    assert is_searchable_path("drugbank.drugbank_info.cas_number")
+    assert is_searchable_path("drugbank_info.cas_number")
+
+
+def test_a_nested_route_to_a_searchable_field_is_still_searchable():
+    """Same field, longer path — reaching chem_comp through a nonpolymer entity does not
+    make it un-filterable."""
+    assert is_searchable_path("chem_comp.formula_weight")
+    assert is_searchable_path("nonpolymer_comp.chem_comp.formula_weight")
+
+
+def test_a_bare_attribute_name_only_counts_at_the_root():
+    """`rcsb_id` is a search attribute, but suffix-matching a single-segment name would flag
+    every `polymer_entities.rcsb_id` / `assemblies.rcsb_id` as filterable, which they are
+    not. Single-segment attributes match exactly; only multi-segment ones match as suffixes.
+    """
+    assert is_searchable_path("rcsb_id")
+    assert not is_searchable_path("polymer_entities.rcsb_id")
+    assert not is_searchable_path("assemblies.interfaces.rcsb_id")
+
+
+def test_an_ordinary_data_field_is_not_flagged():
+    """~97% of Data API fields are not searchable (732 of 24,689), so the flag would be
+    worthless if it were always present.
+
+    `rcsb_entry_container_identifiers.polymer_entity_ids` is the shape to check: a real,
+    commonly-used Data field — it is how you get the entity ids to drill into — that the
+    Search API does not expose as a filter.
+    """
+    assert not is_searchable_path("rcsb_entry_container_identifiers.polymer_entity_ids")
+    assert not is_searchable_path("made.up.path")
+
+
+def test_the_flag_is_absent_rather_than_false(search):
+    """Emitting `"searchable": false` on the 97% would cost tokens on every describe call."""
+    fields, _ = search("formula_weight")
+    for f in fields:
+        assert f.get("searchable") in (True, None)
+        if "searchable" in f:
+            assert f["searchable"] is True
+
+
+def test_seqcoord_fields_are_never_flagged(monkeypatch):
+    """Searchability is a relation between the DATA API and the Search API. The Sequence
+    Coordinates endpoint has no part in it, so a coincidental path name must not be marked.
+    """
+    import asyncio
+
+    from rcsb_mcp import graphql
+
+    async def fake_type_fields(type_name, url=None):
+        # A type whose field path collides with a real search attribute.
+        return [{"name": "method", "description": "",
+                 "type": {"kind": "SCALAR", "name": "String"}}]
+
+    monkeypatch.setattr(graphql, "_type_fields", fake_type_fields)
+    for url, expect_flag in (("https://data.rcsb.org/graphql", True),
+                             ("https://sequence-coordinates.rcsb.org/graphql", False)):
+        fields, _ = asyncio.run(graphql._flatten_object_fields(
+            "Exptl", url, 1, None, 50, path_prefix="exptl"))
+        got = any(f.get("searchable") for f in fields)
+        assert got is expect_flag, f"{url} -> searchable={got}"

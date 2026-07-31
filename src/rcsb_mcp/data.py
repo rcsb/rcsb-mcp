@@ -102,6 +102,9 @@ async def rcsb_describe_data_object(
       Start here whenever you know what you want but not where it lives —
       rcsb_describe_data_object(query="release_date") ->
       rcsb_get_entries + "rcsb_accession_info.initial_release_date".
+      A SEARCH ATTRIBUTE PATH works as the `query` too: every attribute from
+      rcsb_list_pdb_search_attributes is also a Data API field, so pasting one in tells you
+      which tool fetches the value you can filter on.
     - SEARCH one object: name `object_key` as well, to keep only that object's matches.
     - BROWSE a level: name `object_key` and omit `query` to list its own fields, then drill
       into a nested one with `into`. Workflow: rcsb_describe_data_object("entries") -> spot a
@@ -121,6 +124,10 @@ async def rcsb_describe_data_object(
     - type: the field's GraphQL type name
     - list: whether the field returns a list
     - description: schema description, when present
+    - searchable: present (true) only when this field can ALSO be filtered on with
+      rcsb_query_attribute — i.e. it is a Search API attribute as well as a Data API field.
+      About 3% are. Use it to go from "I can read this" to "I can search by this" without a
+      separate lookup; rcsb_list_pdb_search_attributes still has its operators and values.
 
     Args:
         object_key: Which object to describe — the key matching the rcsb_get_* tool. OMIT it
@@ -138,9 +145,10 @@ async def rcsb_describe_data_object(
 
     Returns:
         For a named object: {object_key, graphql_type, path, query, max_depth, field_count,
-        fields:[{path, kind, type, list, description}], truncated?, note?}.
+        fields:[{path, kind, type, list, description, searchable?}], truncated?, note?}.
         Searching every object instead: {object_key: null, searched, query, max_depth,
-        field_count, fields:[{tool, path, kind, type, list, description}], truncated?, note?}
+        field_count, fields:[{tool, path, kind, type, list, description, searchable?}],
+        truncated?, note?}
         — each field names the rcsb_get_* `tool` that owns it and the `path` to pass that
         tool's `fields=`. One field is reported once, attributed to the object reaching it
         most directly, and matches are ordered exact field name, then partial, then
