@@ -1,24 +1,25 @@
-"""Declarative search cases + the adapter that renders them with TODAY's builders.
+"""Declarative search cases, and the composer pipeline that renders them.
 
-This is the baseline for the query-composer refactor. Each case describes a search as
-the composer design will express it -- a QUERY half (one service node, or a group of
-nodes joined by and/or) and a CONFIG half (the result-shaping envelope) -- and the
-recorded Search API body it must produce. `tests/fixtures/query_bodies_baseline.json`
-holds those bodies, generated from this file at HEAD and COMMITTED, so it keeps
-asserting pre-refactor behaviour after the builders are rewritten.
+`tests/fixtures/query_bodies_baseline.json` holds the Search API body each case must
+produce. Those bodies were generated BEFORE the composer refactor, from the flat
+build_*_query entry points, and committed -- so the fixture is a frozen record of
+pre-refactor behaviour that the current code has to keep reproducing. The flat builders
+themselves are gone; the fixture is what outlived them.
 
-The split is the point. `body_via_current` maps a case onto the current
-`queries.build_*_query` signatures; a second adapter will map the same case onto
-rcsb_query_* -> rcsb_query_composer -> rcsb_search_request. Both must emit the byte-
-identical body, which is what makes the refactor provably behaviour-preserving without
-an A/B run.
+Each case describes a search in the composer's own terms: a QUERY half (one service
+node, or a group of nodes joined by and/or) and a CONFIG half (the result-shaping
+envelope). `body_via_pipeline` walks that exactly as the tool chain does -- one node per
+rcsb_query_* builder, groups joined by rcsb_query_composer, the envelope applied once by
+rcsb_search_request.
 
-Deliberately NOT covered: genuinely nested groups -- (A OR B) AND (C OR D) -- and
-multi-service combinations. Today's `_combine_service` builds exactly one service node
-plus a flat attribute list, so there is no current behaviour to freeze. Those are new
-capability and get their own tests against the Search API contract, not this fixture.
+Deliberately NOT in the fixture: genuinely nested groups -- (A OR B) AND (C OR D) -- and
+multi-service combinations. The flat builders could not express either, so there was no
+prior behaviour to freeze. Those are new capability, covered in test_query_compose.py and
+test_query_tools.py against the Search API contract.
 
-Regenerate (only from a tree whose builder behaviour you intend to make canonical):
+Regenerating REWRITES the record of pre-refactor behaviour with whatever the tree does
+today, which is the one thing this file exists to prevent. Do it only to bless a change
+you have reviewed body-by-body in the diff:
     python tests/query_cases.py
 """
 
@@ -208,103 +209,6 @@ CASES: list[dict[str, Any]] = [
 
 
 # --------------------------------------------------------------------------- #
-# Adapter: case -> today's queries.build_* call
-# --------------------------------------------------------------------------- #
-def _flatten(query: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
-    """Split a case's query half into (service node, attribute filters, operator).
-
-    Today's builders take exactly one service payload plus a flat `attributes` list,
-    so a baseline group must be that shape: one non-attribute node and at most one
-    attribute node. Anything else is new capability with no baseline (see module
-    docstring) and is rejected here rather than silently mis-rendered.
-    """
-    if query["kind"] != "group":
-        if query["kind"] == "attribute":
-            return {"kind": "attribute"}, query["attributes"], query.get("logical_operator", "and")
-        return query, [], "and"
-
-    nodes = query["nodes"]
-    # A nested group is the case this must never wave through: its `kind` is neither
-    # "attribute" nor a service, so counting by exclusion would treat it as the service
-    # node and render something entirely different. Reject it by name, first.
-    if any(n["kind"] == "group" for n in nodes):
-        raise ValueError(
-            "nested group is not expressible by the current builders — it belongs in the "
-            "nesting tests, not the baseline fixture"
-        )
-    attrs = [n for n in nodes if n["kind"] == "attribute"]
-    services = [n for n in nodes if n["kind"] != "attribute"]
-    if len(services) != 1 or len(attrs) > 1:
-        raise ValueError(
-            f"group with {len(services)} service node(s) and {len(attrs)} attribute node(s) "
-            "is not expressible by the current builders — it belongs in the nesting tests, "
-            "not the baseline fixture"
-        )
-    return services[0], (attrs[0]["attributes"] if attrs else []), query["logical_operator"]
-
-
-def body_via_current(case: dict[str, Any]) -> dict[str, Any]:
-    """Render a case with the builders as they exist today."""
-    node, filters, op = _flatten(case["query"])
-    cfg = case["config"]
-    kind = node["kind"]
-
-    # Envelope names differ between the tool layer and queries.py; map them once.
-    env = {
-        "return_type": cfg.get("return_type"),
-        "rows": cfg.get("limit", 10),
-        "start": cfg.get("offset", 0),
-        "all_hits": cfg.get("all_hits", False),
-        "sort_by": cfg.get("sort_by"),
-        "sort_direction": cfg.get("sort_direction", "asc"),
-        "group_by": cfg.get("group_by"),
-        "group_by_ranking": cfg.get("group_by_ranking"),
-        "facets": cfg.get("facets"),
-    }
-
-    if kind in ("fulltext", "attribute"):
-        # build_combined_query owns both, and is the only builder taking include_computed
-        # and chemical directly.
-        return queries.build_combined_query(
-            full_text=node.get("value") if kind == "fulltext" else None,
-            filters=filters or None,
-            logical_operator=op,
-            return_type=env["return_type"] or "entry",
-            rows=env["rows"], start=env["start"], all_hits=env["all_hits"],
-            include_computed=cfg.get("include_computed_models", False),
-            sort_by=env["sort_by"], sort_direction=env["sort_direction"],
-            group_by=env["group_by"], group_by_ranking=env["group_by_ranking"],
-            chemical=case["query"].get("chemical_attributes", False),
-            facets=env["facets"],
-        )
-
-    shared = {
-        "rows": env["rows"], "start": env["start"], "all_hits": env["all_hits"],
-        "attributes": filters or None, "logical_operator": op, "facets": env["facets"],
-        "group_by": env["group_by"], "group_by_ranking": env["group_by_ranking"],
-        "sort_by": env["sort_by"], "sort_direction": env["sort_direction"],
-        "include_computed": cfg.get("include_computed_models", False),
-    }
-    payload = {k: v for k, v in node.items() if k != "kind"}
-
-    if kind == "sequence":
-        return queries.build_sequence_query(
-            return_type=env["return_type"] or "polymer_entity", **payload, **shared)
-    if kind == "chemical":
-        return queries.build_chemical_query(
-            return_type=env["return_type"] or "mol_definition", **payload, **shared)
-    if kind == "structure":
-        return queries.build_structure_query(return_type=env["return_type"], **payload, **shared)
-    if kind == "seqmotif":
-        return queries.build_seqmotif_query(
-            return_type=env["return_type"] or "polymer_entity", **payload, **shared)
-    if kind == "strucmotif":
-        return queries.build_strucmotif_query(
-            return_type=env["return_type"] or "assembly", **payload, **shared)
-    raise ValueError(f"unknown query kind {kind!r}")
-
-
-# --------------------------------------------------------------------------- #
 # Adapter: case -> rcsb_query_* -> rcsb_query_composer -> rcsb_search_request
 #
 # This walks the case's query tree exactly as the tool chain will: one node per
@@ -362,7 +266,7 @@ def _regenerate() -> None:
     names = [c["name"] for c in CASES]
     assert len(names) == len(set(names)), "case names must be unique"
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
-    bodies = {c["name"]: body_via_current(c) for c in CASES}
+    bodies = {c["name"]: body_via_pipeline(c) for c in CASES}
     FIXTURE.write_text(json.dumps(bodies, indent=2, sort_keys=True) + "\n")
     print(f"wrote {len(bodies)} bodies to {FIXTURE}")
 

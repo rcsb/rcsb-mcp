@@ -1,12 +1,10 @@
-"""The query bodies must not change when the search tools are rewritten as composers.
+"""The query bodies the composer produces must match what the flat builders produced.
 
-`tests/fixtures/query_bodies_baseline.json` was generated from the builders at HEAD and
-is COMMITTED, so it keeps asserting pre-refactor behaviour after they are replaced. Each
-adapter in ADAPTERS renders the same declarative cases a different way and must produce
-byte-identical bodies:
-
-    current   queries.build_*_query(...)                        (today)
-    pipeline  rcsb_query_* -> rcsb_query_composer -> request    (added with the refactor)
+`tests/fixtures/query_bodies_baseline.json` was generated from those builders BEFORE the
+refactor and COMMITTED. The builders are gone now; the fixture is what outlived them, and
+it is the only remaining record of how these queries were shaped when the flat tools were
+the ones shipping. Every case is rendered through the composer pipeline -- rcsb_query_* ->
+rcsb_query_composer -> rcsb_search_request -- and must come out byte-identical.
 
 This is the substitute for the tool-selection A/B that can't be run. It cannot tell us
 whether a model routes to the right tool -- nothing offline can -- but it removes
@@ -20,10 +18,11 @@ import json
 
 import pytest
 
-from query_cases import CASES, body_via_current, body_via_pipeline, load_baseline
+from query_cases import CASES, body_via_pipeline, load_baseline
 
-# name -> callable(case) -> body.
-ADAPTERS = {"current": body_via_current, "pipeline": body_via_pipeline}
+# name -> callable(case) -> body. Only the composer pipeline remains; the flat
+# build_*_query adapter went with the builders it drove.
+ADAPTERS = {"pipeline": body_via_pipeline}
 
 BASELINE = load_baseline()
 IDS = [c["name"] for c in CASES]
@@ -92,21 +91,31 @@ def test_numeric_strings_are_coerced_but_dates_are_not():
     assert date == "2024-01-01T00:00:00Z", "an ISO date must stay a string"
 
 
-def test_baseline_rejects_queries_it_cannot_express():
-    """Nested groups are new capability -- they must not slip into the baseline unnoticed."""
-    from query_cases import _flatten
+def test_the_fixture_records_only_shapes_that_predate_the_refactor():
+    """No case may use a shape the flat builders could not build.
 
-    nested = {"kind": "group", "logical_operator": "and", "nodes": [
-        {"kind": "group", "logical_operator": "or", "nodes": [
-            {"kind": "attribute", "attributes": []}]},
-        {"kind": "attribute", "attributes": []},
-    ]}
-    with pytest.raises(ValueError, match="nested group is not expressible"):
-        _flatten(nested)
+    The fixture's authority comes entirely from having been generated BEFORE the composer
+    existed. A nested group or a two-service query has no pre-refactor body to record, so
+    adding one here would produce an entry blessed by nothing but the code it is meant to
+    check -- the fixture would silently start agreeing with whatever the tree does.
 
-    # Two service nodes -- a cross-service AND -- is the other new shape.
-    with pytest.raises(ValueError, match="not expressible by the current builders"):
-        _flatten({"kind": "group", "logical_operator": "and", "nodes": [
-            {"kind": "sequence", "sequence": "MVL"},
-            {"kind": "structure", "entry_id": "4HHB"},
-        ]})
+    Those shapes are real capability and are tested against the Search API contract in
+    test_query_compose.py and test_query_tools.py; they just cannot live in this record.
+    """
+    def offenders(query, depth=0):
+        if query["kind"] != "group":
+            return
+        if depth:
+            yield "a nested group"
+        services = [n for n in query["nodes"] if n["kind"] != "attribute"]
+        if len(services) > 1:
+            yield f"{len(services)} service nodes in one group"
+        for child in query["nodes"]:
+            yield from offenders(child, depth + 1)
+
+    bad = {c["name"]: list(offenders(c["query"])) for c in CASES}
+    bad = {k: v for k, v in bad.items() if v}
+    assert not bad, (
+        "these cases use shapes the pre-composer builders could not express, so the "
+        f"fixture cannot be a record of prior behaviour for them: {bad}"
+    )

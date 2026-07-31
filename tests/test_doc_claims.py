@@ -150,14 +150,8 @@ def test_docstrings_never_point_at_an_unlisted_tool(module):
     advertised = _advertised()
     known_prefixes = ("rcsb_get_", "rcsb_query_", "rcsb_find_", "rcsb_search_",
                       "rcsb_describe_", "rcsb_list_", "rcsb_seqcoord_", "rcsb_render_")
-    # The superseded rcsb_search_* tools are dispatch-only: their descriptions are never
-    # sent to any client, so what they cross-reference cannot mislead anyone. Excluded by
-    # DERIVING the set from the registration code, so retiring one updates this too.
-    unshipped = {fn.__name__ for fn in search._LEGACY_SEARCH_TOOLS}
     bad = []
     for fn_name, doc in _docstrings(module).items():
-        if fn_name in unshipped:
-            continue
         for mentioned in set(_TOOL_MENTION.findall(doc)):
             if mentioned in _NOT_TOOLS or mentioned in advertised:
                 continue

@@ -207,20 +207,24 @@ def test_enrich_syntax_error():
     print("ok: enrich syntax error")
 
 
-def test_search_return_type_defaults():
-    # Per-tool return_type defaults are deliberate; pin them so they aren't swapped by accident.
-    def _default(tool):
-        return inspect.signature(tool).parameters["return_type"].default
+def test_search_request_return_type_defaults_to_none():
+    """`return_type` must have NO concrete default on the one tool that carries it.
 
-    # strucmotif defaults to "assembly" — the most general unit for a 3D motif and the
-    # default of RCSB.org advanced search (symmetry mates only exist at assembly level).
-    assert _default(search.rcsb_search_strucmotif) == "assembly"
-    # the other polymer-oriented services default to "polymer_entity"
-    assert _default(search.rcsb_search_by_sequence) == "polymer_entity"
-    assert _default(search.rcsb_search_by_seqmotif) == "polymer_entity"
-    # chemical defaults to the chemical component itself
-    assert _default(search.rcsb_search_by_chemical) == "mol_definition"
-    print("ok: search return_type defaults")
+    It used to live on seven tools, each with its own default. Now it lives once, and a
+    concrete default here would make an omitted return_type indistinguishable from an
+    explicit "entry" — so four of the seven services would silently return the wrong kind
+    of identifier. None means "the caller did not choose", and queries.build_search_request
+    resolves it from the query itself.
+
+    The per-service values that resolution produces are pinned in
+    tests/test_query_compose.py::test_default_return_type_matches_what_each_flat_tool_used.
+    """
+    default = inspect.signature(search.rcsb_search_request).parameters["return_type"].default
+    assert default is None, (
+        f"rcsb_search_request.return_type defaults to {default!r}; a concrete default hides "
+        "the difference between an omitted and an explicit choice"
+    )
+    print("ok: return_type is resolved from the query, not defaulted in the signature")
 
 
 # --- _get_json: a 204 / empty body must not crash the rcsb_find_* resolvers ---------------- #
@@ -429,7 +433,7 @@ if __name__ == "__main__":
     test_enrich_unknown_field()
     test_enrich_seqcoord_steer()
     test_enrich_syntax_error()
-    test_search_return_type_defaults()
+    test_search_request_return_type_defaults_to_none()
     test_get_json_204_empty()
     test_interpro_no_match_graceful()
     print("\nAll server tests passed.")

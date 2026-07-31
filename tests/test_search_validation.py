@@ -101,21 +101,35 @@ def test_reserved_sort_score_is_allowed_but_a_guessed_sort_attribute_is_not():
 
 
 # --- wiring guard: no search tool may skip validation ----------------------
-def test_every_search_tool_validates_its_attributes():
-    """A structural guard: each of the search tools must call a validator, so a future
-    tool (or a refactor) can't silently ship a path straight to the API unvalidated."""
+def test_every_tool_that_takes_an_attribute_path_validates_it():
+    """A structural guard: any tool accepting an agent-supplied attribute path must call a
+    validator, so a future tool (or a refactor) can't ship a guessed path to the API.
+
+    The tool set is DERIVED from the signatures rather than listed. A hardcoded roster only
+    guards the tools someone remembered to add, and goes stale the moment tools are renamed
+    — which is exactly what happened when rcsb_search_* became rcsb_query_*: the list still
+    named seven tools that no longer existed, so the guard passed while checking nothing.
+    """
     src = inspect.getsource(search)
     tree = ast.parse(src)
-    tools = {
-        "rcsb_search_fulltext", "rcsb_search_by_attribute", "rcsb_search_by_sequence",
-        "rcsb_search_by_chemical", "rcsb_search_by_structure", "rcsb_search_by_seqmotif",
-        "rcsb_search_strucmotif",
-    }
+    # Parameters that carry an attribute path the agent chose, in any tool that has one.
+    ATTRIBUTE_BEARING = {"attributes", "sort_by", "facets"}
     validators = {"_validate_query_attributes"}
-    seen = {}
+
+    obliged, validates = set(), set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in tools:
-            calls = {c.func.id for c in ast.walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
-            seen[node.name] = bool(calls & validators)
-    missing = sorted(t for t in tools if not seen.get(t))
-    assert not missing, f"search tools that never validate their attributes: {missing}"
+        if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)):
+            continue
+        if not node.name.startswith(("rcsb_query_", "rcsb_search_")):
+            continue
+        params = {a.arg for a in node.args.args + node.args.kwonlyargs}
+        if params & ATTRIBUTE_BEARING:
+            obliged.add(node.name)
+        calls = {c.func.id for c in ast.walk(node)
+                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+        if calls & validators:
+            validates.add(node.name)
+
+    assert obliged, "no tool takes an attribute path — the guard has lost its subject"
+    missing = sorted(obliged - validates)
+    assert not missing, f"tools taking an attribute path but never validating it: {missing}"

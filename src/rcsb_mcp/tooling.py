@@ -13,8 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
-from mcp.types import Tool as MCPTool, ToolAnnotations
+from mcp.types import ToolAnnotations
 
 # Every tool in this server is a read-only query against public RCSB/EBI web
 # APIs: it never mutates state, repeated calls are safe (idempotent), and it
@@ -25,45 +24,6 @@ READ_ONLY = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=True,
 )
-
-
-# --- Unlisted (dispatch-only) tools -------------------------------------------
-
-
-class RcsbFastMCP(FastMCP):
-    """FastMCP that can keep answering a tool name it no longer advertises.
-
-    Renaming a tool is not a local change: a client may hold a tool list it fetched
-    days ago, and it will keep calling the old name until it refreshes. Removing the
-    name outright turns that into a hard failure for a caller that did nothing wrong —
-    which has happened here before, when a schema change broke an agent holding a
-    cached list.
-
-    A tool in ``hidden_tools`` is registered normally, so ``call_tool`` dispatches it,
-    but is filtered out of ``tools/list``. That makes a deprecated name cost NOTHING on
-    the token surface — nobody is charged for a description that is never sent — while
-    still working for whoever has not refreshed.
-
-    Filtering happens in ``list_tools`` rather than by holding the tools outside the
-    manager, so listing and dispatch keep reading the same registry and cannot disagree
-    about what exists. It must be an override, not an instance attribute assigned after
-    construction: ``FastMCP._setup_handlers`` binds ``self.list_tools`` during
-    ``__init__``, so a later monkeypatch would change what direct callers (tests) see
-    while the wire handler kept serving the original — the worst possible split.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.hidden_tools: set[str] = set()
-
-    def hide_tool(self, name: str) -> None:
-        """Keep ``name`` dispatchable but stop advertising it."""
-        if self._tool_manager.get_tool(name) is None:
-            raise ValueError(f"cannot hide {name!r}: it is not registered")
-        self.hidden_tools.add(name)
-
-    async def list_tools(self) -> list[MCPTool]:
-        return [t for t in await super().list_tools() if t.name not in self.hidden_tools]
 
 
 # --- JSON-Schema compaction ---------------------------------------------------

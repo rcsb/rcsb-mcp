@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import PlainTextResponse
@@ -29,10 +30,6 @@ from starlette.responses import PlainTextResponse
 # GraphQL execution lives in rcsb_mcp.graphql (the shared layer above client, which imports
 # nothing back from here); _fetch_report_rows below resolves _graphql_field by bare name.
 from rcsb_mcp.graphql import _graphql_field  # noqa: E402
-
-# RcsbFastMCP subclasses FastMCP to allow dispatch-only (unlisted) tools; imported up here
-# because the server instance below is built from it. tooling imports nothing back.
-from rcsb_mcp.tooling import RcsbFastMCP  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -86,8 +83,7 @@ def _load_prompt(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-
-mcp = RcsbFastMCP(
+mcp = FastMCP(
     name="rcsb_mcp",
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
     # run stateless (any pod can serve any request — no per-session state to lose)

@@ -193,23 +193,6 @@ def test_include_computed_models_reaches_every_service(node):
     assert off["request_options"]["results_content_type"] == ["experimental"]
 
 
-def test_include_computed_models_reaches_the_flat_builders_too():
-    """The rcsb_search_* shims stay on these entry points, so they need the fix as well."""
-    for build, kwargs in (
-        (queries.build_sequence_query, {"sequence": SEQ}),
-        (queries.build_chemical_query, {"value": "C9H8O4", "query_type": "formula"}),
-        (queries.build_structure_query, {"entry_id": "4HHB", "assembly_id": "1"}),
-        (queries.build_seqmotif_query, {"pattern": "CXCXXL", "pattern_type": "simple"}),
-        (queries.build_strucmotif_query, {
-            "entry_id": "2MNR",
-            "residue_ids": [{"label_asym_id": "A", "label_seq_id": 162},
-                            {"label_asym_id": "A", "label_seq_id": 193}]}),
-    ):
-        body = build(include_computed=True, **kwargs)
-        assert body["request_options"]["results_content_type"] == \
-            ["experimental", "computational"], build.__name__
-
-
 def test_include_computed_models_reaches_a_facet_query():
     body = queries.build_search_request(
         queries.sequence_node(SEQ), include_computed=True,
