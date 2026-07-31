@@ -94,6 +94,51 @@ def test_decode_accepts_just_under_the_cap():
     assert link.decode_report(_b64(gzip.compress(payload.encode(), mtime=0))) == payload
 
 
+def test_a_corrupted_token_is_refused_rather_than_decoded_to_something_else():
+    """An altered token must fail, never yield a different report.
+
+    This is not free: zlib's decompressobj + flush() does NOT validate the gzip
+    trailer, so before the CRC32/ISIZE check was added ~1% of single-character flips
+    (those landing in the deflate tail) returned plausible-looking garbage with no
+    error. Nothing downstream was harmed only because json.loads happened to reject
+    the result -- i.e. the safety came from luck at a later layer, not from the codec.
+    """
+    import random
+
+    payload = json.dumps(REPORT)
+    token = link.encode_report(payload)
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+    random.seed(5)
+    decoded_something_else = 0
+    for _ in range(3000):
+        i = random.randrange(len(token))
+        c = random.choice([x for x in alphabet if x != token[i]])
+        try:
+            out = link.decode_report(token[:i] + c + token[i + 1:])
+        except LinkError:
+            continue  # the only acceptable outcome for an altered token
+        if out != payload:
+            decoded_something_else += 1
+    assert decoded_something_else == 0, (
+        f"{decoded_something_else} corrupted tokens decoded to a DIFFERENT report"
+    )
+
+
+def test_truncated_token_is_refused():
+    """flush() is silent about a truncated stream; dec.eof is what catches it."""
+    token = link.encode_report(json.dumps(REPORT))
+    for cut in (1, 2, 4, 8, 16):
+        with pytest.raises(LinkError):
+            link.decode_report(token[:-cut])
+
+
+def test_bytes_appended_after_a_valid_member_are_refused():
+    token = _b64(gzip.compress(json.dumps(REPORT).encode(), mtime=0) + b"trailing")
+    with pytest.raises(LinkError):
+        link.decode_report(token)
+
+
 # --------------------------------------------------------------------------
 # /r endpoint
 # --------------------------------------------------------------------------

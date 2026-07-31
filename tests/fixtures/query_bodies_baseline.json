@@ -1,0 +1,1155 @@
+{
+  "attribute-chemical-namespace": {
+    "query": {
+      "parameters": {
+        "attribute": "chem_comp.formula_weight",
+        "operator": "greater",
+        "value": 300
+      },
+      "service": "text_chem",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "mol_definition"
+  },
+  "attribute-date": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_accession_info.initial_release_date",
+        "operator": "greater",
+        "value": "2024-01-01T00:00:00Z"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-exists": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_nonpolymer_entity.pdbx_description",
+        "operator": "exists"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-in-list": {
+    "query": {
+      "parameters": {
+        "attribute": "exptl.method",
+        "operator": "in",
+        "value": [
+          "X-RAY DIFFRACTION",
+          "ELECTRON MICROSCOPY"
+        ]
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-multi-and": {
+    "query": {
+      "logical_operator": "and",
+      "nodes": [
+        {
+          "parameters": {
+            "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+            "operator": "exact_match",
+            "value": "Homo sapiens"
+          },
+          "service": "text",
+          "type": "terminal"
+        },
+        {
+          "parameters": {
+            "attribute": "exptl.method",
+            "operator": "exact_match",
+            "value": "X-RAY DIFFRACTION"
+          },
+          "service": "text",
+          "type": "terminal"
+        },
+        {
+          "parameters": {
+            "attribute": "rcsb_entry_info.resolution_combined",
+            "operator": "less",
+            "value": 2.0
+          },
+          "service": "text",
+          "type": "terminal"
+        }
+      ],
+      "type": "group"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-multi-or": {
+    "query": {
+      "logical_operator": "or",
+      "nodes": [
+        {
+          "parameters": {
+            "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+            "operator": "exact_match",
+            "value": "Homo sapiens"
+          },
+          "service": "text",
+          "type": "terminal"
+        },
+        {
+          "parameters": {
+            "attribute": "exptl.method",
+            "operator": "exact_match",
+            "value": "X-RAY DIFFRACTION"
+          },
+          "service": "text",
+          "type": "terminal"
+        }
+      ],
+      "type": "group"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-negation-and-case-sensitive": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "case_sensitive": true,
+        "negation": true,
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-numeric-string-coercion": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entry_info.resolution_combined",
+        "operator": "less",
+        "value": 2.0
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-range": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entry_info.resolution_combined",
+        "operator": "range",
+        "value": {
+          "from": 1.5,
+          "include_lower": true,
+          "include_upper": false,
+          "to": 2.5
+        }
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "attribute-single-numeric": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entry_info.resolution_combined",
+        "operator": "less",
+        "value": 2.0
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "chemical-formula": {
+    "query": {
+      "parameters": {
+        "match_subset": true,
+        "type": "formula",
+        "value": "C9H8O4"
+      },
+      "service": "chemical",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "chemical",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "mol_definition"
+  },
+  "chemical-inchi-substructure": {
+    "query": {
+      "parameters": {
+        "descriptor_type": "InChI",
+        "match_type": "sub-struct-graph-relaxed",
+        "type": "descriptor",
+        "value": "InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3"
+      },
+      "service": "chemical",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "chemical",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "mol_definition"
+  },
+  "chemical-smiles-descriptor": {
+    "query": {
+      "parameters": {
+        "descriptor_type": "SMILES",
+        "match_type": "graph-relaxed",
+        "type": "descriptor",
+        "value": "CC(=O)Oc1ccccc1C(=O)O"
+      },
+      "service": "chemical",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "chemical",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "mol_definition"
+  },
+  "config-all-hits": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "results_content_type": [
+        "experimental"
+      ],
+      "return_all_hits": true,
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "config-computed-models-on-sequence": {
+    "query": {
+      "parameters": {
+        "evalue_cutoff": 1.0,
+        "identity_cutoff": 0.3,
+        "sequence_type": "protein",
+        "value": "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNAL"
+      },
+      "service": "sequence",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental",
+        "computational"
+      ],
+      "scoring_strategy": "sequence",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "config-facets": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "facets": [
+        {
+          "aggregation_type": "terms",
+          "attribute": "exptl.method",
+          "name": "by_method"
+        }
+      ],
+      "paginate": {
+        "rows": 0,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ]
+    },
+    "return_type": "entry"
+  },
+  "config-facets-on-fulltext": {
+    "query": {
+      "parameters": {
+        "value": "ribosome"
+      },
+      "service": "full_text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "facets": [
+        {
+          "aggregation_type": "date_histogram",
+          "attribute": "rcsb_accession_info.initial_release_date",
+          "interval": "year",
+          "name": "by_year"
+        }
+      ],
+      "paginate": {
+        "rows": 0,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ]
+    },
+    "return_type": "entry"
+  },
+  "config-group-by-identity": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "group_by": {
+        "aggregation_method": "sequence_identity",
+        "similarity_cutoff": 95
+      },
+      "group_by_return_type": "representatives",
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "config-group-by-ranking": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "group_by": {
+        "aggregation_method": "sequence_identity",
+        "ranking_criteria_type": {
+          "direction": "asc",
+          "sort_by": "rcsb_entry_info.resolution_combined"
+        },
+        "similarity_cutoff": 30
+      },
+      "group_by_return_type": "representatives",
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "config-group-by-uniprot": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "group_by": {
+        "aggregation_method": "matching_uniprot_accession",
+        "ranking_criteria_type": {
+          "direction": "desc",
+          "sort_by": "rcsb_accession_info.initial_release_date"
+        }
+      },
+      "group_by_return_type": "representatives",
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "config-group-by-uniprot-coverage": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+        "operator": "exact_match",
+        "value": "Homo sapiens"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "group_by": {
+        "aggregation_method": "matching_uniprot_accession",
+        "ranking_criteria_type": {
+          "sort_by": "coverage"
+        }
+      },
+      "group_by_return_type": "representatives",
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "config-paging-offset": {
+    "query": {
+      "parameters": {
+        "attribute": "rcsb_entry_info.resolution_combined",
+        "operator": "less",
+        "value": 2.0
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 50,
+        "start": 100
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "config-sort-asc-on-fulltext": {
+    "query": {
+      "parameters": {
+        "value": "kinase"
+      },
+      "service": "full_text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "asc",
+          "sort_by": "rcsb_entry_info.resolution_combined"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "config-sort-desc": {
+    "query": {
+      "parameters": {
+        "attribute": "exptl.method",
+        "operator": "exact_match",
+        "value": "X-RAY DIFFRACTION"
+      },
+      "service": "text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "rcsb_accession_info.initial_release_date"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "fulltext-phrase-and-computed-models": {
+    "query": {
+      "parameters": {
+        "value": "\"DNA polymerase\""
+      },
+      "service": "full_text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental",
+        "computational"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "fulltext-plain": {
+    "query": {
+      "parameters": {
+        "value": "CRISPR Cas9"
+      },
+      "service": "full_text",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 5,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "fulltext-with-attributes": {
+    "query": {
+      "logical_operator": "and",
+      "nodes": [
+        {
+          "parameters": {
+            "value": "hemoglobin"
+          },
+          "service": "full_text",
+          "type": "terminal"
+        },
+        {
+          "parameters": {
+            "attribute": "rcsb_entry_info.resolution_combined",
+            "operator": "less",
+            "value": 2.0
+          },
+          "service": "text",
+          "type": "terminal"
+        }
+      ],
+      "type": "group"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
+  "seqmotif-prosite": {
+    "query": {
+      "parameters": {
+        "pattern_type": "prosite",
+        "sequence_type": "protein",
+        "value": "C-x(2,4)-C-x(3)-[LIVMFYWC]"
+      },
+      "service": "seqmotif",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "seqmotif-regex-dna": {
+    "query": {
+      "parameters": {
+        "pattern_type": "regex",
+        "sequence_type": "dna",
+        "value": "TATA[AT]A"
+      },
+      "service": "seqmotif",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "seqmotif-simple": {
+    "query": {
+      "parameters": {
+        "pattern_type": "simple",
+        "sequence_type": "protein",
+        "value": "CXCXXL"
+      },
+      "service": "seqmotif",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "sequence-protein-defaults": {
+    "query": {
+      "parameters": {
+        "evalue_cutoff": 1.0,
+        "identity_cutoff": 0.3,
+        "sequence_type": "protein",
+        "value": "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNAL"
+      },
+      "service": "sequence",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "sequence",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "sequence-strict-cutoffs": {
+    "query": {
+      "parameters": {
+        "evalue_cutoff": 0.001,
+        "identity_cutoff": 0.9,
+        "sequence_type": "protein",
+        "value": "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNAL"
+      },
+      "service": "sequence",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 25,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "sequence",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "sequence-with-attributes": {
+    "query": {
+      "logical_operator": "and",
+      "nodes": [
+        {
+          "parameters": {
+            "evalue_cutoff": 1.0,
+            "identity_cutoff": 0.3,
+            "sequence_type": "protein",
+            "value": "MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNAL"
+          },
+          "service": "sequence",
+          "type": "terminal"
+        },
+        {
+          "parameters": {
+            "attribute": "rcsb_entry_info.resolution_combined",
+            "operator": "less",
+            "value": 2.0
+          },
+          "service": "text",
+          "type": "terminal"
+        }
+      ],
+      "type": "group"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "sequence",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_entity"
+  },
+  "strucmotif-catalytic-triad": {
+    "query": {
+      "parameters": {
+        "angle_tolerance": 1,
+        "atom_pairing_scheme": "SIDE_CHAIN",
+        "backbone_distance_tolerance": 1,
+        "motif_pruning_strategy": "KRUSKAL",
+        "rmsd_cutoff": 2.0,
+        "side_chain_distance_tolerance": 1,
+        "value": {
+          "entry_id": "2MNR",
+          "residue_ids": [
+            {
+              "label_asym_id": "A",
+              "label_seq_id": 162
+            },
+            {
+              "label_asym_id": "A",
+              "label_seq_id": 193
+            },
+            {
+              "label_asym_id": "A",
+              "label_seq_id": 219
+            }
+          ]
+        }
+      },
+      "service": "strucmotif",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "strucmotif",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "assembly"
+  },
+  "strucmotif-loose-tolerances": {
+    "query": {
+      "parameters": {
+        "angle_tolerance": 2,
+        "atom_pairing_scheme": "ALL",
+        "backbone_distance_tolerance": 3,
+        "motif_pruning_strategy": "NONE",
+        "rmsd_cutoff": 3.0,
+        "side_chain_distance_tolerance": 2,
+        "value": {
+          "entry_id": "2MNR",
+          "residue_ids": [
+            {
+              "label_asym_id": "A",
+              "label_seq_id": 162
+            },
+            {
+              "label_asym_id": "A",
+              "label_seq_id": 193
+            }
+          ]
+        }
+      },
+      "service": "strucmotif",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "strucmotif",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "assembly"
+  },
+  "structure-assembly": {
+    "query": {
+      "parameters": {
+        "value": {
+          "assembly_id": "1",
+          "entry_id": "4HHB"
+        }
+      },
+      "service": "structure",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "structure",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "assembly"
+  },
+  "structure-chain": {
+    "query": {
+      "parameters": {
+        "value": {
+          "asym_id": "A",
+          "entry_id": "4HHB"
+        }
+      },
+      "service": "structure",
+      "type": "terminal"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "scoring_strategy": "structure",
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "polymer_instance"
+  }
+}

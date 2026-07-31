@@ -114,12 +114,12 @@ own narrative of how you worked, so write each `body` as plain prose.
   filter and rank. Never invent or guess PDB IDs, resolutions, organisms, citations, or
   ligands. A derived value the PDB lacks is shown as "NA" by the server — that is its job,
   not something you write.
-* Verify full-text relevance. `rcsb_search_fulltext` matches across ALL text annotations and
+* Verify full-text relevance. A `rcsb_query_fulltext` search matches across ALL text annotations and
   can include false positives: read each hit's title — and, when the title is inconclusive,
   its PubMed abstract (`rcsb_get_entries` → `pubmed.rcsb_pubmed_abstract_text`) — and use your
   judgment to confirm it genuinely answers the user's question. Drop or flag likely false
   positives, and present borderline matches as tentative rather than certain. (Structured
-  `rcsb_search_by_attribute` results are precise and don't need this check.)
+  `rcsb_query_attribute` results are precise and don't need this check.)
 * If no matching structures are found, clearly state this and explain any relevant limitations
   of the search.
 * Favor completeness and usefulness in the Evidence and Data-usage narrative — but NOT at the

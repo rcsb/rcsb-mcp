@@ -28,40 +28,61 @@ def _descriptions():
 # Gotchas that must stay in the SPECIFIC tool's own description: they are not derivable
 # from the schema and are not shared enough to live in the instructions block.
 REQUIRED_IN_TOOL = {
-    "rcsb_search_fulltext": [
+    "rcsb_query_fulltext": [
         "text-relevance, NOT biological importance",   # score is not quality
-        "SORTABLE attributes",                          # sort_by only works on some paths
-        "refused above 10000",                          # all_hits cap
         "AND/OR/NOT are NOT boolean",                   # query-string gotcha
     ],
-    "rcsb_search_by_attribute": [
+    "rcsb_query_attribute": [
         "an empty result is a valid answer",            # don't fall back to keyword search
         "carries NO biological meaning",                # score caveat (attribute form)
         "EXCLUSIVE",                                     # range bound semantics
-        "NESTED boolean groups are not supported",
+        "rcsb_query_composer",                          # where nested boolean groups go now
     ],
-    "rcsb_search_by_sequence": [
-        "4HHB_1",                                        # returned id shape
-        'return_type="mol_definition" are rejected',     # sort_by limitation
+    "rcsb_query_sequence": [
+        "rcsb_query_seqmotif",                           # routing: pattern vs full sequence
     ],
-    "rcsb_search_by_chemical": [
+    "rcsb_query_chemical": [
         "fingerprint-similarity",                        # match_type option
         "sub-struct-graph",                              # substructure option
         "merely contain the",                            # match_subset semantics
     ],
-    "rcsb_search_by_structure": [
+    "rcsb_query_structure": [
         "mutually exclusive",                            # assembly_id vs asym_id
         "Defaults to assembly",
     ],
-    "rcsb_search_by_seqmotif": [
+    "rcsb_query_seqmotif": [
         "prosite",
         "simple wildcards",
     ],
-    "rcsb_search_strucmotif": [
+    "rcsb_query_strucmotif": [
         "mmCIF",                                         # label-vs-author id explanation
         "author numbers give wrong/no hits",
         "catalytic triads",                              # when-to-use routing
         "PSEUDO_ATOMS",                                  # atom_pairing_scheme option
+    ],
+    "rcsb_query_composer": [
+        "`in` operator",                                 # don't OR a list of alternatives
+        "mixes services",                                # the other reason to compose
+    ],
+    # The envelope prose now lives ONCE, here, instead of on every search tool. These are
+    # the cross-field rules that used to be repeated seven times; if this tool's docstring
+    # is trimmed they have no other home.
+    "rcsb_search_request": [
+        "SORTABLE attributes",                           # sort_by only works on some paths
+        'return_type="mol_definition"',                  # sort_by limitation
+        "refused above 10000",                           # all_hits cap
+        "cannot be combined with offset",                # all_hits + paging
+        "requires return_type=\"polymer_entity\"",       # group_by precondition
+        "Nothing is searched until you call it",         # the layered-flow gotcha
+        "IDENTIFIERS only",                              # results need a rcsb_get_* follow-up
+        # return_type is chosen HERE, so every hint about it lives here and nowhere else:
+        # the six values, the per-query default, the id shape, and the conversion trick.
+        "4HHB_1",                                        # what a polymer_entity id looks like
+        "Setting it CONVERTS the result",                # e.g. ligand filter -> entries
+        "default implied by the query",                  # why omitting it is usually right
+        # Picking a cluster representative by relevance score is a distinct mistake from
+        # ranking hits by it; this caveat used to live in the guide's grouping section.
+        "don't pick a cluster representative by it",
     ],
     # rcsb_get_* family: the `fields`-param mechanics were shortened to a pointer, but each
     # tool's cross-reference / drill-down guidance must survive the trim.
@@ -73,7 +94,7 @@ REQUIRED_IN_TOOL = {
         "rcsb_get_chem_comps",                           # where to get the ligand chemistry
     ],
     "rcsb_get_polymer_entities": [
-        "rcsb_search_by_sequence",                       # id source hint
+        "rcsb_query_sequence",                           # id source hint (renamed with the layer)
     ],
     "rcsb_get_uniprot": [
         "rcsb_uniprot_annotation",                       # heavier optional annotation sets ...
@@ -116,34 +137,36 @@ REQUIRED_IN_TOOL = {
     ],
 }
 
-# Shared guidance the docstrings DELEGATE to via "see the rcsb_mcp_guide prompt" — must
-# survive in that prompt, or those pointers name something that does not contain the answer.
-#
-# This used to assert against FastMCP's `instructions` block. That was a false guarantee:
-# clients truncate it at 2048 chars or drop it, so 11 of the 17 phrases below sat past the
-# cut and the test was green against text no client ever received. The prompt is checked
-# instead because it is delivered whole or not at all — a weaker promise, honestly kept.
-# It does NOT prove the model saw this text; only a tool description can promise that.
-REQUIRED_IN_GUIDE_PROMPT = [
-    "rcsb_find_disease_terms",                          # ontology resolver routing ...
-    "rcsb_find_go_terms",
-    "rcsb_find_interpro_domains",
-    "rcsb_find_enzyme_classes",
-    "rcsb_find_organisms",
-    # The rcsb_find_* docstrings now DELEGATE the search-by-resolved-id recipe here, so the
-    # instructions block is the SOLE home of these attribute paths. Trim them and the resolvers
-    # silently lose the only documented way to use their output.
+# Guidance that used to live in the rcsb_mcp_guide prompt and is now asserted against the
+# TOOL DESCRIPTIONS instead. This is a strictly stronger guarantee than the old one: a
+# prompt arrives only if the client asks for it, so pointing a tool description at one and
+# then checking the prompt still contains the answer verified the wrong half of the promise.
+# tools/list always arrives, so if a phrase is here, the model received it.
+REQUIRED_SOMEWHERE_IN_TOOL_DESCRIPTIONS = [
+    # Ontology resolvers: each rcsb_find_* tool now carries its own attribute path, so a
+    # resolved id has a documented way to be used no matter what the client loaded.
     "rcsb_polymer_entity_annotation.annotation_lineage.id",   # GO (term + descendants)
-    'annotation_id exact_match "GO:..."',                     # GO exact-term-only path
+    "annotation_id",                                          # GO exact-term-only path
     "rcsb_polymer_entity_annotation.annotation_id",           # InterPro (NOT lineage)
     "rcsb_polymer_entity.rcsb_ec_lineage.id",                 # EC (hierarchical)
     "rcsb_uniprot_annotation.annotation_lineage.id",          # MONDO (UniProt-derived)
     "rcsb_entity_source_organism.taxonomy_lineage.id",        # NCBI taxonomy
-    'pass the id as a STRING ("9606", not 9606)',             # taxon id-typing gotcha
-    "Return types",                                     # return-types + fetching note
-    "polymer_entity_instance_count_protein",            # assembly / multimer attr paths
-    "heteromeric",
-    "group_by",                                         # grouping note
+    "HIERARCHICAL",                                           # lineage matching semantics
+    'AS A STRING ("9606", not 9606',                          # taxon id-typing gotcha
+    # Envelope guidance, now on rcsb_search_request.
+    "group_by",
+    "return_type",
+    # `fields=` verification, now on the describe tools.
+    "NEVER invent, guess, or infer a field path",
+]
+
+# Content from the retired guide that was deliberately NOT relocated, and is therefore
+# reachable by no agent. Recorded rather than asserted so the gap stays visible: it is a
+# decision, not an oversight. prompts/rcsb_mcp_guide.md keeps the prose to restore from.
+NOT_RELOCATED = [
+    "polymer_entity_instance_count_protein",   # assembly / multimer composition attributes
+    "heteromeric",                             # "
+    "A protein or gene NAME is a structured attribute, not a keyword",
 ]
 
 
@@ -161,13 +184,30 @@ def test_tool_gotchas_survive():
     )
 
 
-def test_shared_guidance_survives_in_the_guide_prompt():
-    guide = _norm(server.rcsb_mcp_guide())
-    assert guide, "the rcsb_mcp_guide prompt is empty"
-    missing = [p for p in REQUIRED_IN_GUIDE_PROMPT if _norm(p) not in guide]
+def test_relocated_guidance_reaches_the_model():
+    """Every rule the retired guide used to hold must now be on a tool description.
+
+    The guide was removed because a prompt is delivered only when the client asks for it.
+    Anything that mattered had to move to tools/list, which always arrives — this checks
+    it actually did, rather than that it survived somewhere no one may read.
+    """
+    everything = " || ".join(_descriptions().values())
+    missing = [p for p in REQUIRED_SOMEWHERE_IN_TOOL_DESCRIPTIONS if _norm(p) not in everything]
     assert not missing, (
-        "tool descriptions point at the rcsb_mcp_guide prompt for these, but they are "
-        "missing from it:\n  " + "\n  ".join(missing)
+        "these rules moved off the retired guide but reached no tool description:\n  "
+        + "\n  ".join(missing)
+    )
+
+
+def test_the_unrelocated_gap_is_still_the_gap_we_think_it_is():
+    """NOT_RELOCATED records what the retirement dropped. If a phrase turns up on a tool,
+    it was relocated after all and belongs in the required list instead — otherwise the
+    record drifts into fiction and stops being a usable to-do."""
+    everything = " || ".join(_descriptions().values())
+    resurfaced = [p for p in NOT_RELOCATED if _norm(p) in everything]
+    assert not resurfaced, (
+        "these are recorded as NOT relocated but now appear on a tool description; move "
+        "them into REQUIRED_SOMEWHERE_IN_TOOL_DESCRIPTIONS:\n  " + "\n  ".join(resurfaced)
     )
 
 
@@ -196,4 +236,36 @@ def test_the_server_ships_no_instructions_block():
     assert not getattr(server.mcp, "instructions", None), (
         "server.py passes instructions= again — the guide is delivered as the "
         "rcsb_mcp_guide prompt, which arrives whole or not at all"
+    )
+
+
+# Tool-name prefixes, so a cross-reference can be told apart from an attribute path
+# (rcsb_entry_info.*, rcsb_polymer_entity.*, ...) which shares the rcsb_ prefix.
+_TOOL_NAME = re.compile(
+    r"\brcsb_(?:search|query|get|find|describe|seqcoord|list|render)_[a-z_]+\b"
+)
+
+
+def test_no_description_cites_a_tool_that_is_not_registered():
+    """A tool description naming a tool that does not exist sends the agent nowhere.
+
+    This is the failure the rcsb_search_* -> rcsb_query_* rename can cause silently: the
+    text still reads sensibly, the named tool just isn't there. Cross-references between
+    tool descriptions are the one channel that always resolves, which is exactly why they
+    have to actually resolve.
+    """
+    descs = _descriptions()
+    registered = set(descs)
+    dangling = []
+    for name, desc in descs.items():
+        for m in _TOOL_NAME.finditer(desc):
+            cited = m.group(0)
+            # `rcsb_get_*` and friends are family globs, not names: skip a match whose
+            # next character is the wildcard.
+            if desc[m.end():m.end() + 1] == "*":
+                continue
+            if cited not in registered:
+                dangling.append(f"{name} cites {cited!r}")
+    assert not dangling, (
+        "tool descriptions name tools that are not registered:\n  " + "\n  ".join(sorted(dangling))
     )

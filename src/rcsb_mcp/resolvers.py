@@ -132,8 +132,13 @@ async def rcsb_find_go_terms(
 
     Use this when a request involves what a protein DOES or where it acts — "proteins that
     <do X> / are involved in / participate in / are responsible for ...", "localized to /
-    located in ...". Resolve the phrase to a GO id here, then search by it — see the resolver
-    guidance in the rcsb_mcp_guide prompt for the attribute path and lineage semantics.
+    located in ...". Resolve the phrase to a GO id here, then filter on it with
+    rcsb_query_attribute: exact_match on
+    rcsb_polymer_entity_annotation.annotation_lineage.id, id AS A STRING ("GO:0004672").
+    The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
+    it; use `in` with several ids to broaden.
+    For ONLY that exact term without descendants use annotation_id instead; add
+    .type="GO" to be explicit.
 
     Args:
         query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
@@ -193,9 +198,10 @@ async def rcsb_find_interpro_domains(
 
     Use this whenever a request references a protein DOMAIN, FAMILY, or fold — "structures
     containing / with a <domain>", "<domain>-containing proteins", "members of the <family>
-    family". Resolve the phrase to an InterPro accession (IPRxxxxxx) here, then search by it —
-    see the resolver guidance in the rcsb_mcp_guide prompt for the attribute path and lineage
-    semantics.
+    family". Resolve the phrase to an InterPro accession (IPRxxxxxx) here, then filter on it
+    with rcsb_query_attribute: exact_match on
+    rcsb_polymer_entity_annotation.annotation_id, accession AS A STRING ("IPR000719"); add
+    .type="InterPro" to be explicit.
 
     Args:
         query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
@@ -248,8 +254,11 @@ async def rcsb_find_enzyme_classes(
 
     Use this when a request references an enzyme, enzyme class, or reaction — including
     "enzymes that catalyze / break down / degrade / synthesize / hydrolyze / phosphorylate ...".
-    Resolve the phrase to an EC number here, then search by it — see the resolver guidance in
-    the rcsb_mcp_guide prompt for the attribute path and lineage semantics.
+    Resolve the phrase to an EC number here, then filter on it with rcsb_query_attribute:
+    exact_match on rcsb_polymer_entity.rcsb_ec_lineage.id, EC number AS A STRING.
+    The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
+    it; use `in` with several ids to broaden.
+    A partial EC like "3.4.21" therefore matches the whole sub-subclass.
 
     Args:
         query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
@@ -301,8 +310,11 @@ async def rcsb_find_disease_terms(
 
     Use for ANY request mentioning a disease/disorder/syndrome/condition — "structures involved
     in / associated with / linked to <disease>", "proteins implicated in <disease>". Resolve the
-    phrase to a MONDO id here, then search by it — see the resolver guidance in the
-    rcsb_mcp_guide prompt for the attribute path and lineage semantics.
+    phrase to a MONDO id here, then filter on it with rcsb_query_attribute: exact_match on
+    rcsb_uniprot_annotation.annotation_lineage.id, id AS A STRING ("MONDO:0005148").
+    The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
+    it; use `in` with several ids to broaden.
+    A MONDO id therefore finds the disease and its subtypes.
 
     Args:
         query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
@@ -356,9 +368,16 @@ async def rcsb_find_organisms(
 
     Use when a request restricts structures by SOURCE ORGANISM or any higher taxon — a common
     name you want as a canonical taxon ("human", "fruit fly"), or a CLADE, which a plain name
-    search cannot expand. Resolve the phrase to a taxon id here, then search by it — see the
-    resolver guidance in the rcsb_mcp_guide prompt for the attribute path, lineage semantics and
-    the id-typing gotcha.
+    search cannot expand. Resolve the phrase to a taxon id here, then filter on it with
+    rcsb_query_attribute: exact_match on rcsb_entity_source_organism.taxonomy_lineage.id,
+    id AS A STRING ("9606", not 9606 — a bare number does not match).
+    The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
+    it; use `in` with several ids to broaden.
+    A clade id ("40674" = Mammalia) therefore finds every organism beneath it; for a known
+    exact species ncbi_scientific_name exact_match also works. An informal, polyphyletic
+    group ("filamentous fungi", "extremophiles", "algae") is NOT a taxon and has no id:
+    resolve the nearest CONTAINING taxon, then classify each hit from the lineage its own
+    record returns.
 
     Args:
         query: Free-text organism / clade / common name, e.g. "human", "mammals", "E. coli".

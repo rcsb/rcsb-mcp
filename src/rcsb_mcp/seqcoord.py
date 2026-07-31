@@ -67,6 +67,10 @@ async def rcsb_describe_seqcoord_object(
     Each returned field has path (dotted, ready for `fields=`), kind ("scalar" leaf or "object"),
     type, list (whether it's a list), and description (when present).
 
+    NEVER invent, guess, or infer a field path — an unverified path fails schema validation
+    and wastes the call. `fields=` accepts dotted paths or GraphQL nested-brace syntax, the
+    two may be mixed, and multiple paths are separated by spaces or commas.
+
     Args:
         object_key: A Sequence Coordinates root field. (alignments and group_alignments share
             the SequenceAlignments type; the annotation roots share SequenceAnnotations.)

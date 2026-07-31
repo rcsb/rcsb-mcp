@@ -53,7 +53,9 @@ REQUIRED = [
     # --- search quality: the agent's actual job ----------------------------
     ("FAMILY / ONTOLOGY ANCHOR", "rare-term recall strategy"),
     ("false positives", "full-text hits must be verified"),
-    ("don't rank structures by it", "search score is not biological importance"),
+    # The score caveat moved OUT of this prompt: it now lives on rcsb_query_fulltext,
+    # rcsb_query_attribute and rcsb_search_request (group_by_ranking), i.e. on the
+    # always-delivered channel, and is guarded by tests/test_tool_descriptions.py.
 ]
 
 # The server owns presentation entirely: it picks the columns, their order, labels and
@@ -106,124 +108,66 @@ def test_prompt_is_reachable_as_an_mcp_prompt():
     assert "## Search Requirements" in server.rcsb_search_assistant()
 
 
-def test_mcp_guide_prompt_is_the_package_data_file():
-    """The guide prompt must BE prompts/rcsb_mcp_guide.md, not a copy of it.
+def test_the_prompt_is_optional_not_load_bearing():
+    """No registered tool may depend on a prompt to be usable.
 
-    This replaces a drift guard between the prompt and FastMCP's `instructions` block,
-    which no longer exists — see the comment at the FastMCP() call. With `instructions`
-    gone the prompt is the ONLY channel carrying this text, so the thing worth pinning is
-    that it still comes from the editable package-data file rather than a literal that
-    someone pasted into code and will forget to update.
+    A prompt is delivered only when the client asks for it, so a tool description that
+    says "see the <name> prompt" is a promise the server cannot keep — the same failure
+    as the `instructions` block that arrangement replaced (injected whole by some
+    clients, truncated at 2048 chars by others, dropped entirely by others again).
+    Guidance a tool NEEDS belongs on that tool's own description, which always arrives
+    via tools/list.
+
+    This is the invariant the removed guide-composition tests were circling: they pinned
+    HOW the pointers resolved instead of whether pointing was safe at all.
+    """
+    import asyncio
+
+    tools = asyncio.run(server.mcp.list_tools())
+    offenders = [
+        (t.name, m.group(0))
+        for t in tools
+        for m in [re.search(r"(?:see|in|load) the [\w.]+ prompt", t.description or "")]
+        if m
+    ]
+    assert not offenders, "tool descriptions point at prompts that may never arrive:\n" + "\n".join(
+        f"  - {name}: {phrase!r}" for name, phrase in offenders
+    )
+
+
+def test_no_text_cites_a_prompt_that_is_not_registered():
+    """A named prompt must actually exist — the dangling-reference check, generalised."""
+    import asyncio
+
+    registered = {p.name for p in asyncio.run(server.mcp.list_prompts())}
+    texts = {f"tool:{t.name}": t.description or "" for t in asyncio.run(server.mcp.list_tools())}
+    texts["prompt:rcsb_search_assistant"] = server.rcsb_search_assistant()
+
+    dangling = [
+        (where, name)
+        for where, text in texts.items()
+        for name in re.findall(r"\b(rcsb_[a-z_]+) prompt\b", text)
+        if name not in registered
+    ]
+    assert not dangling, "references to prompts that are not registered:\n" + "\n".join(
+        f"  - {where} cites {name!r}" for where, name in dangling
+    )
+
+
+def test_the_unserved_guide_is_marked_as_such():
+    """prompts/rcsb_mcp_guide.md is kept to rescue prose from, and is NOT served.
+
+    Nothing loads it, so it cannot go stale in a way that reaches an agent — but a file
+    sitting in prompts/ reads like a prompt. The header is what stops someone wiring it
+    back in without reading why it was unwired.
     """
     from pathlib import Path
 
     from rcsb_mcp import server as _s
 
-    on_disk = (Path(_s.__file__).resolve().parent / "prompts" / "rcsb_mcp_guide.md").read_text(
-        encoding="utf-8"
+    path = Path(_s.__file__).resolve().parent / "prompts" / "rcsb_mcp_guide.md"
+    assert path.exists(), "the file is kept deliberately; delete it only on purpose"
+    assert path.read_text(encoding="utf-8").lstrip().startswith("<!--\nNO LONGER SERVED"), (
+        "the kept guide must open with the NO LONGER SERVED header explaining where its "
+        "content went and what was not relocated"
     )
-    guide = server.rcsb_mcp_guide()
-    assert guide == on_disk, "rcsb_mcp_guide drifted from prompts/rcsb_mcp_guide.md"
-    assert guide.strip(), "the guide prompt is empty"
-
-
-def test_assistant_prompt_carries_the_guide_verbatim():
-    """The persona prompt must also deliver the tool-routing guide.
-
-    Its own rules depend on it: "resolve the concept with the matching rcsb_find_*
-    resolver ... and search that annotation" names no attribute path, because the paths
-    live in the guide. Invoked alone against a client that drops `instructions`, that
-    rule is unactionable and the ~45 "see the server instructions" cross-references in
-    the tool descriptions dangle. Verbatim (not paraphrased) so there is one source.
-    """
-    assistant = _prompt()
-    assert _norm(server.rcsb_mcp_guide()) in assistant, (
-        "rcsb_search_assistant no longer contains the guide verbatim. It must join "
-        "_MCP_GUIDE, not a copy or a summary of it."
-    )
-
-
-def test_guide_is_labelled_with_the_phrase_the_tools_cite():
-    """~45 tool descriptions say "see the server instructions". The guide's own heading is
-    the only thing that phrase resolves against — and, because the guide IS the
-    `instructions` block, the label reaches that channel too. Nothing added at the
-    composition seam could do that, so the heading has to live in the file.
-    """
-    assert server.rcsb_mcp_guide().lstrip().lower().startswith("## server instructions"), (
-        "the guide must OPEN with a heading naming it 'Server Instructions'; without it "
-        "the tool descriptions' cross-references point at unlabelled prose"
-    )
-
-
-def test_assistant_prompt_leads_with_the_guide():
-    """Order is load-bearing, and so is the ABSENCE of a second persona.
-
-    The guide already opens with the identity and capability summary, so the policy half
-    starts at its first section. A persona preamble re-added to the .md file would sit
-    after the guide's opening line and contradict it — two answers to "what am I".
-    """
-    assistant = _prompt()
-    assert assistant.startswith("## Server Instructions"), (
-        "the guide must LEAD the composed prompt"
-    )
-    assert "You are a structural biology assistant" not in assistant, (
-        "the policy half re-grew a persona preamble; the guide's opening line is the "
-        "single statement of identity"
-    )
-    assert assistant.index("## Search Requirements") > assistant.index(
-        "Return types and fetching details"
-    ), "the policy half must FOLLOW the guide, never be interleaved with it"
-
-
-# Every phrase a tool description uses to point INTO the guide, with the header that
-# phrase has to land on. Counts are the references in src/rcsb_mcp/*.py at the time of
-# writing — 28 named pointers across 51 "server instructions" mentions. Renaming a header
-# without updating its citations sends the agent looking for a section that isn't there,
-# and nothing else would notice: the pointer is prose on one side and prose on the other.
-GUIDE_ANCHORS = [
-    ("Return types and fetching details", "Return types and fetching details", 7),
-    ("faceting", "Faceting", 7),
-    ("grouping", "grouping", 7),
-    ("resolver", "resolvers", 6),
-    ("assembly/multimer", "Assembly / multimer", 1),
-]
-
-
-def test_guide_headers_match_the_phrases_the_tools_cite():
-    """Each "see the <X> note in the server instructions" must have an <X> header."""
-    headers = [ln for ln in server.rcsb_mcp_guide().splitlines() if ln.startswith("#")]
-    blob = _norm(" ".join(headers)).lower()
-    missing = [
-        f"{cited!r} (cited ~{n}x) has no header containing {expected!r}"
-        for cited, expected, n in GUIDE_ANCHORS
-        if expected.lower() not in blob
-    ]
-    assert not missing, (
-        "a guide header no longer matches the phrase its citations use:\n  "
-        + "\n  ".join(missing)
-        + "\nHeaders present:\n  "
-        + "\n  ".join(headers)
-    )
-
-
-def test_guide_headers_nest_under_the_top_heading():
-    """One `##` naming the block, `###` for its sections — so the composed prompt's
-    `## Search Requirements` reads as a sibling of the guide, not a subsection of it."""
-    levels = [
-        len(ln) - len(ln.lstrip("#"))
-        for ln in server.rcsb_mcp_guide().splitlines()
-        if ln.startswith("#")
-    ]
-    assert levels and levels[0] == 2, "the guide must open with a single `##` heading"
-    assert all(lv == 3 for lv in levels[1:]), (
-        f"guide sections must all be `###` under that heading; found levels {levels}"
-    )
-
-
-def test_both_prompts_are_registered_and_distinct():
-    """Two prompts with different jobs: the persona, and the tool-routing guidance."""
-    import asyncio
-
-    names = {p.name for p in asyncio.run(server.mcp.list_prompts())}
-    assert {"rcsb_search_assistant", "rcsb_mcp_guide"} <= names, f"registered prompts: {names}"
-    assert server.rcsb_search_assistant() != server.rcsb_mcp_guide()

@@ -85,6 +85,15 @@ async def rcsb_describe_data_object(
     underlying GraphQL types have far more (e.g. CoreEntry has ~100 fields). Every path it
     returns is verified against the live schema, so it is safe to pass to `fields=` directly.
 
+    NEVER invent, guess, or infer a field path from memory, from a naming convention, or
+    from another API. An unverified path fails GraphQL schema validation and wastes the
+    call. Paths shown in a rcsb_get_* tool's own description or examples are already
+    verified — use those directly; for anything else, confirm it here FIRST.
+
+    `fields=` accepts EITHER dotted paths ("rcsb_polymer_entity.pdbx_description") OR
+    GraphQL nested-brace syntax ("rcsb_polymer_entity { pdbx_description }"); the two may
+    be mixed, and multiple paths are separated by spaces or commas.
+
     Two ways to use it, both returning dotted paths ready for `fields=`:
     - BROWSE a level (default, max_depth=1): list one object's own fields, then drill into a
       nested one with `into`. Workflow: rcsb_describe_data_object("entries") -> spot a nested
@@ -159,23 +168,22 @@ async def rcsb_get_entries(entry_ids: list[str], fields: str | None = None) -> d
         entry_ids: 4-character PDB entry codes, e.g. ["4HHB", "1MBN"]; pass a one-element
             list for a single entry. Unknown IDs are returned under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
-            "struct.title"); discover/verify paths with rcsb_describe_data_object("entries") (see the rcsb_mcp_guide prompt).
+            "struct.title"); discover/verify paths with rcsb_describe_data_object("entries").
     """
     return await _query_batch("entries", entry_ids, fields)
 
 
 async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
-    """Fetch polymer entities (protein/nucleic-acid molecules).
+    """Fetch polymer entities (protein/nucleic-acid molecules) metadata and biological annotations.
 
     Default fields: description, length, weight, and source organism.
 
     Args:
         entity_ids: entry + entity number, e.g. ["4HHB_1"] — exactly what
-            rcsb_search_by_sequence returns. Unknown IDs are returned under "not_found".
+            rcsb_query_sequence searches return. Unknown IDs are returned under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_polymer_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("polymer_entities")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("polymer_entities").
     """
     return await _query_batch("polymer_entities", entity_ids, fields)
 
@@ -191,8 +199,7 @@ async def rcsb_get_nonpolymer_entities(entity_ids: list[str], fields: str | None
             under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_nonpolymer_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("nonpolymer_entities")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("nonpolymer_entities").
     """
     return await _query_batch("nonpolymer_entities", entity_ids, fields)
 
@@ -207,8 +214,7 @@ async def rcsb_get_branched_entities(entity_ids: list[str], fields: str | None =
             under "not_found".
         fields: Optional GraphQL selection replacing the curated default
             (e.g. "rcsb_branched_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("branched_entities")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("branched_entities").
     """
     return await _query_batch("branched_entities", entity_ids, fields)
 
@@ -223,8 +229,7 @@ async def rcsb_get_polymer_entity_instances(instance_ids: list[str], fields: str
                 under "not_found".
             fields: Optional GraphQL selection replacing the curated default
                 (e.g. "rcsb_polymer_instance_info.modeled_residue_count"); discover/verify paths
-                with rcsb_describe_data_object("polymer_entity_instances")
-                (see the rcsb_mcp_guide prompt).
+                with rcsb_describe_data_object("polymer_entity_instances").
         """
     return await _query_batch("polymer_entity_instances", instance_ids, fields)
 
@@ -239,8 +244,7 @@ async def rcsb_get_nonpolymer_entity_instances(instance_ids: list[str], fields: 
             "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_nonpolymer_entity_instance_container_identifiers.comp_id"); discover/verify paths
-            with rcsb_describe_data_object("nonpolymer_entity_instances")
-            (see the rcsb_mcp_guide prompt).
+            with rcsb_describe_data_object("nonpolymer_entity_instances").
     """
     return await _query_batch("nonpolymer_entity_instances", instance_ids, fields)
 
@@ -255,8 +259,7 @@ async def rcsb_get_branched_entity_instances(instance_ids: list[str], fields: st
             returned under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_branched_entity_instance_container_identifiers.asym_id"); discover/verify paths
-            with rcsb_describe_data_object("branched_entity_instances")
-            (see the rcsb_mcp_guide prompt).
+            with rcsb_describe_data_object("branched_entity_instances").
     """
     return await _query_batch("branched_entity_instances", instance_ids, fields)
 
@@ -271,8 +274,7 @@ async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None
             "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_assembly_info.polymer_entity_instance_count"); discover/verify paths with
-            rcsb_describe_data_object("assemblies") (see the rcsb_mcp_guide
-            prompt).
+            rcsb_describe_data_object("assemblies").
     """
     return await _query_batch("assemblies", assembly_ids, fields)
 
@@ -287,8 +289,7 @@ async def rcsb_get_interfaces(interface_ids: list[str], fields: str | None = Non
             returned under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_interface_info.interface_area"); discover/verify paths with
-            rcsb_describe_data_object("interfaces") (see the
-            rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("interfaces").
     """
     return await _query_batch("interfaces", interface_ids, fields)
 
@@ -303,8 +304,7 @@ async def rcsb_get_chem_comps(comp_ids: list[str], fields: str | None = None) ->
             returned under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "chem_comp.name"); discover/verify paths with
-            rcsb_describe_data_object("chem_comps") (see the
-            rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("chem_comps").
     """
     return await _query_batch("chem_comps", comp_ids, fields)
 
@@ -319,8 +319,7 @@ async def rcsb_get_entry_groups(group_ids: list[str], fields: str | None = None)
             "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("entry_groups") (see the
-            rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("entry_groups").
     """
     return await _query_batch("entry_groups", group_ids, fields)
 
@@ -335,8 +334,7 @@ async def rcsb_get_polymer_entity_groups(group_ids: list[str], fields: str | Non
             under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("polymer_entity_groups")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("polymer_entity_groups").
     """
     return await _query_batch("polymer_entity_groups", group_ids, fields)
 
@@ -351,8 +349,7 @@ async def rcsb_get_nonpolymer_entity_groups(group_ids: list[str], fields: str | 
             under "not_found".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("nonpolymer_entity_groups")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("nonpolymer_entity_groups").
     """
     return await _query_batch("nonpolymer_entity_groups", group_ids, fields)
 
@@ -375,8 +372,7 @@ async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[s
         uniprot_id: a UniProt accession, e.g. "P69905".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_uniprot_protein.name"); discover/verify paths with
-            rcsb_describe_data_object("uniprot") (see the
-            rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("uniprot").
     """
     return await _query_single("uniprot", uniprot_id, fields)
 
@@ -390,8 +386,7 @@ async def rcsb_get_pubmed(pubmed_id: int, fields: str | None = None) -> dict[str
         pubmed_id: integer PubMed ID, e.g. 6726807.
         fields: Optional GraphQL selection replacing the curated default
             (e.g. rcsb_pubmed_doi); discover/verify paths with
-            rcsb_describe_data_object("pubmed") (see the
-            rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("pubmed").
     """
     return await _query_single("pubmed", pubmed_id, fields)
 
@@ -405,8 +400,7 @@ async def rcsb_get_group_provenance(group_provenance_id: str, fields: str | None
         group_provenance_id: a provenance token, e.g. "provenance_sequence_identity".
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_group_aggregation_method.type"); discover/verify paths with
-            rcsb_describe_data_object("group_provenance")
-            (see the rcsb_mcp_guide prompt).
+            rcsb_describe_data_object("group_provenance").
     """
     return await _query_single("group_provenance", group_provenance_id, fields)
 

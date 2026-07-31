@@ -28,17 +28,26 @@ from rcsb_mcp import server
 FORBIDDEN = ("color", "colour")
 
 
+def _prompt_text(name: str) -> str:
+    """The rendered text of a registered prompt, as a client would receive it."""
+    result = asyncio.run(server.mcp.get_prompt(name, {}))
+    return "".join(
+        m.content.text for m in result.messages if getattr(m.content, "text", None)
+    )
+
+
 def _agent_facing_texts() -> dict[str, str]:
     """Every block of text the model actually reads: prompt, instructions, and — for each
     registered tool — its description plus its full serialized inputSchema (nested field
     descriptions included)."""
     tools = asyncio.run(server.mcp.list_tools())
-    # The guide is scanned via its PROMPT, not via `server.mcp.instructions` — the server no
-    # longer ships that block, and reading it here would silently degrade to "" and stop
-    # covering the guide at all while the test kept passing.
+    # Enumerated from the REGISTERED prompts rather than hard-coded, so a prompt added or
+    # removed later is covered (or stops being covered) automatically instead of silently
+    # dropping out of the scan. prompts/rcsb_mcp_guide.md is deliberately absent: it is no
+    # longer served, so no agent reads it.
     texts = {
-        "prompt:rcsb_search_assistant": server.rcsb_search_assistant() or "",
-        "prompt:rcsb_mcp_guide": server.rcsb_mcp_guide() or "",
+        f"prompt:{p.name}": _prompt_text(p.name)
+        for p in asyncio.run(server.mcp.list_prompts())
     }
     for t in tools:
         texts[f"{t.name}.description"] = t.description or ""

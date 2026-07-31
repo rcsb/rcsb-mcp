@@ -22,7 +22,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import PlainTextResponse
@@ -30,6 +29,10 @@ from starlette.responses import PlainTextResponse
 # GraphQL execution lives in rcsb_mcp.graphql (the shared layer above client, which imports
 # nothing back from here); _fetch_report_rows below resolves _graphql_field by bare name.
 from rcsb_mcp.graphql import _graphql_field  # noqa: E402
+
+# RcsbFastMCP subclasses FastMCP to allow dispatch-only (unlisted) tools; imported up here
+# because the server instance below is built from it. tooling imports nothing back.
+from rcsb_mcp.tooling import RcsbFastMCP  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -63,27 +66,18 @@ def _transport_security() -> TransportSecuritySettings:
 
 
 # --------------------------------------------------------------------------- #
-# Prompt / guidance text, shipped as package data under prompts/ so it stays
-# editable without touching code and ships with the wheel.
+# Prompt text, shipped as package data under prompts/ so it stays editable without
+# touching code and ships with the wheel.
 #
-# rcsb_mcp_guide.md is the SINGLE SOURCE for the tool-routing guidance, and it is
-# reachable ONLY as the `rcsb_mcp_guide` prompt (and, with the search/report policy
-# appended, as `rcsb_search_assistant`).
+# Nothing here is load-bearing any more. Guidance a tool NEEDS lives on that tool's
+# description, which always arrives via tools/list; a prompt arrives only if the client
+# asks for it, and `instructions` may be injected whole, truncated (Claude Code cuts at
+# 2048 chars) or dropped entirely (Claude web) with no way for the server to tell which.
+# Every arrangement that put shared rules in one of those channels and pointed at it from
+# tool descriptions produced the same failure: a promise this server could not keep.
 #
-# It is deliberately NOT passed to FastMCP(instructions=...). That channel cannot be
-# relied on by a server offered as a public service: a client may inject it whole,
-# truncate it (Claude Code cuts at 2048 chars -- 77% of this guide), or drop it
-# entirely (Claude web), and the server cannot tell which happened. Shipping the
-# guide there bought partial delivery for some clients while making the whole
-# arrangement untestable -- the guard asserted against the full string, so it stayed
-# green against text no client ever received.
-#
-# A prompt is an addressable object: it arrives whole or not at all, the client lists
-# it by name, and the ~45 cross-references in tool descriptions now name something a
-# user can actually load. That is a weaker guarantee than a tool description (which
-# always arrives) but an HONEST one, which the truncated block was not. Making the
-# search guidance unconditionally delivered needs the rcsb_search_* merge -- see
-# evals and the memo; until then this is the reachable ceiling.
+# What is left here is genuinely optional — a search/report POLICY a user opts into, not
+# facts a tool call depends on.
 # --------------------------------------------------------------------------- #
 _PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
@@ -92,10 +86,8 @@ def _load_prompt(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-_MCP_GUIDE = _load_prompt("rcsb_mcp_guide.md")
 
-
-mcp = FastMCP(
+mcp = RcsbFastMCP(
     name="rcsb_mcp",
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
     # run stateless (any pod can serve any request — no per-session state to lose)
@@ -148,69 +140,37 @@ compact_tool_schemas(mcp)
 
 
 # --------------------------------------------------------------------------- #
-# Server prompts. Two, with different jobs:
+# Server prompt: rcsb_search_assistant — the opt-in search/report policy.
 #
-# * rcsb_search_assistant — the guide FOLLOWED BY the opt-in search/report policy,
-#   so one invocation leaves the agent fully briefed. The policy alone is NOT
-#   enough: its own rules lean on the guide (resolve a concept with an rcsb_find_*
-#   resolver, then search "that annotation" — the attribute paths live only in the
-#   guide), and so do the ~45 "see the server instructions" cross-references in the
-#   tool descriptions.
-# * rcsb_mcp_guide — the `instructions` text alone, for clients that never inject
-#   it and sessions that want the routing guidance without the report policy.
-#
-# Both read package data under prompts/, the single source of truth, so they ship
-# with the wheel and stay editable without touching code. The assistant prompt
-# COMPOSES the guide at call time from _MCP_GUIDE rather than embedding a copy, so
-# the three channels (instructions, guide prompt, assistant prompt) cannot drift.
+# There was a second prompt, rcsb_mcp_guide, holding the shared tool-routing guidance
+# that tool descriptions pointed at ("see the ... note in the rcsb_mcp_guide prompt").
+# That arrangement is gone: a prompt is delivered only if the CLIENT asks for it, so a
+# description pointing at one is a promise this server cannot keep -- the same failure
+# as the `instructions` channel it replaced. Every rule those pointers targeted now
+# lives on a tool description, which always arrives via tools/list:
+#   faceting, grouping, return types, paging  -> rcsb_search_request
+#   `fields=` verification rules              -> rcsb_describe_data_object / _seqcoord_
+#   resolver attribute paths + lineage rules  -> each rcsb_find_* tool
+# prompts/rcsb_mcp_guide.md is kept on disk, unserved, as a source to rescue prose from.
 # --------------------------------------------------------------------------- #
 
 @mcp.prompt(
     name="rcsb_search_assistant",
     title="RCSB PDB search assistant",
-    description="Everything needed for a PDB search session: the full tool-routing guide "
-    "(search-tool choice, return types, paging, faceting, grouping, ontology resolvers, "
-    "field selection) followed by the search/report policy. Invoke this one prompt rather "
-    "than pairing it with rcsb_mcp_guide.",
+    description="The opt-in policy for a PDB search session: how thoroughly to search, how "
+    "to judge and attribute hits, and when to render a report. Tool routing is NOT here — "
+    "each tool's own description carries what it needs, so this prompt is optional.",
 )
 def rcsb_search_assistant() -> str:
-    """The tool-routing guide, followed by the search requirements and report policy.
+    """The search requirements and report policy, on its own.
 
-    The guide leads. It already opens with the identity and capability summary ("You are
-    an assistant for interrogating Protein Data Bank structures ... DISCOVER / INSPECT /
-    RELATE"), so the policy half carries no persona preamble of its own — one statement of
-    what the assistant is, not two competing ones. Order also puts the routing guidance in
-    the position `instructions` would have occupied, which is what the tool descriptions
-    were written against.
-
-    Joined with nothing but a blank line: the guide's own `## Server Instructions` heading
-    is what the ~45 "see the server instructions" cross-references resolve against, and it
-    labels the text in place, so no connecting prose is needed at the seam. That heading
-    also reaches the `instructions` channel, which no wording added here ever could.
+    It used to be the tool-routing guide followed by this policy, because the policy leaned
+    on the guide for attribute paths and the tool descriptions cross-referenced it. Both
+    dependencies are gone — the paths moved onto the rcsb_find_* and rcsb_query_* tools —
+    so this returns the policy alone rather than a composition, and a client that never
+    loads it still gets a correctly-routed session.
     """
-    policy = _load_prompt("rcsb_search_assistant.md").rstrip("\n")
-    return _MCP_GUIDE.rstrip("\n") + "\n\n" + policy
-
-
-@mcp.prompt(
-    name="rcsb_mcp_guide",
-    title="RCSB PDB tool guide",
-    description="The always-on guidance for these tools: which search tool to use, return "
-    "types, paging, faceting, de-duplication/grouping, the ontology resolvers, and field "
-    "selection. Identical to the server `instructions` — load it when your client does not "
-    "inject those, otherwise the tool descriptions refer to text you never received. "
-    "Already included at the end of rcsb_search_assistant; load only one of the two.",
-)
-def rcsb_mcp_guide() -> str:
-    """The `instructions` block, offered as a loadable prompt.
-
-    Same text, second channel. `instructions` is delivered on `initialize` but the
-    SPEC leaves injecting it to the client, and several do not — which silently
-    breaks the "see the server instructions" cross-references the tool descriptions
-    rely on. A prompt is listable and invocable by any MCP client, so this gives the
-    user a way to supply that text by hand when the client will not.
-    """
-    return _MCP_GUIDE
+    return _load_prompt("rcsb_search_assistant.md")
 
 
 @mcp.custom_route("/healthz", methods=["GET"])

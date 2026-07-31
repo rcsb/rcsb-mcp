@@ -16,14 +16,16 @@ import asyncio
 from rcsb_mcp import server
 
 EXPECTED_TOOLS = {
-    # search (RCSB Search API)
-    "rcsb_search_fulltext",
-    "rcsb_search_by_attribute",
-    "rcsb_search_by_sequence",
-    "rcsb_search_by_seqmotif",
-    "rcsb_search_by_structure",
-    "rcsb_search_strucmotif",
-    "rcsb_search_by_chemical",
+    # search (RCSB Search API) — layered: build a query, optionally compose, then run it
+    "rcsb_query_fulltext",
+    "rcsb_query_attribute",
+    "rcsb_query_sequence",
+    "rcsb_query_seqmotif",
+    "rcsb_query_structure",
+    "rcsb_query_strucmotif",
+    "rcsb_query_chemical",
+    "rcsb_query_composer",
+    "rcsb_search_request",
     # data (RCSB Data API — reads)
     "rcsb_get_entries",
     "rcsb_get_polymer_entities",
@@ -71,5 +73,5 @@ def test_registered_tools_are_exactly_the_expected_set():
 
 def test_inventory_count_is_stable():
     """A blunt second signal: the count itself, so a swap (drop one, add one) still trips."""
-    assert len(EXPECTED_TOOLS) == 36
-    assert len(asyncio.run(server.mcp.list_tools())) == 36
+    assert len(EXPECTED_TOOLS) == 38
+    assert len(asyncio.run(server.mcp.list_tools())) == 38

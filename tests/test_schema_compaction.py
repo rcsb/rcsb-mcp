@@ -215,11 +215,19 @@ def test_required_properties_are_all_defined():
 
 
 def test_field_descriptions_survive():
-    """Descriptions carry the gotchas (id-as-string, lineage semantics) — never compact them."""
-    descs = [
-        v for _, _, s in _schemas() for _, k, v in _walk(s) if k == "description" and str(v).strip()
-    ]
-    assert len(descs) >= 71, f"only {len(descs)} descriptions left — compaction overreached"
+    """Descriptions carry the gotchas (id-as-string, lineage semantics) — never compact them.
+
+    Counts DISTINCT descriptions, not instances. The instance count is a measure of
+    duplication as much as of content: AttributeFilter alone used to appear in all seven
+    search-tool schemas, so its five field descriptions were counted 35 times. Moving
+    `attributes` onto rcsb_query_attribute cut the instance count by 30 while removing no
+    information at all — which the old threshold read as compaction overreaching.
+    """
+    descs = {
+        str(v) for _, _, s in _schemas() for _, k, v in _walk(s)
+        if k == "description" and str(v).strip()
+    }
+    assert len(descs) >= 36, f"only {len(descs)} distinct descriptions left — content was lost"
     # The one the first implementation silently destroyed, pinned by content.
     assert any("Page title describing the search" in str(d) for d in descs), (
         "rcsb_render_report's `title` field lost its description"

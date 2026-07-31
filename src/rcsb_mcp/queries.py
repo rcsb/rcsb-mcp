@@ -305,30 +305,379 @@ def _search_node(
     return {"type": "group", "logical_operator": logical_operator, "nodes": nodes}
 
 
-def _combine_service(
-    service_node: dict[str, Any],
+# --------------------------------------------------------------------------- #
+# Composable query nodes
+#
+# The rcsb_query_* tools each build ONE node here; rcsb_query_composer joins nodes;
+# rcsb_search_request turns a node plus the result-shaping envelope into a request
+# body. The build_*_query functions below are the pre-composer entry points and now
+# delegate to these, so the two paths cannot drift (tests/test_query_baseline.py
+# renders all 37 baseline cases both ways and requires byte-identical bodies).
+# --------------------------------------------------------------------------- #
+
+# Service -> the scoring_strategy its results are ranked by. seqmotif is deliberately
+# ABSENT: it has never set one, so it takes the API default, and reproducing that
+# exactly is what keeps the composer path byte-identical to the old builders.
+SERVICE_SCORING: dict[str, str] = {
+    "sequence": "sequence",
+    "chemical": "chemical",
+    "structure": "structure",
+    "strucmotif": "strucmotif",
+}
+
+# Service -> the return_type that service implies when the caller does not name one.
+# The `structure` service is absent because its default depends on the reference:
+# a chain reference returns instances, an assembly reference returns assemblies (see
+# default_return_type_for). Getting this wrong is silent -- the search succeeds and
+# returns the wrong KIND of identifier -- which is why return_type must stay None
+# until it is resolved here rather than defaulting to "entry" in a signature.
+SERVICE_RETURN_TYPE: dict[str, str] = {
+    "sequence": "polymer_entity",
+    "seqmotif": "polymer_entity",
+    "chemical": "mol_definition",
+    "strucmotif": "assembly",
+}
+
+# Services that refine a query rather than drive it; they never pick the return type
+# or the scoring strategy.
+REFINEMENT_SERVICES = frozenset({"text", "text_chem", "full_text"})
+
+
+def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> dict[str, Any]:
+    """Join nodes with one AND/OR, collapsing what does not need to nest.
+
+    Two normalisations, both semantic no-ops that keep composed trees shallow:
+
+    * a single node needs no group and is returned as-is;
+    * a child group sharing this group's operator is SPLICED IN rather than nested,
+      because AND/OR are associative -- ``and(a, and(b, c))`` is ``and(a, b, c)``.
+
+    The splice is also what makes composing an attribute node onto a service node
+    reproduce the flat sibling shape the pre-composer builders produced, and it keeps an
+    iterative composer from growing a tower of same-operator wrappers that would hit
+    the depth cap for no reason. A child with the OPPOSITE operator is never spliced:
+    that nesting is the whole point of the composer.
+    """
+    if logical_operator not in {"and", "or"}:
+        raise ValueError('logical_operator must be "and" or "or"')
+    if not nodes:
+        raise ValueError("provide at least one query to compose")
+    flat: list[dict[str, Any]] = []
+    for node in nodes:
+        if (
+            isinstance(node, dict)
+            and node.get("type") == "group"
+            and node.get("logical_operator") == logical_operator
+        ):
+            flat.extend(node["nodes"])
+        else:
+            flat.append(node)
+    if len(flat) == 1:
+        return flat[0]
+    return {"type": "group", "logical_operator": logical_operator, "nodes": flat}
+
+
+def _refine(
+    node: dict[str, Any],
     attributes: list[dict[str, Any]] | None,
     logical_operator: str = "and",
 ) -> dict[str, Any]:
-    """AND/OR a primary service terminal (sequence/structure/chemical/motif) with optional
-    structured attribute filters. Returns the bare terminal when there are no attributes,
-    else a group wrapping the service node and one text terminal per filter — the same shape
-    RCSB.org produces when you add attribute refinements to a service search.
+    """AND/OR a service terminal with optional attribute filters — the pre-composer shape.
+
+    Used only by the build_*_query entry points, which take one service payload plus a
+    flat `attributes` list. Because group_node splices a child group sharing the same
+    operator, this produces the same flat sibling list those entry points always did.
+
+    Note the filters go to the "text" service, never "text_chem", which is what those
+    entry points have always done. The composer path has no such limitation: an agent
+    calls rcsb_query_attribute with chemical_attributes=True and composes the result.
     """
     if not attributes:
-        return service_node
-    if logical_operator not in {"and", "or"}:
-        raise ValueError('logical_operator must be "and" or "or"')
-    nodes = [service_node]
-    for f in attributes:
-        nodes.append(
+        return node
+    return group_node([node, attribute_node(attributes, logical_operator)], logical_operator)
+
+
+def fulltext_node(value: str) -> dict[str, Any]:
+    """A free-text terminal matched against all text annotations."""
+    if not value or not value.strip():
+        raise ValueError("provide a non-empty search term")
+    return {"type": "terminal", "service": "full_text", "parameters": {"value": value}}
+
+
+def attribute_node(
+    filters: list[dict[str, Any]],
+    logical_operator: str = "and",
+    chemical: bool = False,
+) -> dict[str, Any]:
+    """One or more structured attribute conditions joined by a single AND/OR."""
+    if not filters:
+        raise ValueError("provide at least one attribute condition")
+    service = "text_chem" if chemical else "text"
+    return group_node(
+        [
             _text_node(
-                f["attribute"], f.get("operator"), f.get("value"),
+                f["attribute"], f.get("operator"), f.get("value"), service=service,
                 negation=f.get("negation", False),
                 case_sensitive=f.get("case_sensitive", False),
             )
+            for f in filters
+        ],
+        logical_operator,
+    )
+
+
+def sequence_node(
+    sequence: str,
+    sequence_type: str = "protein",
+    identity_cutoff: float = 0.3,
+    evalue_cutoff: float = 1.0,
+) -> dict[str, Any]:
+    """MMseqs2 sequence-similarity terminal (BLAST-like)."""
+    if sequence_type not in SEQUENCE_TYPES:
+        raise ValueError(f"sequence_type must be one of {sorted(SEQUENCE_TYPES)}")
+    if not 0.0 <= identity_cutoff <= 1.0:
+        raise ValueError("identity_cutoff must be between 0 and 1")
+    return {
+        "type": "terminal",
+        "service": "sequence",
+        "parameters": {
+            "value": sequence.strip().upper(),
+            "sequence_type": sequence_type,
+            "identity_cutoff": identity_cutoff,
+            "evalue_cutoff": evalue_cutoff,
+        },
+    }
+
+
+def chemical_node(
+    value: str,
+    query_type: str = "descriptor",
+    descriptor_type: str = "SMILES",
+    match_type: str = "graph-relaxed",
+    match_subset: bool = False,
+) -> dict[str, Any]:
+    """Chemical terminal: a SMILES/InChI descriptor match, or a formula match."""
+    if query_type == "descriptor":
+        if descriptor_type not in {"SMILES", "InChI"}:
+            raise ValueError('descriptor_type must be "SMILES" or "InChI"')
+        if match_type not in CHEMICAL_MATCH_TYPES:
+            raise ValueError(f"match_type must be one of {sorted(CHEMICAL_MATCH_TYPES)}")
+        # SMILES/InChI are case-sensitive: strip only, never upper-case.
+        params: dict[str, Any] = {
+            "type": "descriptor",
+            "value": value.strip(),
+            "descriptor_type": descriptor_type,
+            "match_type": match_type,
+        }
+    elif query_type == "formula":
+        # Element symbols are case-sensitive (e.g. Co vs CO): do not upper-case.
+        params = {"type": "formula", "value": value.strip(), "match_subset": bool(match_subset)}
+    else:
+        raise ValueError('query_type must be "descriptor" or "formula"')
+    return {"type": "terminal", "service": "chemical", "parameters": params}
+
+
+def structure_node(
+    entry_id: str,
+    assembly_id: str | None = None,
+    asym_id: str | None = None,
+) -> dict[str, Any]:
+    """3D shape-similarity terminal, referencing an assembly or a single chain."""
+    if assembly_id and asym_id:
+        raise ValueError("provide assembly_id or asym_id, not both")
+    eid = entry_id.strip().upper()
+    if asym_id:
+        value: dict[str, Any] = {"entry_id": eid, "asym_id": str(asym_id)}
+    else:
+        value = {"entry_id": eid, "assembly_id": str(assembly_id or "1")}
+    return {"type": "terminal", "service": "structure", "parameters": {"value": value}}
+
+
+def seqmotif_node(
+    pattern: str,
+    pattern_type: str = "prosite",
+    sequence_type: str = "protein",
+) -> dict[str, Any]:
+    """Short sequence-motif terminal (PROSITE pattern, regex, or simple wildcards)."""
+    if pattern_type not in SEQMOTIF_PATTERN_TYPES:
+        raise ValueError(f"pattern_type must be one of {sorted(SEQMOTIF_PATTERN_TYPES)}")
+    if sequence_type not in SEQUENCE_TYPES:
+        raise ValueError(f"sequence_type must be one of {sorted(SEQUENCE_TYPES)}")
+    return {
+        "type": "terminal",
+        "service": "seqmotif",
+        "parameters": {
+            "value": pattern.strip(),
+            "pattern_type": pattern_type,
+            "sequence_type": sequence_type,
+        },
+    }
+
+
+def strucmotif_node(
+    entry_id: str,
+    residue_ids: list[dict[str, Any]],
+    backbone_distance_tolerance: int = 1,
+    side_chain_distance_tolerance: int = 1,
+    angle_tolerance: int = 1,
+    rmsd_cutoff: float = 2.0,
+    atom_pairing_scheme: str = "SIDE_CHAIN",
+    motif_pruning_strategy: str = "KRUSKAL",
+    exchanges: list[dict[str, Any]] | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Structural-motif terminal: a geometric arrangement of 2-10 residues."""
+    eid = str(entry_id).strip().upper()
+    if not eid:
+        raise ValueError("entry_id must be non-empty")
+    residues = [_strucmotif_residue(r) for r in (residue_ids or [])]
+    if not 2 <= len(residues) <= 10:
+        raise ValueError("provide between 2 and 10 residue_ids")
+    for nm, val in (
+        ("backbone_distance_tolerance", backbone_distance_tolerance),
+        ("side_chain_distance_tolerance", side_chain_distance_tolerance),
+        ("angle_tolerance", angle_tolerance),
+    ):
+        if not 0 <= val <= 3:
+            raise ValueError(f"{nm} must be an integer in 0..3")
+    if rmsd_cutoff < 0:
+        raise ValueError("rmsd_cutoff must be >= 0")
+    if atom_pairing_scheme not in STRUCMOTIF_ATOM_PAIRING:
+        raise ValueError(f"atom_pairing_scheme must be one of {sorted(STRUCMOTIF_ATOM_PAIRING)}")
+    if motif_pruning_strategy not in STRUCMOTIF_PRUNING:
+        raise ValueError(f"motif_pruning_strategy must be one of {sorted(STRUCMOTIF_PRUNING)}")
+    params: dict[str, Any] = {
+        "value": {"entry_id": eid, "residue_ids": residues},
+        "backbone_distance_tolerance": backbone_distance_tolerance,
+        "side_chain_distance_tolerance": side_chain_distance_tolerance,
+        "angle_tolerance": angle_tolerance,
+        "rmsd_cutoff": rmsd_cutoff,
+        "atom_pairing_scheme": atom_pairing_scheme,
+        "motif_pruning_strategy": motif_pruning_strategy,
+    }
+    if exchanges:
+        params["exchanges"] = exchanges
+    if limit is not None:
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
+        params["limit"] = limit
+    return {"type": "terminal", "service": "strucmotif", "parameters": params}
+
+
+def driving_services(node: dict[str, Any]) -> list[str]:
+    """The non-refinement services in a query tree, in encounter order.
+
+    A composed query can mix services (a sequence match AND a shape match), which the
+    flat tools could never express -- so both the scoring strategy and the default
+    return type have to be derived from the tree rather than known by one builder.
+    """
+    found: list[str] = []
+
+    def walk(n: Any) -> None:
+        if not isinstance(n, dict):
+            return
+        if n.get("type") == "group":
+            for child in n.get("nodes") or []:
+                walk(child)
+        else:
+            service = n.get("service")
+            if service and service not in REFINEMENT_SERVICES:
+                found.append(service)
+
+    walk(node)
+    return found
+
+
+def uses_chemical_attributes(node: dict[str, Any]) -> bool:
+    """Whether a query filters on the chemical-component catalog (the text_chem service).
+
+    rcsb_search_request validates `sort_by` and `facets` paths against one catalog, and
+    only the query itself says which: the flat tools took a `chemical` flag, the composer
+    has to read it back off the tree.
+    """
+    return any(t.get("service") == "text_chem" for t in _terminals(node))
+
+
+def scoring_strategy_for(node: dict[str, Any]) -> str | None:
+    """The scoring_strategy a query node implies, or None for the API default.
+
+    Only an unambiguous single-service query gets a service-specific strategy. A query
+    mixing two services has no one right ranking, so it falls back to the API's default
+    ("combined") rather than silently ranking a cross-service result by one half of it.
+    """
+    services = set(driving_services(node))
+    if len(services) != 1:
+        return None
+    return SERVICE_SCORING.get(next(iter(services)))
+
+
+def default_return_type_for(node: dict[str, Any]) -> str:
+    """The return_type to use when the caller did not name one.
+
+    Mirrors what each flat tool defaulted to. A mixed-service query falls back to
+    "entry", the one type every service can return.
+    """
+    services = driving_services(node)
+    if len(set(services)) != 1:
+        return "entry"
+    service = services[0]
+    if service == "structure":
+        # A chain reference returns instances; an assembly reference returns assemblies.
+        for terminal in _terminals(node):
+            if terminal.get("service") == "structure":
+                value = terminal.get("parameters", {}).get("value", {})
+                return "polymer_instance" if "asym_id" in value else "assembly"
+    return SERVICE_RETURN_TYPE.get(service, "entry")
+
+
+def _terminals(node: Any):
+    """Yield every terminal in a query tree."""
+    if not isinstance(node, dict):
+        return
+    if node.get("type") == "group":
+        for child in node.get("nodes") or []:
+            yield from _terminals(child)
+    else:
+        yield node
+
+
+def build_search_request(
+    node: dict[str, Any],
+    return_type: str | None = None,
+    rows: int = 10,
+    start: int = 0,
+    all_hits: bool = False,
+    include_computed: bool = False,
+    sort_by: str | None = None,
+    sort_direction: str = "asc",
+    group_by: str | None = None,
+    group_by_ranking: str | None = None,
+    facets: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Turn a composed query node plus the result-shaping envelope into a request body.
+
+    ``return_type=None`` means "the caller did not choose", and is resolved from the
+    query itself -- never defaulted to "entry" in a signature, because an omitted
+    return_type would then be indistinguishable from an explicit one and four of the
+    seven services would silently return the wrong kind of identifier.
+    """
+    resolved = return_type or default_return_type_for(node)
+    if resolved not in RETURN_TYPES:
+        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
+    if facets:
+        options = _facet_options(facets, include_computed)
+    else:
+        options = _request_options(
+            start, rows, include_computed,
+            all_hits=all_hits,
+            scoring_strategy=scoring_strategy_for(node),
+            group_by=group_by,
+            group_by_ranking=group_by_ranking,
+            return_type=resolved,
+            sort_by=sort_by,
+            sort_direction=sort_direction,
         )
-    return {"type": "group", "logical_operator": logical_operator, "nodes": nodes}
+    return {"query": node, "return_type": resolved, "request_options": options}
 
 
 def _facet_options(
@@ -423,6 +772,7 @@ def build_sequence_query(
     group_by_ranking: str | None = None,
     sort_by: str | None = None,
     sort_direction: str = "asc",
+    include_computed: bool = False,
 ) -> dict[str, Any]:
     """MMseqs2 sequence-similarity search (BLAST-like), optionally AND/OR-refined with
     attribute filters and/or aggregated into facets.
@@ -430,31 +780,13 @@ def build_sequence_query(
     identity_cutoff is a fraction in [0, 1]. sequence_type is one of
     "protein", "dna", "rna".
     """
-    if sequence_type not in SEQUENCE_TYPES:
-        raise ValueError(f"sequence_type must be one of {sorted(SEQUENCE_TYPES)}")
-    if not 0.0 <= identity_cutoff <= 1.0:
-        raise ValueError("identity_cutoff must be between 0 and 1")
-    if return_type not in RETURN_TYPES:
-        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    node = {
-        "type": "terminal",
-        "service": "sequence",
-        "parameters": {
-            "value": sequence.strip().upper(),
-            "sequence_type": sequence_type,
-            "identity_cutoff": identity_cutoff,
-            "evalue_cutoff": evalue_cutoff,
-        },
-    }
-    options = _facet_options(facets) if facets else _request_options(
-        start, rows, False, all_hits=all_hits, scoring_strategy="sequence",
-        group_by=group_by, group_by_ranking=group_by_ranking, return_type=return_type,
-        sort_by=sort_by, sort_direction=sort_direction)
-    return {
-        "query": _combine_service(node, attributes, logical_operator),
-        "return_type": return_type,
-        "request_options": options,
-    }
+    return build_search_request(
+        _refine(sequence_node(sequence, sequence_type, identity_cutoff, evalue_cutoff),
+                attributes, logical_operator),
+        return_type=return_type, rows=rows, start=start, all_hits=all_hits,
+        include_computed=include_computed, sort_by=sort_by, sort_direction=sort_direction,
+        group_by=group_by, group_by_ranking=group_by_ranking, facets=facets,
+    )
 
 
 def build_chemical_query(
@@ -474,6 +806,7 @@ def build_chemical_query(
     group_by_ranking: str | None = None,
     sort_by: str | None = None,
     sort_direction: str = "asc",
+    include_computed: bool = False,
 ) -> dict[str, Any]:
     """Chemical search by SMILES/InChI descriptor or by molecular formula, optionally
     AND/OR-refined with attribute filters and/or aggregated into facets.
@@ -484,33 +817,13 @@ def build_chemical_query(
     query_type="formula": match a molecular formula like "C8H9NO2"; set
     match_subset=True to match formulas containing at least those atoms.
     """
-    if return_type not in RETURN_TYPES:
-        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    if query_type == "descriptor":
-        if descriptor_type not in {"SMILES", "InChI"}:
-            raise ValueError('descriptor_type must be "SMILES" or "InChI"')
-        if match_type not in CHEMICAL_MATCH_TYPES:
-            raise ValueError(f"match_type must be one of {sorted(CHEMICAL_MATCH_TYPES)}")
-        # SMILES/InChI are case-sensitive: strip only, never upper-case.
-        params: dict[str, Any] = {
-            "type": "descriptor",
-            "value": value.strip(),
-            "descriptor_type": descriptor_type,
-            "match_type": match_type,
-        }
-    elif query_type == "formula":
-        # Element symbols are case-sensitive (e.g. Co vs CO): do not upper-case.
-        params = {"type": "formula", "value": value.strip(), "match_subset": bool(match_subset)}
-    else:
-        raise ValueError('query_type must be "descriptor" or "formula"')
-    node = {"type": "terminal", "service": "chemical", "parameters": params}
-    options = (_facet_options(facets) if facets
-               else _request_options(start, rows, False, all_hits=all_hits, group_by=group_by, group_by_ranking=group_by_ranking, return_type=return_type, scoring_strategy="chemical", sort_by=sort_by, sort_direction=sort_direction))
-    return {
-        "query": _combine_service(node, attributes, logical_operator),
-        "return_type": return_type,
-        "request_options": options,
-    }
+    return build_search_request(
+        _refine(chemical_node(value, query_type, descriptor_type, match_type, match_subset),
+                attributes, logical_operator),
+        return_type=return_type, rows=rows, start=start, all_hits=all_hits,
+        include_computed=include_computed, sort_by=sort_by, sort_direction=sort_direction,
+        group_by=group_by, group_by_ranking=group_by_ranking, facets=facets,
+    )
 
 
 def build_structure_query(
@@ -528,6 +841,7 @@ def build_structure_query(
     group_by_ranking: str | None = None,
     sort_by: str | None = None,
     sort_direction: str = "asc",
+    include_computed: bool = False,
 ) -> dict[str, Any]:
     """3D shape-similarity search against an existing PDB structure, optionally AND/OR-refined
     with attribute filters and/or aggregated into facets.
@@ -536,26 +850,12 @@ def build_structure_query(
     or entry + chain (asym_id="A"). Defaults to assembly "1" if neither is given.
     Returns assemblies (assembly reference) or polymer instances (chain reference).
     """
-    if assembly_id and asym_id:
-        raise ValueError("provide assembly_id or asym_id, not both")
-    eid = entry_id.strip().upper()
-    if asym_id:
-        value: dict[str, Any] = {"entry_id": eid, "asym_id": str(asym_id)}
-        default_return = "polymer_instance"
-    else:
-        value = {"entry_id": eid, "assembly_id": str(assembly_id or "1")}
-        default_return = "assembly"
-    rt = return_type or default_return
-    if rt not in RETURN_TYPES:
-        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    node = {"type": "terminal", "service": "structure", "parameters": {"value": value}}
-    options = (_facet_options(facets) if facets
-               else _request_options(start, rows, False, all_hits=all_hits, group_by=group_by, group_by_ranking=group_by_ranking, return_type=return_type, scoring_strategy="structure", sort_by=sort_by, sort_direction=sort_direction))
-    return {
-        "query": _combine_service(node, attributes, logical_operator),
-        "return_type": rt,
-        "request_options": options,
-    }
+    return build_search_request(
+        _refine(structure_node(entry_id, assembly_id, asym_id), attributes, logical_operator),
+        return_type=return_type, rows=rows, start=start, all_hits=all_hits,
+        include_computed=include_computed, sort_by=sort_by, sort_direction=sort_direction,
+        group_by=group_by, group_by_ranking=group_by_ranking, facets=facets,
+    )
 
 
 def build_seqmotif_query(
@@ -573,6 +873,7 @@ def build_seqmotif_query(
     group_by_ranking: str | None = None,
     sort_by: str | None = None,
     sort_direction: str = "asc",
+    include_computed: bool = False,
 ) -> dict[str, Any]:
     """Short sequence-motif search (PROSITE pattern, regex, or simple wildcards), optionally
     AND/OR-refined with attribute filters and/or aggregated into facets.
@@ -580,27 +881,13 @@ def build_seqmotif_query(
     Examples: pattern_type="prosite" value "C-x(2,4)-C-x(3)-[LIVMFYWC]...",
     pattern_type="regex" value "C..H[LIVF]", pattern_type="simple" value "NXS".
     """
-    if pattern_type not in SEQMOTIF_PATTERN_TYPES:
-        raise ValueError(f"pattern_type must be one of {sorted(SEQMOTIF_PATTERN_TYPES)}")
-    if sequence_type not in SEQUENCE_TYPES:
-        raise ValueError(f"sequence_type must be one of {sorted(SEQUENCE_TYPES)}")
-    if return_type not in RETURN_TYPES:
-        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    node = {
-        "type": "terminal",
-        "service": "seqmotif",
-        "parameters": {
-            "value": pattern.strip(),
-            "pattern_type": pattern_type,
-            "sequence_type": sequence_type,
-        },
-    }
-    options = _facet_options(facets) if facets else _request_options(start, rows, False, all_hits=all_hits, group_by=group_by, group_by_ranking=group_by_ranking, return_type=return_type, sort_by=sort_by, sort_direction=sort_direction)
-    return {
-        "query": _combine_service(node, attributes, logical_operator),
-        "return_type": return_type,
-        "request_options": options,
-    }
+    return build_search_request(
+        _refine(seqmotif_node(pattern, pattern_type, sequence_type),
+                attributes, logical_operator),
+        return_type=return_type, rows=rows, start=start, all_hits=all_hits,
+        include_computed=include_computed, sort_by=sort_by, sort_direction=sort_direction,
+        group_by=group_by, group_by_ranking=group_by_ranking, facets=facets,
+    )
 
 
 def _optional_search_node(
@@ -747,6 +1034,7 @@ def build_strucmotif_query(
     group_by_ranking: str | None = None,
     sort_by: str | None = None,
     sort_direction: str = "asc",
+    include_computed: bool = False,
 ) -> dict[str, Any]:
     """3D structural-motif search: find structures containing a geometric
     arrangement of residues like the one in a reference structure. Optionally
@@ -756,50 +1044,19 @@ def build_strucmotif_query(
     is a list of 2-10 dicts {label_asym_id, label_seq_id, struct_oper_id?}.
     Tolerances are integers in 0..3.
     """
-    if return_type not in RETURN_TYPES:
-        raise ValueError(f"return_type must be one of {sorted(RETURN_TYPES)}")
-    eid = str(entry_id).strip().upper()
-    if not eid:
-        raise ValueError("entry_id must be non-empty")
-    residues = [_strucmotif_residue(r) for r in (residue_ids or [])]
-    if not 2 <= len(residues) <= 10:
-        raise ValueError("provide between 2 and 10 residue_ids")
-    for nm, val in (
-        ("backbone_distance_tolerance", backbone_distance_tolerance),
-        ("side_chain_distance_tolerance", side_chain_distance_tolerance),
-        ("angle_tolerance", angle_tolerance),
-    ):
-        if not 0 <= val <= 3:
-            raise ValueError(f"{nm} must be an integer in 0..3")
-    if rmsd_cutoff < 0:
-        raise ValueError("rmsd_cutoff must be >= 0")
-    if atom_pairing_scheme not in STRUCMOTIF_ATOM_PAIRING:
-        raise ValueError(f"atom_pairing_scheme must be one of {sorted(STRUCMOTIF_ATOM_PAIRING)}")
-    if motif_pruning_strategy not in STRUCMOTIF_PRUNING:
-        raise ValueError(f"motif_pruning_strategy must be one of {sorted(STRUCMOTIF_PRUNING)}")
-    params: dict[str, Any] = {
-        "value": {"entry_id": eid, "residue_ids": residues},
-        "backbone_distance_tolerance": backbone_distance_tolerance,
-        "side_chain_distance_tolerance": side_chain_distance_tolerance,
-        "angle_tolerance": angle_tolerance,
-        "rmsd_cutoff": rmsd_cutoff,
-        "atom_pairing_scheme": atom_pairing_scheme,
-        "motif_pruning_strategy": motif_pruning_strategy,
-    }
-    if exchanges:
-        params["exchanges"] = exchanges
-    if limit is not None:
-        if limit < 0:
-            raise ValueError("limit must be >= 0")
-        params["limit"] = limit
-    node = {"type": "terminal", "service": "strucmotif", "parameters": params}
-    options = (_facet_options(facets) if facets
-               else _request_options(start, rows, False, all_hits=all_hits, group_by=group_by, group_by_ranking=group_by_ranking, return_type=return_type, scoring_strategy="strucmotif", sort_by=sort_by, sort_direction=sort_direction))
-    return {
-        "query": _combine_service(node, attributes, logical_operator),
-        "return_type": return_type,
-        "request_options": options,
-    }
+    return build_search_request(
+        _refine(
+            strucmotif_node(
+                entry_id, residue_ids, backbone_distance_tolerance,
+                side_chain_distance_tolerance, angle_tolerance, rmsd_cutoff,
+                atom_pairing_scheme, motif_pruning_strategy, exchanges, limit,
+            ),
+            attributes, logical_operator,
+        ),
+        return_type=return_type, rows=rows, start=start, all_hits=all_hits,
+        include_computed=include_computed, sort_by=sort_by, sort_direction=sort_direction,
+        group_by=group_by, group_by_ranking=group_by_ranking, facets=facets,
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -1,3 +1,28 @@
+<!--
+NO LONGER SERVED. This file is not loaded by server.py and reaches no client; it is kept
+only as a source to rescue prose from.
+
+Its content was relocated to the channel that always arrives (tool descriptions via
+tools/list), because a prompt is delivered only when the client asks for it and a tool
+description pointing at one is a promise the server cannot keep:
+
+  Faceting, Grouping, Return types, paging   -> rcsb_search_request
+  `fields=` verification rules               -> rcsb_describe_data_object,
+                                                rcsb_describe_seqcoord_object
+  Ontology resolvers (paths + lineage rules) -> each rcsb_find_* tool
+
+NOT relocated, and therefore currently unreachable by any agent:
+  - "A protein or gene NAME is a structured attribute, not a keyword", with the three
+    attribute paths for protein name / UniProt name / gene symbol.
+  - The Assembly / multimer composition attributes (rcsb_assembly_info.*).
+Both are routing rules with no natural single owner; rcsb_query_attribute is the likely
+home if they are brought back.
+
+Anything below still naming rcsb_search_* tools is pre-composer: searches are now built
+with rcsb_query_*, optionally joined with rcsb_query_composer, and run by
+rcsb_search_request.
+-->
+
 ## Server Instructions
 
 You are an assistant for interrogating Protein Data Bank structures via the RCSB Search,
