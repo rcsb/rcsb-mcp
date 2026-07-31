@@ -46,36 +46,47 @@ def test_lone_low_coverage_hit_is_flagged():
     assert "NAME" in note, "the only reliable check is reading what came back"
 
 
-def test_the_low_coverage_note_explains_why_rephrasing_will_not_help():
-    """The one thing this note knows that the caller does not.
+def test_the_low_coverage_note_says_why_the_resolver_can_be_wrong():
+    """The diagnosis, which is what makes the two remedies make sense.
 
-    A resolver matches words against term names, so the term you want can share no
-    vocabulary with your query — and then no amount of rewording reaches it. Without that,
-    the natural response to "this looks wrong" is to try another phrasing, which is the one
-    move guaranteed to fail.
+    A resolver matches words against TERM NAMES, not against the concept — so a confident
+    single hit can be a narrower or adjacent piece of what was asked for. Without that, a
+    low count reads purely as "rare target" and the remedies look unmotivated.
     """
     note = _resolver_fallback_note(_hits(1), "InterPro entry")
-    assert "rephrasing will not reach it" in note
+    assert "TERM NAMES" in note and "narrower or adjacent" in note
 
 
-def test_the_low_coverage_note_recommends_no_specific_recovery():
-    """Deliberately diagnostic only — it must not name a remedy it cannot stand behind.
+def test_the_low_coverage_note_recommends_re_resolving():
+    """The one remedy that measurement supports, on the IPR010468 case this note exists for:
 
-    Two were considered and dropped on measurement. Keyword search: rcsb_query_fulltext
-    returns nothing for a concept whose name is not in any entry's text, which is exactly
-    the case that trips this note. Climbing to a broader id: only 12% of InterPro
-    annotations have ANY ancestor, and IPR010468 — the case this note exists for — has
-    none, so the advice would fail on its own motivating example.
+        rcsb_find_interpro_domains("hormone-sensitive lipase")  IPR010468        1 entry
+        rcsb_find_interpro_domains("lipase")                    IPR000734       21
+        rcsb_find_interpro_domains("alpha/beta hydrolase")      IPR000073      994
 
-    A remedy belongs here once the resolver can hand back a broader id and its coverage as
-    DATA rather than as instructions. Until then this states the diagnosis and stops.
+    Re-resolving a broader or differently-worded term reaches a usable anchor. (An earlier
+    claim that rephrasing CANNOT reach the right term was checked and is false — that is
+    what these numbers are for.)
     """
     note = _resolver_fallback_note(_hits(1), "InterPro entry")
-    for remedy in ("rcsb_query_fulltext", "broaden", "lineage"):
-        assert remedy not in note, (
-            f"the low-coverage note recommends {remedy!r}; both remedies were measured and "
-            "fail on the case that triggers it"
-        )
+    assert "broader or differently-worded" in note
+
+
+def test_the_low_coverage_note_does_not_suggest_a_full_text_cross_check():
+    """A comparison whose outcome the trigger condition already determines is not a signal.
+
+    This note fires only when the best match covers FEWER THAN _LOW_COVERAGE_MAX_ENTRIES
+    entries. Any keyword matching more than a handful of structures therefore shows "far
+    more" than the anchor — in the rare-but-correct case just as much as the wrong-anchor
+    case. The note says a low count is expected for a rare target, so pairing it with a
+    test that indicts every low count would contradict its own first sentence.
+
+    Separately: full text does NOT come back empty here (52 entries for
+    "hormone-sensitive lipase"), so the reason to leave it out is that the comparison is
+    uninformative, NOT that the search finds nothing. Those were confused once already.
+    """
+    note = _resolver_fallback_note(_hits(1), "InterPro entry")
+    assert "fulltext" not in note and "cross-check" not in note
 
 
 def test_the_flag_advises_rather_than_forbids():
