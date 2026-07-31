@@ -26,6 +26,7 @@ from rcsb_mcp.graphql import (
     _flatten_object_fields,
     _graphql_field,
     _walk_into,
+    resolve_max_depth,
 )
 from rcsb_mcp.tooling import READ_ONLY
 
@@ -49,7 +50,7 @@ async def rcsb_describe_seqcoord_object(
     object_key: SeqcoordObjectKey,
     into: str | None = None,
     query: str | None = None,
-    max_depth: Annotated[int, Field(ge=1, le=6)] = 1,
+    max_depth: Annotated[int, Field(ge=1, le=6)] | None = None,
 ) -> dict[str, Any]:
     """Discover the fields available on a Sequence Coordinates object, from the live schema.
 
@@ -58,9 +59,11 @@ async def rcsb_describe_seqcoord_object(
     request via their `fields=` argument. Every path it returns is
     verified against the live schema, so it is safe to pass to `fields=` directly.
 
-    Browse a level (default), drill in / scope with `into`, or raise `max_depth` to flatten the
-    tree into dotted paths and filter with `query`. This schema is small and only 3 levels deep
-    (~20-31 fields per object), so max_depth=3 returns an object in full in ONE call:
+    Browse a level, drill in / scope with `into`, or pass `query` to flatten the tree into
+    dotted paths and keep only matching fields. The walk depth follows which one you are
+    doing, so you do not have to set it: browsing lists one level, searching goes three deep.
+    This schema is small and bottoms out at 3 levels (~20-31 fields per object), so a search
+    covers an object in full in ONE call:
     rcsb_describe_seqcoord_object("alignments", max_depth=3) -> pick paths -> call
     rcsb_seqcoord_alignments(..., fields="target_alignments{ ... }").
 
@@ -78,8 +81,8 @@ async def rcsb_describe_seqcoord_object(
             "target_alignments" or "features.feature_positions".
         query: Optional case-insensitive keyword, matched against each field's path (relative to
             the scope) and its description.
-        max_depth: How many levels to walk (1-6, default 1 = this level only). The schema bottoms
-            out at 3.
+        max_depth: How many levels to walk (1-6). Omit it: the default follows what you are
+            doing — 1 when browsing, 3 when searching. The schema bottoms out at 3.
 
     Returns:
         {object_key, graphql_type, path, query, max_depth, field_count,
@@ -87,9 +90,10 @@ async def rcsb_describe_seqcoord_object(
     """
     if object_key not in SEQCOORD_OBJECTS:
         raise ValueError(f"object_key must be one of {sorted(SEQCOORD_OBJECTS)}")
+    depth = resolve_max_depth(max_depth, query)
     type_name, chain, prefix = await _walk_into(object_key, SEQCOORD_GRAPHQL_URL, into)
     fields, truncated = await _flatten_object_fields(
-        type_name, SEQCOORD_GRAPHQL_URL, max_depth, query, DATA_FIELDS_RESULT_CAP,
+        type_name, SEQCOORD_GRAPHQL_URL, depth, query, DATA_FIELDS_RESULT_CAP,
         path_prefix=prefix,
     )
     result: dict[str, Any] = {
@@ -97,7 +101,7 @@ async def rcsb_describe_seqcoord_object(
         "graphql_type": type_name,
         "path": chain,
         "query": query,
-        "max_depth": max_depth,
+        "max_depth": depth,
         "field_count": len(fields),
         "fields": fields,
     }

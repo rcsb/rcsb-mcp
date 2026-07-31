@@ -24,8 +24,10 @@ from rcsb_mcp.client import (
 from rcsb_mcp.graphql import (
     DATA_FIELDS_RESULT_CAP,
     _flatten_object_fields,
+    search_all_objects,
     _graphql_field,
     _walk_into,
+    resolve_max_depth,
 )
 from rcsb_mcp.tooling import READ_ONLY
 
@@ -73,10 +75,10 @@ async def _query_single(
 
 
 async def rcsb_describe_data_object(
-    object_key: DataObjectKey,
+    object_key: DataObjectKey | None = None,
     into: str | None = None,
     query: str | None = None,
-    max_depth: Annotated[int, Field(ge=1, le=6)] = 1,
+    max_depth: Annotated[int, Field(ge=1, le=6)] | None = None,
 ) -> dict[str, Any]:
     """Discover the fields available on a Data API object, from the live GraphQL schema.
 
@@ -94,16 +96,23 @@ async def rcsb_describe_data_object(
     GraphQL nested-brace syntax ("rcsb_polymer_entity { pdbx_description }"); the two may
     be mixed, and multiple paths are separated by spaces or commas.
 
-    Two ways to use it, both returning dotted paths ready for `fields=`:
-    - BROWSE a level (default, max_depth=1): list one object's own fields, then drill into a
-      nested one with `into`. Workflow: rcsb_describe_data_object("entries") -> spot a nested
-      object such as "rcsb_entry_info" -> rcsb_describe_data_object("entries",
+    Three ways to use it, all returning dotted paths ready for `fields=`:
+    - FIND which tool has a field: pass ONLY `query` and omit `object_key`. Searches every
+      object and answers with the tool to call and the path to give it, best matches first.
+      Start here whenever you know what you want but not where it lives —
+      rcsb_describe_data_object(query="release_date") ->
+      rcsb_get_entries + "rcsb_accession_info.initial_release_date".
+    - SEARCH one object: name `object_key` as well, to keep only that object's matches.
+    - BROWSE a level: name `object_key` and omit `query` to list its own fields, then drill
+      into a nested one with `into`. Workflow: rcsb_describe_data_object("entries") -> spot a
+      nested object such as "rcsb_entry_info" -> rcsb_describe_data_object("entries",
       into="rcsb_entry_info") to list its leaves.
-    - SEARCH by keyword: raise `max_depth` (e.g. 3) and pass `query` to flatten the object's
-      whole tree — including nested and cross-object paths like
-      "pubmed.rcsb_pubmed_abstract_text" — and keep only matching fields.
-    Combine them: `into` scopes the walk, so into="rcsb_polymer_entity", max_depth=2 searches
-    just that sub-tree (cheaper and more focused than flattening from the root).
+    The walk depth follows which one you are doing, so you do not have to set it: browsing
+    lists one level, searching goes three deep. `into` scopes a search to a sub-tree (cheaper
+    and more focused than flattening from the root) and needs an `object_key`.
+
+    An empty result from a NAMED object means that object has no matching field — not that
+    the field does not exist. Re-run without `object_key` to search them all.
 
     Each returned field has:
     - path: dotted path from the object root, ready to use in `fields=`
@@ -114,34 +123,81 @@ async def rcsb_describe_data_object(
     - description: schema description, when present
 
     Args:
-        object_key: Which object to describe — the key matching the rcsb_get_* tool.
+        object_key: Which object to describe — the key matching the rcsb_get_* tool. OMIT it
+            to search every object at once and be told which tool owns each match; that needs
+            a `query` and cannot be combined with `into`.
         into: Optional dot-path of nested object field(s) to scope to, e.g.
             "rcsb_entry_info" or "polymer_entities.rcsb_polymer_entity".
         query: Optional case-insensitive keyword, matched against each field's path (relative
             to the scope) and its description, e.g. "resolution", "abstract", "organism".
-        max_depth: How many levels to walk (1-6, default 1 = this level only). Depth 2 reaches
-            e.g. "pubmed.rcsb_pubmed_abstract_text"; depth 3 reaches
-            "polymer_entities.rcsb_polymer_entity.pdbx_description". Deeper is slower on a cold
-            cache; prefer a `query` (and `into`) over a broad deep walk.
+        max_depth: How many levels to walk (1-6). Omit it: the default follows what you are
+            doing — 1 when browsing, 3 when searching, which is what it takes to reach
+            "polymer_entities.rcsb_polymer_entity.pdbx_description". Set it only to go
+            deeper still, or to cap a broad walk. Deeper is slower on a cold cache; prefer
+            narrowing with `query` and `into`.
 
     Returns:
-        {object_key, graphql_type, path, query, max_depth, field_count,
-        fields:[{path, kind, type, list, description}], truncated?, note?}. When the result set
-        is capped, `truncated` is true and `note` explains how to narrow it.
+        For a named object: {object_key, graphql_type, path, query, max_depth, field_count,
+        fields:[{path, kind, type, list, description}], truncated?, note?}.
+        Searching every object instead: {object_key: null, searched, query, max_depth,
+        field_count, fields:[{tool, path, kind, type, list, description}], truncated?, note?}
+        — each field names the rcsb_get_* `tool` that owns it and the `path` to pass that
+        tool's `fields=`. One field is reported once, attributed to the object reaching it
+        most directly, and matches are ordered exact field name, then partial, then
+        description-only. When the result set is capped, `truncated` is true and `note`
+        explains how to narrow it.
     """
+    depth = resolve_max_depth(max_depth, query)
+    if object_key is None:
+        if not (query and query.strip()):
+            raise ValueError(
+                "Searching every object needs a `query` keyword — without one this would "
+                "return the whole Data API schema. Either pass query=\"<keyword>\", or name "
+                f"an object_key to browse: {sorted(queries.DATA_OBJECTS)}."
+            )
+        if into:
+            raise ValueError(
+                "`into` scopes a walk inside ONE object, so it needs an object_key. Drop "
+                "`into` to search every object, or name the object you want to scope."
+            )
+        fields, truncated = await search_all_objects(
+            {k: s.root_field for k, s in queries.DATA_OBJECTS.items()},
+            DATA_GRAPHQL_URL, query, depth,
+        )
+        result: dict[str, Any] = {
+            "object_key": None,
+            "searched": "all objects",
+            "query": query,
+            "max_depth": depth,
+            "field_count": len(fields),
+            # Each row carries the object that owns it, so `tool` is the one to call and
+            # `path` is what goes in its `fields=`.
+            "fields": [
+                {"tool": f"rcsb_get_{f.pop('object_key')}", **f} for f in fields
+            ],
+        }
+        if truncated:
+            result["truncated"] = True
+            result["note"] = (
+                "More fields matched than are shown. The best matches are listed first "
+                "(exact field-name matches, then partial, then description-only). Use a "
+                "more specific keyword, or re-run with object_key set to narrow to one tool."
+            )
+        return result
+
     if object_key not in queries.DATA_OBJECTS:
         raise ValueError(f"object_key must be one of {sorted(queries.DATA_OBJECTS)}")
     root_field = queries.DATA_OBJECTS[object_key].root_field
     type_name, chain, prefix = await _walk_into(root_field, DATA_GRAPHQL_URL, into)
     fields, truncated = await _flatten_object_fields(
-        type_name, DATA_GRAPHQL_URL, max_depth, query, DATA_FIELDS_RESULT_CAP, path_prefix=prefix,
+        type_name, DATA_GRAPHQL_URL, depth, query, DATA_FIELDS_RESULT_CAP, path_prefix=prefix,
     )
     result: dict[str, Any] = {
         "object_key": object_key,
         "graphql_type": type_name,
         "path": chain,
         "query": query,
-        "max_depth": max_depth,
+        "max_depth": depth,
         "field_count": len(fields),
         "fields": fields,
     }

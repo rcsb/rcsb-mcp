@@ -131,6 +131,31 @@ async def _walk_into(root_field: str, url: str, into: str | None) -> tuple[str, 
 # (the tool's max_depth), a cap on returned rows (keeps the catalog out of context bloat), and a
 # hard cap on nodes visited (a backstop so a broad no-keyword walk can't run away). Cycles are
 # broken by refusing to re-enter a type already on the current path (see _flatten_object_fields).
+# How deep to walk when the caller did not say. BROWSING (no `query`) wants one level: the
+# point is to see this object's own fields and pick one to drill into. SEARCHING wants
+# several, because a keyword match at depth 1 can only match a TOP-LEVEL field name — and
+# almost nothing an agent looks for is top-level. Measured on `entries`:
+#
+#   query="resolution"        depth 1 ->  0 fields     depth 3 -> 78
+#   query="pdbx_description"  depth 2 ->  0 fields     depth 3 ->  4
+#   query="taxonomy"          depth 2 ->  2 fields     depth 3 -> 20
+#
+# A depth-1 search therefore reports "no such field" for fields that plainly exist, which
+# is indistinguishable from naming the wrong object — two different mistakes rendering as
+# the same empty result. 3 is the shallowest depth that finds the common cross-object
+# fields; 2 still misses pdbx_description entirely. The extra cold walk (~7s vs ~4s) is
+# paid once per process — _type_fields caches per type, so later searches are instant.
+SEARCH_DEFAULT_DEPTH = 3
+BROWSE_DEFAULT_DEPTH = 1
+
+
+def resolve_max_depth(max_depth: int | None, query: str | None) -> int:
+    """The depth to walk: what the caller asked for, else browse-vs-search's default."""
+    if max_depth is not None:
+        return max_depth
+    return SEARCH_DEFAULT_DEPTH if (query and query.strip()) else BROWSE_DEFAULT_DEPTH
+
+
 DATA_FIELDS_RESULT_CAP = 300
 DATA_FIELDS_NODE_CAP = 20000
 # A cold flatten introspects every distinct type in the subtree (~100+ round-trips at depth 4);
@@ -140,7 +165,7 @@ DATA_FIELDS_FETCH_CONCURRENCY = 8
 
 async def _flatten_object_fields(
     root_type: str, url: str, max_depth: int, query: str | None, max_results: int,
-    path_prefix: str = "",
+    path_prefix: str = "", sem: asyncio.Semaphore | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Breadth-first flatten of a GraphQL type into dotted field paths, filtered by keyword.
 
@@ -163,7 +188,10 @@ async def _flatten_object_fields(
     """
     ql = query.strip().lower() if query and query.strip() else None
     results: list[dict[str, Any]] = []
-    sem = asyncio.Semaphore(DATA_FIELDS_FETCH_CONCURRENCY)
+    # Shared when several walks run at once (see search_all_objects): the bound has to be
+    # on TOTAL requests in flight, not per walk, or 16 concurrent walks each open 8
+    # connections and the API refuses them.
+    sem = sem or asyncio.Semaphore(DATA_FIELDS_FETCH_CONCURRENCY)
 
     async def _warm(type_name: str) -> None:
         async with sem:
@@ -188,6 +216,10 @@ async def _flatten_object_fields(
                         "path": f"{path_prefix}.{path}" if path_prefix else path,
                         "kind": d["kind"], "type": d["type"],
                         "list": d["list"], "description": d["description"],
+                        # The type this field is DECLARED on. Not part of the response —
+                        # search_all_objects pops it — but it is the only exact way to tell
+                        # whether two paths reach the same field. See _field_identity.
+                        "_parent_type": type_name,
                     })
                     if len(results) >= max_results:
                         return results, True
@@ -196,6 +228,108 @@ async def _flatten_object_fields(
                     nxt.append((d["type"], path, ancestors | {d["type"]}, depth + 1))
         level = nxt
     return results, False
+
+
+# --------------------------------------------------------------------------- #
+# Cross-object field search
+#
+# Describing ONE object answers "what is on entries?" — but an agent's actual question is
+# "which tool gives me the release date?", and answering that already required knowing the
+# object, which is the same as knowing the tool. So the discovery step presupposed its own
+# answer, and a wrong guess returned an empty result indistinguishable from "no such field".
+#
+# Searching every object instead is affordable — _type_fields caches per type for the
+# process lifetime and the 16 objects share most of their ~300 types, so the first search
+# warms it and the rest are instant — but the raw output is not usable: one keyword matched
+# 27 paths across 9 objects. Two reasons, handled separately below:
+#   * the same field is reachable by many routes (see _field_identity)
+#   * `query` also matches DESCRIPTIONS, and these are CIF dictionary paragraphs, so
+#     searching "abstract" surfaces chem_comp.formula (see _match_rank)
+# --------------------------------------------------------------------------- #
+
+# Enough to show the alternatives without flooding the context; the note says when it bit.
+SEARCH_ALL_RESULT_CAP = 40
+# Per-object cap before ranking, so one sprawling object cannot crowd out the others.
+_PER_OBJECT_CAP = 200
+
+
+def _field_identity(row: dict[str, Any]) -> tuple[str | None, str]:
+    """What makes two hits THE SAME field, independent of the route taken to reach it.
+
+    The GraphQL type a field is declared on, plus its name. `CorePolymerEntity.formula_weight`
+    is one field whether it was reached as `rcsb_polymer_entity.formula_weight` from
+    `polymer_entities` or as `polymer_entities.rcsb_polymer_entity.formula_weight` from
+    `entries`, and reporting both is noise.
+
+    This is deliberately NOT derived from the path. Path-shape heuristics look reasonable and
+    are not: "same last two segments" splits a linked object's top-level fields in two, and
+    stripping link segments to compensate merges fields that merely share a name. The
+    declaring type is exact and needs no rules.
+    """
+    return (row["_parent_type"], row["path"].rsplit(".", 1)[-1])
+
+
+def _match_rank(path: str, keyword: str) -> int:
+    """Lower is better. Why the field matched matters more than where it lives.
+
+    A keyword equal to the field's own name is almost certainly what was meant; a keyword
+    found only in the description usually is not, because these descriptions are long CIF
+    dictionary prose in which common words appear incidentally. Ranking rather than
+    dropping description matches keeps the "I only know what it's called in words" case
+    working, while stopping it from burying the exact hit.
+    """
+    name = path.rsplit(".", 1)[-1].lower()
+    if name == keyword:
+        return 0
+    if keyword in name:
+        return 1
+    if keyword in path.lower():
+        return 2
+    return 3  # description-only
+
+
+async def search_all_objects(
+    objects: dict[str, str], url: str, query: str, max_depth: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Search every object for `query`, attributing each field to the object that owns it.
+
+    `objects` maps object_key -> root field. Returns (fields, truncated); each field carries
+    the object_key it is reached most directly from, so the caller can name the tool to use.
+    """
+    keyword = query.strip().lower()
+    roots = await _root_field_types(url)
+
+    sem = asyncio.Semaphore(DATA_FIELDS_FETCH_CONCURRENCY)
+
+    async def one(key: str, root_field: str) -> list[dict[str, Any]]:
+        type_name = roots.get(root_field)
+        if not type_name:
+            return []
+        fields, _ = await _flatten_object_fields(
+            type_name, url, max_depth, query, _PER_OBJECT_CAP, sem=sem)
+        return [dict(f, object_key=key) for f in fields if f["kind"] == "scalar"]
+
+    # Concurrently, so the shared types are fetched once and the walks overlap rather than
+    # each paying its own cold latency in series.
+    per_object = await asyncio.gather(*(one(k, r) for k, r in objects.items()))
+
+    best: dict[tuple[str | None, str], dict[str, Any]] = {}
+    for row in (r for rows in per_object for r in rows):
+        ident = _field_identity(row)
+        prev = best.get(ident)
+        # Fewest segments wins: that is the object that owns the field rather than one that
+        # merely links to it, and its path is what `fields=` on that tool wants.
+        if prev is None or row["path"].count(".") < prev["path"].count("."):
+            best[ident] = row
+
+    ranked = sorted(
+        best.values(),
+        key=lambda r: (_match_rank(r["path"], keyword), r["path"].count("."),
+                       r["object_key"], r["path"]),
+    )
+    trimmed = [{k: v for k, v in r.items() if k != "_parent_type"}
+               for r in ranked[:SEARCH_ALL_RESULT_CAP]]
+    return trimmed, len(ranked) > SEARCH_ALL_RESULT_CAP
 
 
 # --- Field-error enrichment: turn a raw GraphQL "FieldUndefined" into a self-correcting hint --- #
