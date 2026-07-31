@@ -43,7 +43,39 @@ def test_lone_low_coverage_hit_is_flagged():
     note = _resolver_fallback_note(_hits(1), "InterPro entry")
     assert note, "a single hit covering one entry must not pass silently"
     assert "only 1 PDB entry" in note, note
-    assert "rcsb_query_fulltext" in note
+    assert "NAME" in note, "the only reliable check is reading what came back"
+
+
+def test_the_low_coverage_note_explains_why_rephrasing_will_not_help():
+    """The one thing this note knows that the caller does not.
+
+    A resolver matches words against term names, so the term you want can share no
+    vocabulary with your query — and then no amount of rewording reaches it. Without that,
+    the natural response to "this looks wrong" is to try another phrasing, which is the one
+    move guaranteed to fail.
+    """
+    note = _resolver_fallback_note(_hits(1), "InterPro entry")
+    assert "rephrasing will not reach it" in note
+
+
+def test_the_low_coverage_note_recommends_no_specific_recovery():
+    """Deliberately diagnostic only — it must not name a remedy it cannot stand behind.
+
+    Two were considered and dropped on measurement. Keyword search: rcsb_query_fulltext
+    returns nothing for a concept whose name is not in any entry's text, which is exactly
+    the case that trips this note. Climbing to a broader id: only 12% of InterPro
+    annotations have ANY ancestor, and IPR010468 — the case this note exists for — has
+    none, so the advice would fail on its own motivating example.
+
+    A remedy belongs here once the resolver can hand back a broader id and its coverage as
+    DATA rather than as instructions. Until then this states the diagnosis and stops.
+    """
+    note = _resolver_fallback_note(_hits(1), "InterPro entry")
+    for remedy in ("rcsb_query_fulltext", "broaden", "lineage"):
+        assert remedy not in note, (
+            f"the low-coverage note recommends {remedy!r}; both remedies were measured and "
+            "fail on the case that triggers it"
+        )
 
 
 def test_the_flag_advises_rather_than_forbids():

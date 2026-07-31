@@ -112,8 +112,11 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
         return (f"Best match covers only {best} PDB entr{'y' if best == 1 else 'ies'}. That is "
-                "expected for a rare target. Read the name that came back before anchoring a search on this id; "
-                "if it may be the wrong concept, broaden the query or cross-check with rcsb_query_fulltext.")
+                "expected for a rare target. Read the NAME that came back before anchoring a "
+                "search on this id: a resolver matches your words against term names, so it can "
+                "land on a narrower, broader, or adjacent piece of your concept — and the term "
+                "you want may share no vocabulary with your query, so rephrasing will not reach "
+                "it.")
     return None
 
 
