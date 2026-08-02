@@ -188,3 +188,83 @@ def test_no_note_fragment_joins_without_a_separator():
             f"{lv[-30:]!r} and {rv[:30]!r}"
         )
     assert seams >= 5, f"only {seams} literal seams found — the tokenizer assumption is stale"
+
+
+# --- rank/coverage inversion ----------------------------------------------------
+def _ranked(*counts, id_key="id"):
+    return [{id_key: f"ID{i}", "pdb_entry_count": c} for i, c in enumerate(counts)]
+
+
+def test_an_inversion_names_both_ids_and_both_counts():
+    """The case that looked healthy and was not.
+
+    Rank is NAME similarity; coverage is unrelated. So the top hit is regularly not the
+    best anchor, and unlike the zero-count and low-coverage notes nothing about the result
+    looks wrong while it happens:
+
+        rcsb_find_organisms("yeast")   rank 1: 32655, 0 entries — a PLASMID
+                                       best:   559292, 2,933   — S. cerevisiae
+
+    Naming both is the whole value. "The larger one may be broader" leaves the caller to
+    notice their top hit is a plasmid; the ids hand them the comparison.
+    """
+    note = _resolver_fallback_note(_ranked(0, 2933), "NCBI taxon")
+    assert note and "ID0" in note and "ID1" in note and "2933" in note
+
+
+def test_the_note_does_not_claim_the_larger_hit_is_broader():
+    """The trigger CANNOT tell a broader relative from a name collision, and both occur:
+
+        interpro("hormone-sensitive lipase")  IPR010468 (1) < IPR033140 (49)  RELATED
+        enzyme_classes(same words)            3.1.1.79  (2) < 2.7.11.31 (47)  UNRELATED
+
+    Nothing in either response distinguishes them, so advising a move would be wrong about
+    half the time. The note states the observation and hands the judgement back.
+    """
+    note = _resolver_fallback_note(_ranked(2, 47), "EC number")
+    assert "may be" in note and "name collision" in note
+    assert "use " not in note.lower(), "it must not instruct a switch it cannot justify"
+
+
+@pytest.mark.parametrize(
+    "counts, why",
+    [
+        ((2121, 2056, 30), "the top hit IS the best covered — nothing to report"),
+        ((2056, 2121), "1.03x: SH2 domain. The top hit is already a fine anchor"),
+        ((771, 778), "1.01x: ferredoxin"),
+        ((994, 3295), "3.3x: alpha beta hydrolase — 994 is a perfectly usable anchor"),
+        ((1, 12), "12x but the alternative is below the floor: a rare target, not an inversion"),
+        ((500,), "a single well-covered hit: nothing to invert against"),
+    ],
+)
+def test_the_thresholds_keep_it_quiet(counts, why):
+    """BOTH thresholds are load-bearing — measured over 30 queries, not assumed.
+
+    Ratio + floor fires on 30%. Dropping the ratio takes it to 47% by adding exactly the
+    first four cases here. Dropping the floor would fire on rare targets where every count
+    is small and a large ratio is an artefact of small numbers.
+    """
+    assert _resolver_fallback_note(_ranked(*counts), "GO term") is None, why
+
+
+def test_a_zero_top_hit_does_not_divide_by_zero():
+    """counts[0] == 0 is among the most worth reporting, so the test is a multiplication."""
+    assert _resolver_fallback_note(_ranked(0, 40), "GO term") is not None
+
+
+@pytest.mark.parametrize("id_key", ["id", "ec", "tax_id"])
+def test_the_id_field_differs_per_resolver(id_key):
+    """EC returns `ec`, organisms `tax_id`, the other three `id` — and naming the
+    alternative is most of the note's value, so the accessor is not optional."""
+    note = _resolver_fallback_note(_ranked(1, 99, id_key=id_key), "term", id_key)
+    assert "ID1" in note and "None" not in note
+
+
+def test_the_three_notes_cannot_fire_together():
+    """No ordering rule is needed: the triggers are disjoint by construction.
+
+    zero-counts needs max == 0; low-coverage needs max < 10; inversion needs max >= 25.
+    """
+    assert "none are annotated" in _resolver_fallback_note(_ranked(0, 0), "GO term")
+    assert "covers only" in _resolver_fallback_note(_ranked(1), "GO term")
+    assert "Ranked first" in _resolver_fallback_note(_ranked(1, 99), "GO term")

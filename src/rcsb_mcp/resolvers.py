@@ -169,8 +169,29 @@ async def _annotation_pdb_count(attribute: str, value: str) -> int | None:
 _LOW_COVERAGE_MAX_HITS = 2
 _LOW_COVERAGE_MAX_ENTRIES = 10
 
+# Rank in every resolver is NAME similarity, which has no relation to how much of the
+# archive a term covers — so the best-ranked hit is regularly not the best anchor, and
+# unlike the two cases above the result LOOKS healthy while it happens:
+#
+#   rcsb_find_organisms("yeast")            rank 1: tax 32655, 0 entries (a plasmid)
+#                                           best:   tax 559292, 2,933  (S. cerevisiae)
+#   rcsb_find_interpro_domains("kinase domain")
+#                                           rank 1: IPR052772, 5
+#                                           best:   IPR011009, 11,453  (the superfamily)
+#
+# BOTH thresholds are load-bearing; this was measured, not assumed. Over 30 queries across
+# the five resolvers the pair fires on 30%. Dropping the ratio takes that to 47% by adding
+# exactly the cases nobody needs told — SH2 domain (2,056 vs 2,121), ferredoxin (771 vs
+# 778), alpha beta hydrolase (994 vs 3,295) — where the top hit is already a fine anchor.
+# Dropping the floor would fire on rare targets where every count is tiny and the ratio is
+# an artefact of small numbers.
+_INVERSION_RATIO = 10
+_INVERSION_MIN_ALTERNATIVE = 25
 
-def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | None:
+
+def _resolver_fallback_note(
+    items: list[dict[str, Any]], label: str, id_key: str = "id"
+) -> str | None:
     """Advise a keyword fallback when a resolver finds nothing usable — or when what it DID
     find resolved cleanly but may not be the concept that was asked for."""
     if not items:
@@ -194,6 +215,30 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
                 "came back; if it is not what you meant, resolve a broader or "
                 "differently-worded term for the same concept. Separately, a keyword search "
                 "(rcsb_query_fulltext) may still surface relevant structures.")
+    # Rank/coverage inversion. Deliberately states the two numbers and stops: the trigger
+    # CANNOT tell a broader relative from a name collision, and both really occur —
+    # rcsb_find_interpro_domains("hormone-sensitive lipase") ranks IPR010468 (1) above
+    # IPR033140 (49), a related GDXG active site; rcsb_find_enzyme_classes on the same
+    # words ranks EC 3.1.1.79 (2) above EC 2.7.11.31 (47), an unrelated kinase. Nothing in
+    # either response distinguishes them, so the note hands the judgement back rather than
+    # advising a move it cannot justify.
+    best_i = max(range(len(counts)), key=lambda i: counts[i])
+    if (
+        best_i != 0
+        and counts[best_i] >= _INVERSION_MIN_ALTERNATIVE
+        # Multiplication, not division: counts[0] is 0 whenever the top hit is unannotated,
+        # which is one of the cases most worth reporting.
+        and counts[best_i] >= _INVERSION_RATIO * counts[0]
+    ):
+        top_n, alt_n = counts[0], counts[best_i]
+        return (
+            f"Ranked first is {items[0].get(id_key)} ({top_n} PDB "
+            f"entr{'y' if top_n == 1 else 'ies'}), but {items[best_i].get(id_key)} in this "
+            f"same set covers {alt_n}. Rank here is how closely each NAME matched your "
+            f"words, not how much of the archive the {label} covers. The larger one may be "
+            f"a broader form of what you meant, or an unrelated name collision — read both "
+            f"names before anchoring on either."
+        )
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
         return (f"Best match covers only {best} PDB entr{'y' if best == 1 else 'ies'}. That is "
@@ -224,6 +269,9 @@ async def rcsb_find_go_terms(
     The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
     it; use `in` with several ids to broaden.
     For ONLY that exact term without descendants use annotation_id instead.
+
+    Results are based on how each entry's text matched your query. Rank is unrelated
+    to how much of the archive each term covers.
 
     Args:
         query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
@@ -290,6 +338,9 @@ async def rcsb_find_interpro_domains(
 
     Ids come from InterPro ("IPR000719") or Pfam ("PF07859") — `source_database` on each
     entry says which. Both filter on the same attribute; nothing else needs to change.
+
+    Results are based on how each entry's text matched your query. Rank is unrelated
+    to how much of the archive each term covers.
 
     Args:
         query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
@@ -370,6 +421,9 @@ async def rcsb_find_enzyme_classes(
     it; use `in` with several ids to broaden.
     A partial EC like "3.4.21" therefore matches the whole sub-subclass.
 
+    Results are based on how each entry's text matched your query. Rank is unrelated
+    to how much of the archive each term covers.
+
     Args:
         query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
         limit: Max EC numbers to return.
@@ -403,7 +457,7 @@ async def rcsb_find_enzyme_classes(
         for enzyme, count in zip(enzymes, counts):
             enzyme["pdb_entry_count"] = count
     result = {"query": query, "count": len(enzymes), "enzymes": enzymes}
-    note = _resolver_fallback_note(enzymes, "EC number")
+    note = _resolver_fallback_note(enzymes, "EC number", "ec")
     if note:
         result["note"] = note
     return result
@@ -425,6 +479,9 @@ async def rcsb_find_disease_terms(
     The *_lineage.id paths are HIERARCHICAL — they match the term AND everything beneath
     it; use `in` with several ids to broaden.
     A MONDO id therefore finds the disease and its subtypes.
+
+    Results are based on how each entry's text matched your query. Rank is unrelated
+    to how much of the archive each term covers.
 
     Args:
         query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
@@ -489,6 +546,9 @@ async def rcsb_find_organisms(
     resolve the nearest CONTAINING taxon, then classify each hit from the lineage its own
     record returns.
 
+    Results are based on how each entry's text matched your query. Rank is unrelated
+    to how much of the archive each term covers.
+
     Args:
         query: Free-text organism / clade / common name, e.g. "human", "mammals", "E. coli".
         limit: Max taxa to return.
@@ -531,7 +591,7 @@ async def rcsb_find_organisms(
         for taxon, count in zip(taxa, counts):
             taxon["pdb_entry_count"] = count
     result = {"query": query, "count": len(taxa), "taxa": taxa}
-    note = _resolver_fallback_note(taxa, "NCBI taxon")
+    note = _resolver_fallback_note(taxa, "NCBI taxon", "tax_id")
     if note:
         result["note"] = note
     return result
