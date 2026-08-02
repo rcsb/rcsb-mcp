@@ -5,10 +5,24 @@
     Each probe is a natural-language prompt plus an assertion over the model's FIRST tool
     call. This suite grades the ROUTING DECISION, not the answer — it is the complement of
     rcsb_pdb_eval.xml, which grades final answers and (by design, since its answers must be
-    stable) never exercises the rcsb_search_* tools at all.
+    stable) never exercises the search tools at all.
 
     Run it BEFORE vs AFTER a change (e.g. a docstring trim) and compare pass RATES; a case
     that is already <100% on both sides is a pre-existing limitation, not a regression.
+
+    TWO KINDS OF PROBE.
+    The builder/executor split means a search takes at least two calls: an rcsb_query_*
+    builder returns a query document, then rcsb_search_request runs it. Only the FIRST call
+    is graded, so:
+
+      routing probes   unseeded. The first call is a builder, and the probe asserts which
+                       one — the direct successor of the old rcsb_search_* probes.
+
+      executor probes  seeded with <turn> elements that show the builder step already done,
+                       so the model's first call is rcsb_search_request. This is the ONLY
+                       way to grade return_type / group_by / sort_by / all_hits, which
+                       exist on no other tool. The seeded query documents below are real
+                       output from the builders, digests included.
 
     <expect> vocabulary (ALL children must hold — they are AND-ed):
       <expect tool="X">              first call must be tool X
@@ -31,36 +45,110 @@
     probe attributes:
       id     — stable identifier (used by the "only" filter and in reports)
       probes — what behaviour this asserts, shown in the report
-      seed   — optional conversation seeding; "zero-result" primes the model with a prior
-               attribute search that returned 0 hits, then asks a follow-up
+    child elements:
+      <prompt>          the user turn
+      <turn role="..."> optional extra turns appended after the prompt, in order
+      <expect>          the assertion
   -->
 
-  <probe id="kw-routing" probes="keyword routing (no clear attribute)">
-    <prompt>Find PDB structures related to CRISPR immunity.</prompt>
-    <expect tool="rcsb_search_fulltext"/>
+  <!-- ===================== routing probes (builder is the first call) ============= -->
+
+  <!--
+    The prompt must be keyword-shaped with NO ontology home. An earlier version asked for
+    "CRISPR immunity" and scored 10-20%, because the model routed to rcsb_find_go_terms
+    8-9 times in 10 — which rcsb_query_fulltext's OWN docstring instructs ("BEFORE
+    keyword-searching a biological CONCEPT ... resolve it to an ontology id"). CRISPR
+    immunity is a biological process, so the model was right and the probe was wrong: it
+    asserted against the server's documented policy and would have scored a docstring that
+    obeys that policy as a regression.
+  -->
+  <probe id="kw-routing" probes="keyword routing (a phrase with no ontology home)">
+    <prompt>Find PDB entries whose title or description mentions the phrase "molecular scissors".</prompt>
+    <expect tool="rcsb_query_fulltext"/>
   </probe>
 
   <probe id="attr-vs-kw" probes="attribute vs keyword">
     <prompt>List X-ray structures with resolution better than 1.5 Angstrom.</prompt>
-    <expect tool="rcsb_search_by_attribute">
+    <expect tool="rcsb_query_attribute">
       <attribute path="resolution_combined" operator="less"/>
     </expect>
   </probe>
 
-  <probe id="ontology-disease" probes="ontology routing (list moved to instructions) -> resolver first">
+  <probe id="ontology-disease" probes="ontology routing -> resolver before any search tool">
     <prompt>Find structures associated with cystic fibrosis.</prompt>
     <expect tool="rcsb_find_disease_terms"/>
   </probe>
 
+  <probe id="sequence" probes="sequence service selection">
+    <prompt>Find proteins with a sequence similar to MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF.</prompt>
+    <expect tool="rcsb_query_sequence">
+      <arg name="sequence" set="true"/>
+    </expect>
+  </probe>
+
+  <probe id="chem-smiles" probes="chemical descriptor">
+    <prompt>Find chemical components matching the SMILES c1ccccc1O.</prompt>
+    <expect tool="rcsb_query_chemical">
+      <arg name="query_type" equals="descriptor" default="descriptor"/>
+    </expect>
+  </probe>
+
+  <probe id="chem-formula" probes="chemical formula">
+    <prompt>Which chemical components have the molecular formula C8H9NO2?</prompt>
+    <expect tool="rcsb_query_chemical">
+      <arg name="query_type" equals="formula"/>
+    </expect>
+  </probe>
+
+  <probe id="shape" probes="whole-shape structure service">
+    <prompt>Find structures with a 3D shape similar to entry 4HHB.</prompt>
+    <expect tool="rcsb_query_structure">
+      <arg name="entry_id" equals="4HHB" ignore-case="true"/>
+    </expect>
+  </probe>
+
   <!--
-    First-call probe for the group_by MECHANIC. The subject is pre-resolved (an InterPro id)
-    so the model shouldn't need a resolver step first — the grouped search is the first action.
-    (A realistic "human protein kinases" phrasing is multi-step — resolve concept, THEN group —
-    which a first-call grader can't score; that belongs in the end-to-end rcsb_pdb_eval.xml.)
+    Residues are given as mmCIF label ids, and the strucmotif docstring itself tells the
+    model to resolve label ids via rcsb_get_polymer_entity_instances first — so BOTH a
+    direct strucmotif call AND that sanctioned prerequisite count as correct routing; only
+    a mis-route to query_structure (whole shape) / query_seqmotif (sequence) / a text
+    search fails.
+  -->
+  <probe id="strucmotif" probes="routes to the strucmotif workflow (direct call or label-id resolution first)">
+    <prompt>Find OTHER structures whose 3D residue geometry matches the catalytic triad of 4CHA — the same spatial arrangement of chain A residues at mmCIF label positions 57, 102, 195.</prompt>
+    <expect tool-in="rcsb_query_strucmotif,rcsb_get_polymer_entity_instances"/>
+  </probe>
+
+  <probe id="seqmotif" probes="short pattern -> seqmotif, not sequence similarity">
+    <prompt>Find protein chains containing the sequence motif C-x(2,4)-C-x(3)-[LIVMFYWC]-x(8)-H-x(3,5)-H.</prompt>
+    <expect tool="rcsb_query_seqmotif">
+      <arg name="pattern" set="true"/>
+    </expect>
+  </probe>
+
+  <!--
+    Multi-turn: seed a zero-count result, then ask a follow-up. Passing = the model does NOT
+    switch to a keyword search (the 'an empty result is a valid answer' gotcha).
+  -->
+  <probe id="empty-valid" probes="empty-result-is-valid (don't fall back to fulltext)">
+    <prompt>Are there any structures of protein X from organism Y at better than 0.5 Angstrom?</prompt>
+    <turn role="assistant">I built the filter with rcsb_query_attribute and ran it with rcsb_search_request; it returned {"total_count": 0, "hits": []}.</turn>
+    <turn role="user">So are there none? Don't broaden to a keyword search — just answer.</turn>
+    <expect tool-not="rcsb_query_fulltext"/>
+  </probe>
+
+  <!-- ===================== executor probes (rcsb_search_request is graded) ======== -->
+
+  <!--
+    group_by MECHANIC. The subject is pre-resolved (an InterPro id) and the query document
+    is already built, so the grouped SEARCH is the first action. group_by is only valid with
+    return_type=polymer_entity, which is the pairing under test.
   -->
   <probe id="group-by-uniprot" probes="group_by=uniprot mechanic: must also set return_type=polymer_entity">
     <prompt>Using the InterPro id IPR000719 (protein-kinase domain) directly — no concept lookup needed — search PDB polymer entities carrying that domain and return ONE representative per UniProt accession, keeping the best-resolution structure.</prompt>
-    <expect>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_polymer_entity_annotation.annotation_id", "operator": "exact_match", "value": "IPR000719"}]}'>{"query":{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_polymer_entity_annotation.annotation_id","operator":"exact_match","value":"IPR000719"}},"digest":"af2c12d2d83f"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
       <arg name="group_by" set="true"/>
       <arg name="return_type" equals="polymer_entity"/>
     </expect>
@@ -68,66 +156,75 @@
 
   <probe id="sort-sortable" probes="sort_by sortability + direction">
     <prompt>Show human hemoglobin structures, best resolution first.</prompt>
-    <expect>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_entity_source_organism.ncbi_scientific_name", "operator": "exact_match", "value": "Homo sapiens"}, {"attribute": "rcsb_polymer_entity.pdbx_description", "operator": "contains_phrase", "value": "hemoglobin"}]}'>{"query":{"type":"group","logical_operator":"and","nodes":[{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name","operator":"exact_match","value":"Homo sapiens"}},{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_polymer_entity.pdbx_description","operator":"contains_phrase","value":"hemoglobin"}}]},"digest":"96d9cc340c3d"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
       <arg name="sort_by" contains="resolution_combined"/>
       <arg name="sort_direction" equals="asc" default="asc"/>
     </expect>
   </probe>
 
-  <probe id="sequence" probes="sequence service selection">
-    <prompt>Find proteins with a sequence similar to MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHF.</prompt>
-    <expect tool="rcsb_search_by_sequence">
-      <arg name="sequence" set="true"/>
-    </expect>
-  </probe>
-
-  <probe id="chem-smiles" probes="chemical descriptor">
-    <prompt>Find chemical components matching the SMILES c1ccccc1O.</prompt>
-    <expect tool="rcsb_search_by_chemical">
-      <arg name="query_type" equals="descriptor" default="descriptor"/>
-    </expect>
-  </probe>
-
-  <probe id="chem-formula" probes="chemical formula">
-    <prompt>Which chemical components have the molecular formula C8H9NO2?</prompt>
-    <expect tool="rcsb_search_by_chemical">
-      <arg name="query_type" equals="formula"/>
-    </expect>
-  </probe>
-
-  <probe id="shape" probes="whole-shape structure service">
-    <prompt>Find structures with a 3D shape similar to entry 4HHB.</prompt>
-    <expect tool="rcsb_search_by_structure">
-      <arg name="entry_id" equals="4HHB" ignore-case="true"/>
-    </expect>
-  </probe>
-
-  <!--
-    First-call routing probe for strucmotif. Residues are given as mmCIF label ids, but the
-    strucmotif docstring itself tells the model to resolve label ids via
-    rcsb_get_polymer_entity_instances first — so BOTH a direct strucmotif call AND that
-    sanctioned prerequisite count as correct routing into the strucmotif workflow; only a
-    mis-route to by_structure (whole shape) / by_seqmotif (sequence) / a text search fails.
-  -->
-  <probe id="strucmotif" probes="routes to the strucmotif workflow (direct call or label-id resolution first)">
-    <prompt>Find OTHER structures whose 3D residue geometry matches the catalytic triad of 4CHA — the same spatial arrangement of chain A residues at mmCIF label positions 57, 102, 195.</prompt>
-    <expect tool-in="rcsb_search_strucmotif,rcsb_get_polymer_entity_instances"/>
-  </probe>
-
   <probe id="all-hits" probes="all_hits vs paging on an explicit ALL request">
-    <prompt>Give me ALL human structures released in 2024 — the complete list.</prompt>
-    <expect>
+    <prompt>Give me ALL human structures released in 2024 — the complete list, not a page of them.</prompt>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_entity_source_organism.ncbi_scientific_name", "operator": "exact_match", "value": "Homo sapiens"}, {"attribute": "rcsb_accession_info.initial_release_date", "operator": "greater_or_equal", "value": "2024-01-01"}]}'>{"query":{"type":"group","logical_operator":"and","nodes":[{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name","operator":"exact_match","value":"Homo sapiens"}},{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_accession_info.initial_release_date","operator":"greater_or_equal","value":"2024-01-01"}}]},"digest":"772b29abb823"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
       <arg name="all_hits" equals="true"/>
     </expect>
   </probe>
 
   <!--
-    Multi-turn: seed the model with a zero-count attribute result, then ask a follow-up.
-    Passing = it does NOT switch to a keyword search (the 'empty result is valid' gotcha).
+    THE INTERSECTION-LEVEL PROBES. These two are the A/B target for the return_type clause
+    in rcsb_search_request's docstring ("It also sets the level at which MULTIPLE conditions
+    are intersected: two per-molecule conditions asked for as entries match when different
+    molecules satisfy each").
+
+    Both seed the SAME query document — an AND of two polymer_entity-scoped conditions,
+    organism and domain — and differ only in what the user asks for. Measured behaviour:
+    at return_type=entry the two conditions may be satisfied by DIFFERENT molecules of one
+    structure; at return_type=polymer_entity they must hold for the same molecule.
+
+    same-molecule is the one the clause should move. entry-is-fine is its control: when the
+    user explicitly wants structures, entry is correct and the clause must NOT push the
+    model off it. A change that lifts the first while dropping the second has taught the
+    model a superstition, not a rule — read them as a pair.
   -->
-  <probe id="empty-valid" probes="empty-result-is-valid (don't fall back to fulltext)" seed="zero-result">
-    <prompt>Are there any structures of protein X from organism Y at better than 0.5 Angstrom?</prompt>
-    <expect tool-not="rcsb_search_fulltext"/>
+  <probe id="same-molecule" probes="conditions must hold for ONE molecule -> return_type=polymer_entity">
+    <prompt>I need cases where a SINGLE protein molecule is BOTH human AND carries the protein-kinase domain — the same molecule satisfying both, not a structure where one chain is human and a different chain has the domain.</prompt>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_entity_source_organism.ncbi_scientific_name", "operator": "exact_match", "value": "Homo sapiens"}, {"attribute": "rcsb_polymer_entity_annotation.annotation_id", "operator": "exact_match", "value": "IPR000719"}]}'>{"query":{"type":"group","logical_operator":"and","nodes":[{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name","operator":"exact_match","value":"Homo sapiens"}},{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_polymer_entity_annotation.annotation_id","operator":"exact_match","value":"IPR000719"}}]},"digest":"0eefffc01cdc"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
+      <arg name="return_type" equals="polymer_entity"/>
+    </expect>
+  </probe>
+
+  <probe id="entry-is-fine" probes="CONTROL: structures asked for -> entry must NOT be over-corrected away">
+    <prompt>List PDB structures that contain a human protein and also contain something with the protein-kinase domain. Different chains are fine — I want the structures.</prompt>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_entity_source_organism.ncbi_scientific_name", "operator": "exact_match", "value": "Homo sapiens"}, {"attribute": "rcsb_polymer_entity_annotation.annotation_id", "operator": "exact_match", "value": "IPR000719"}]}'>{"query":{"type":"group","logical_operator":"and","nodes":[{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name","operator":"exact_match","value":"Homo sapiens"}},{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_polymer_entity_annotation.annotation_id","operator":"exact_match","value":"IPR000719"}}]},"digest":"0eefffc01cdc"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
+      <arg name="return_type" equals="entry" default="entry"/>
+    </expect>
+  </probe>
+
+  <!--
+    The IMPLICIT version of same-molecule, added after the explicit one saturated at 100%
+    in both A/B arms and so could not measure anything. That prompt spelled the answer out
+    ("the same molecule satisfying both, not a structure where one chain is human and a
+    different chain has the domain"), which is not a test of whether the model knows the
+    rule — it is a test of whether it can follow an instruction.
+
+    Here the requirement is only implied by ordinary usage: "human protein kinase" names ONE
+    molecule that is both human and a kinase. Answering at entry level silently returns
+    structures where a human chain and a kinase chain are different molecules.
+  -->
+  <probe id="same-molecule-implicit" probes="IMPLICIT same-molecule requirement -> return_type=polymer_entity">
+    <prompt>Find human protein kinases in the PDB.</prompt>
+    <turn role="assistant" tool="rcsb_query_attribute" args='{"attributes": [{"attribute": "rcsb_entity_source_organism.ncbi_scientific_name", "operator": "exact_match", "value": "Homo sapiens"}, {"attribute": "rcsb_polymer_entity_annotation.annotation_id", "operator": "exact_match", "value": "IPR000719"}]}'>{"query":{"type":"group","logical_operator":"and","nodes":[{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_entity_source_organism.ncbi_scientific_name","operator":"exact_match","value":"Homo sapiens"}},{"type":"terminal","service":"text","parameters":{"attribute":"rcsb_polymer_entity_annotation.annotation_id","operator":"exact_match","value":"IPR000719"}}]},"digest":"0eefffc01cdc"}</turn>
+    <turn role="user">Now run it.</turn>
+    <expect tool="rcsb_search_request">
+      <arg name="return_type" equals="polymer_entity"/>
+    </expect>
   </probe>
 
 </probes>

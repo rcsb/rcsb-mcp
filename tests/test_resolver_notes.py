@@ -145,3 +145,46 @@ def test_every_resolver_shares_this_note():
                  "rcsb_find_disease_terms", "rcsb_find_organisms"):
         src = inspect.getsource(getattr(resolvers, name))
         assert "_resolver_fallback_note" in src, f"{name} does not emit the resolver note"
+
+
+# --- the notes are assembled from adjacent string literals ----------------------
+def test_no_note_fragment_joins_without_a_separator():
+    """Implicit concatenation silently drops spaces, and no assertion here catches it.
+
+    A real one shipped: `"...differently-worded term for"` followed by `"the same concept."`
+    rendered as "term forthe same concept", with all 15 tests green. Content assertions are
+    blind to it because every substring they look for is still present.
+
+    So this checks the SEAMS rather than the text: for each pair of adjacent string literals,
+    the first must not end alphanumeric while the second begins alphanumeric. That is the
+    whole bug class, and it survives rewording — unlike an assertion on a phrase, which
+    freezes prose nobody agreed to freeze.
+
+    Uses `tokenize`, NOT `ast`: CPython folds adjacent constants during parsing, so by the
+    time there is a tree the seam is gone. The first version of this test walked the AST,
+    passed, and was proved blind by the mutation below before being trusted.
+    """
+    import io
+    import tokenize
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src" / "rcsb_mcp" / "resolvers.py"
+    toks = [t for t in tokenize.generate_tokens(io.StringIO(src.read_text()).readline)
+            if t.type not in (tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT,
+                              tokenize.INDENT, tokenize.DEDENT)]
+    seams = 0
+    for left, right in zip(toks, toks[1:]):
+        if left.type != tokenize.STRING or right.type != tokenize.STRING:
+            continue
+        # Strip prefix/quotes to get at the actual first and last characters.
+        lv = left.string.rstrip().rstrip('"\'')
+        rv = right.string.lstrip()
+        rv = rv[1:] if rv[:1] in ('"', "'") else rv[2:]
+        if not lv or not rv:
+            continue
+        seams += 1
+        assert not (lv[-1].isalnum() and rv[0].isalnum()), (
+            f"line {left.start[0]}: missing separator between "
+            f"{lv[-30:]!r} and {rv[:30]!r}"
+        )
+    assert seams >= 5, f"only {seams} literal seams found — the tokenizer assumption is stale"

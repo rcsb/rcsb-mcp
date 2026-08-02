@@ -22,6 +22,22 @@ from typing_extensions import NotRequired, TypedDict
 # The value type of a searchable attribute, from the Search API metadata schema.
 AttributeValueType = Literal["date", "integer", "number", "string"]
 
+# The object a searchable attribute hangs off — its granularity. Derived from the Data
+# API object graph by scripts/generate_attribute_scopes.py, NOT from the attribute path,
+# which is a poor guide: every em_* root is entry-scoped without saying so, while
+# entity_src_gen, entity_poly and rcsb_entity_source_organism are all finer than they read.
+#
+# This is a SUPERSET of queries.RETURN_TYPES: a search can be returned at six levels, but
+# attributes live at nine. Branched entities and non-polymer/branched instances are real
+# granularities with no return_type of their own, so conditions at those levels can be
+# intersected too loosely with no return_type available to tighten them — a caller-facing
+# note must say so rather than recommend a level the API would reject.
+AttributeScope = Literal[
+    "entry",
+    "assembly", "polymer_entity", "non_polymer_entity", "branched_entity", "mol_definition",
+    "polymer_instance", "non_polymer_instance", "branched_instance",
+]
+
 
 # The full set of attribute/text comparison operators from the spec enum. This is
 # the single source: server.py types AttributeFilter.operator with it, queries.py

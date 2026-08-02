@@ -7,18 +7,28 @@ It complements the end-to-end accuracy suite in [`../rcsb_pdb_eval.xml`](../rcsb
 and the two are **disjoint by design**. That suite grades final *answers*, so its answers must
 be stable — which is why it is anchored to immutable deposited metadata and uses **no dynamic
 counts**. Search results drift as the PDB grows, so a stable-answer suite can never cover the
-`rcsb_search_*` tools; a verified run of it calls **zero** search tools. Grading the *decision*
+search tools; a verified run of it calls **zero** search tools. Grading the *decision*
 instead of the answer is the only practical way to cover search routing — that's this suite.
 
 - **[`probes.xml`](probes.xml)** — the probes: a natural-language prompt plus an `<expect>`
   assertion over the model's FIRST tool call. This is the durable content; it targets the
   gotchas most at risk when docstrings are shortened (ontology routing, `group_by` needs
   `return_type="polymer_entity"`, `sort_by` sortability, the "empty result is valid" rule,
-  strucmotif-vs-structure routing, …). The `<expect>` vocabulary is documented in the file.
+  strucmotif-vs-structure routing, intersection level, …). The `<expect>` vocabulary is
+  documented in the file.
+
+  **Two kinds of probe.** The builder/executor split means a search takes at least two calls
+  — an `rcsb_query_*` builder, then `rcsb_search_request` — and only the FIRST is graded.
+  *Routing* probes are unseeded and assert which builder was chosen. *Executor* probes add
+  `<turn>` elements showing the builder step already done, so the model's first call is
+  `rcsb_search_request`; that is the only way to grade `return_type`, `group_by`, `sort_by`
+  and `all_hits`, which exist on no other tool. Seeded query documents are real builder
+  output, digests included.
 - **[`run_probes.py`](run_probes.py)** — the runner: loads tools + instructions from any
   `--src` checkout, asks a model to act on each prompt, grades the first tool call against
   `<expect>`, `--k` samples per probe. Backends: `anthropic` (needs `ANTHROPIC_API_KEY`) or
-  `openai` (any OpenAI-compatible endpoint, e.g. a local vLLM — usually no key). It also does
+  `openai` (any OpenAI-compatible endpoint — a local vLLM, or a hosted proxy such as
+  LiteLLM; sends `Authorization: Bearer $OPENAI_API_KEY`, which local servers ignore). It also does
   the A/B diff via `--compare`. The RCSB API is never called; only the tool *decision* is graded.
 
 ## Running an A/B (before vs. after a change)
@@ -63,6 +73,10 @@ just a probe or two while iterating.
   grader can't credit it", not "the docs are wrong".
 - Grow `probes.xml` as you dedup: every load-bearing "keep" line you preserve should get a
   probe asserting the behaviour it protects.
+- **Read paired probes as a pair.** `same-molecule` and `entry-is-fine` seed the identical
+  query document and differ only in what the user asked for. A docstring change that lifts
+  one while dropping the other has taught the model a superstition, not a rule — the net is
+  what matters, not either number alone.
 
 ## The cheap deterministic gate
 

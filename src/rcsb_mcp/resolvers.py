@@ -107,8 +107,17 @@ def _resolver_fallback_note(items: list[dict[str, Any]], label: str) -> str | No
     if len(counts) < len(items):
         return None
     if not any(counts):
+        # rcsb_query_fulltext IS recommended here, and deliberately NOT in the low-coverage
+        # branch below. The reasons differ: nothing is annotated at all, so a keyword search
+        # is a genuine ALTERNATIVE ROUTE. Down there the note only fires when coverage is
+        # under _LOW_COVERAGE_MAX_ENTRIES, so "full text finds more" is guaranteed by the
+        # trigger itself and says nothing. Do not harmonise the two branches.
         return (f"Matched {label}(s) but none are annotated in the PDB (pdb_entry_count 0). "
-                "A keyword search (rcsb_query_fulltext) may still surface relevant structures.")
+                "A resolver matches your words against TERM NAMES, so it can equally have "
+                "landed on a narrower or adjacent piece of your concept. Read the name that "
+                "came back; if it is not what you meant, resolve a broader or "
+                "differently-worded term for the same concept. Separately, a keyword search "
+                "(rcsb_query_fulltext) may still surface relevant structures.")
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
         return (f"Best match covers only {best} PDB entr{'y' if best == 1 else 'ies'}. That is "

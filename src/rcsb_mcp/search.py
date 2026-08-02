@@ -347,7 +347,7 @@ class QueryDocument(BaseModel):
     # and rcsb_search_request, so anything written here costs twice, and the tool docstrings
     # already say what the pair is and how to handle it.
     query: dict[str, Any]
-    digest: str
+    digest: str = Field(description="A digest of the query used for validation")
 
 
 def _doc(node: dict[str, Any]) -> dict[str, Any]:
@@ -678,7 +678,9 @@ async def rcsb_search_request(
             and sequence-motif, mol_definition for chemical, assembly for structural
             motifs and assembly shape references, polymer_instance for a chain shape
             reference. Setting it CONVERTS the result — e.g. a ligand attribute filter
-            with return_type="entry" gives the structures containing that ligand.
+            with return_type="entry" gives the structures containing that ligand. If
+            conditions granularity is finer than entry (e.g. entity, instance, ...),
+            matches occur if any subunit satisfies a given condition.
         limit: Max hits to return, 1-100 (default 10).
         offset: Hits to skip, for paging; pass the response's next_offset back with the
             same query to fetch the next page.
@@ -722,6 +724,12 @@ async def rcsb_search_request(
         before batching the ids onward. `editor` opens the query in the RCSB search UI.
         With `all_hits` the paging fields are omitted; with `facets` returns
         {total_count, facets, editor} instead of hits.
+
+        A `notes` list appears ONLY when conditions were intersected more loosely than
+        they read — e.g. subunits conditions asked for as entries match when
+        any subunit satisfies a given condition. Read it before describing what the hits have in
+        common; some notes name a return_type that tightens the query, others say plainly
+        that nothing can.
     """
     node = _node(query)
     _validate_query_attributes(
@@ -743,9 +751,14 @@ async def rcsb_search_request(
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
     raw = await _post_search(body)
-    if facets:
-        return _format_facets(raw, body)
-    return _format(raw, body, None if all_hits else offset)
+    result = (_format_facets(raw, body) if facets
+              else _format(raw, body, None if all_hits else offset))
+    # Where this query was intersected more loosely than it reads. Absent on the queries
+    # that are fine, which is most of them -- see queries.intersection_notes.
+    notes = queries.intersection_notes(node, body["return_type"])
+    if notes:
+        result["notes"] = notes
+    return result
 
 
 

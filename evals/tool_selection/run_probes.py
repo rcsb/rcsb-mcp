@@ -51,7 +51,12 @@ def load_probes(path=PROBES_XML):
         probes.append({
             "id": p.get("id"),
             "probes": p.get("probes") or "",
-            "seed": p.get("seed"),
+            # Ordered <turn role="..."> elements appended after the prompt. The graded call
+            # is always the model's FIRST, so seeding is the only way to grade a tool that
+            # is never called first -- see build_messages.
+            "turns": [{"role": t.get("role", "user"), "content": (t.text or "").strip(),
+                       "tool": t.get("tool"), "args": t.get("args")}
+                      for t in p.findall("turn")],
             "prompt": (p.findtext("prompt") or "").strip(),
             "expect": p.find("expect"),
         })
@@ -231,16 +236,44 @@ def sample_once(call, attempts=3):
     return None, last
 
 
-def build_messages(probe):
-    """Single-turn, or a seeded history for probes that need prior context."""
-    if probe.get("seed") != "zero-result":
-        return [{"role": "user", "content": probe["prompt"]}]
-    return [
-        {"role": "user", "content": probe["prompt"]},
-        {"role": "assistant", "content": "I searched with rcsb_search_by_attribute and it returned "
-                                         "{\"total_count\": 0, \"hits\": []}."},
-        {"role": "user", "content": "So are there none? Don't broaden to a keyword search — just answer."},
-    ]
+def build_messages(probe, backend="anthropic"):
+    """The prompt, plus any <turn> elements the probe seeds after it.
+
+    Seeding carries the whole weight of grading the EXECUTOR. Only the model's first tool
+    call is scored, and since the builder/executor split the first call in a real search is
+    always an rcsb_query_* builder -- so return_type, group_by, sort_by and all_hits, which
+    live only on rcsb_search_request, are invisible to an unseeded probe. A probe that seeds
+    the builder step as already done puts rcsb_search_request in the graded position.
+
+    A turn carrying tool=/args= is emitted as a REAL tool call plus its result, in whichever
+    wire format the backend uses. That distinction is not cosmetic. The first version of this
+    narrated the step in prose ("I built the query with rcsb_query_attribute, which returned
+    ..."), and models re-did the work instead of continuing from it: 30-50% of samples called
+    a builder or a resolver rather than the executor, in BOTH arms of an A/B, which gutted the
+    statistical power of the probes that need seeding most. A tool_use/tool_result pair is a
+    completed step; a sentence about one is just context.
+
+    This also replaced a single hardcoded seed that named rcsb_search_by_attribute, a tool
+    that no longer exists.
+    """
+    msgs = [{"role": "user", "content": probe["prompt"]}]
+    for i, turn in enumerate(probe.get("turns") or []):
+        if not turn.get("tool"):
+            msgs.append({"role": turn["role"], "content": turn["content"]})
+            continue
+        call_id = f"seed_{i}"
+        args = turn.get("args") or "{}"
+        if backend == "anthropic":
+            msgs.append({"role": "assistant", "content": [
+                {"type": "tool_use", "id": call_id, "name": turn["tool"], "input": json.loads(args)}]})
+            msgs.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": call_id, "content": turn["content"]}]})
+        else:
+            msgs.append({"role": "assistant", "content": None, "tool_calls": [
+                {"id": call_id, "type": "function",
+                 "function": {"name": turn["tool"], "arguments": args}}]})
+            msgs.append({"role": "tool", "tool_call_id": call_id, "content": turn["content"]})
+    return msgs
 
 
 # --------------------------------------------------------------------------- #
@@ -253,7 +286,7 @@ def run(args):
             continue
         passes, errs, observed = 0, [], []
         for _ in range(args.k):
-            msgs = build_messages(probe)
+            msgs = build_messages(probe, args.backend)
             call = (lambda: call_anthropic(instr, tools, msgs, args.model, args.temperature)) \
                 if args.backend == "anthropic" else \
                 (lambda: call_openai(args.base_url, instr, tools, msgs, args.model, args.temperature))
@@ -354,9 +387,15 @@ if __name__ == "__main__":
     p.add_argument("--src", default="src", help="server src dir to load tools from (point at an old checkout for A/B)")
     p.add_argument("--k", type=int, default=5, help="samples per probe (compare RATES, not single runs)")
     p.add_argument("--temperature", type=float, default=1.0)
-    p.add_argument("--guide", choices=["guide", "assistant", "none"], default="guide",
-                   help="which delivery channel to simulate: the rcsb_mcp_guide prompt "
-                        "(default), rcsb_search_assistant, or nothing")
+    # Default is "none": the rcsb_mcp_guide prompt was retired and every rule moved onto the
+    # tool descriptions, so a client that loads nothing is the SUPPORTED configuration, not a
+    # degraded one — and it is what a public MCP client actually sees. "guide" is kept only
+    # for running against an old --src checkout that still exposes the prompt; against this
+    # tree it exits with a clear error rather than silently measuring the "none" arm.
+    p.add_argument("--guide", choices=["guide", "assistant", "none"], default="none",
+                   help="which delivery channel to simulate: nothing (default -- what a "
+                        "public MCP client sees), rcsb_search_assistant, or the retired "
+                        "rcsb_mcp_guide prompt (old --src checkouts only)")
     p.add_argument("--attempts", type=int, default=3,
                    help="tries per sample before recording a transport/throttle error")
     p.add_argument("--only", default="", help="comma-separated probe ids to run (default: all)")

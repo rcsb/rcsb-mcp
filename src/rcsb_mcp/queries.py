@@ -10,7 +10,17 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple, get_args
 
-from rcsb_mcp.attribute_types import TextOperator
+from rcsb_mcp.attribute_scopes import (
+    CHEMICAL_ATTRIBUTE_ENTRY_CONSTANT,
+    CHEMICAL_ATTRIBUTE_NESTED_ROOTS,
+    CHEMICAL_ATTRIBUTE_REPEATING_ROOTS,
+    CHEMICAL_ATTRIBUTE_SCOPES,
+    SEARCH_ATTRIBUTE_ENTRY_CONSTANT,
+    SEARCH_ATTRIBUTE_NESTED_ROOTS,
+    SEARCH_ATTRIBUTE_REPEATING_ROOTS,
+    SEARCH_ATTRIBUTE_SCOPES,
+)
+from rcsb_mcp.attribute_types import AttributeScope, TextOperator
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 
@@ -343,20 +353,74 @@ SERVICE_RETURN_TYPE: dict[str, str] = {
 REFINEMENT_SERVICES = frozenset({"text", "text_chem", "full_text"})
 
 
+def _nested_record_of(attribute: str, service: str) -> str | None:
+    """The nested-indexed record `attribute` belongs to, or None.
+
+    The SHALLOWEST matching path, not the deepest: nested paths nest inside each other
+    (`rcsb_polymer_entity_annotation` and its `.annotation_lineage`), and a condition on
+    `.type` and one on `.annotation_lineage.id` describe the same ANNOTATION. Keying them
+    to different records would let them be split apart, which is the exact defect this
+    exists to prevent.
+    """
+    paths = CHEMICAL_ATTRIBUTE_NESTED_ROOTS if service == "text_chem" else SEARCH_ATTRIBUTE_NESTED_ROOTS
+    matches = [p for p in paths if attribute == p or attribute.startswith(p + ".")]
+    return min(matches, key=len) if matches else None
+
+
+def _pins_a_nested_record(group: dict[str, Any]) -> bool:
+    """Whether this group holds 2+ conditions on ONE nested-indexed record.
+
+    Only the group's own terminal children count: splicing moves them into the parent,
+    while any sub-group keeps its own nesting and its own coherence.
+    """
+    seen: dict[tuple[str, str], int] = {}
+    for child in group.get("nodes") or []:
+        if not isinstance(child, dict) or child.get("type") != "terminal":
+            continue
+        service = child.get("service")
+        if service not in ("text", "text_chem"):
+            continue
+        attribute = (child.get("parameters") or {}).get("attribute")
+        record = _nested_record_of(attribute, service) if attribute else None
+        if record is None:
+            continue
+        key = (service, record)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] >= 2:
+            return True
+    return False
+
+
 def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> dict[str, Any]:
     """Join nodes with one AND/OR, collapsing what does not need to nest.
 
-    Two normalisations, both semantic no-ops that keep composed trees shallow:
+    Two normalisations that keep composed trees shallow:
 
     * a single node needs no group and is returned as-is;
     * a child group sharing this group's operator is SPLICED IN rather than nested,
       because AND/OR are associative -- ``and(a, and(b, c))`` is ``and(a, b, c)``.
 
-    The splice is also what makes composing an attribute node onto a service node
-    reproduce the flat sibling shape the pre-composer builders produced, and it keeps an
-    iterative composer from growing a tower of same-operator wrappers that would hit
-    the depth cap for no reason. A child with the OPPOSITE operator is never spliced:
-    that nesting is the whole point of the composer.
+    The splice keeps an iterative composer from growing a tower of same-operator wrappers
+    that would hit the depth cap for no reason. A child with the OPPOSITE operator is
+    never spliced: that nesting is the whole point of the composer.
+
+    BUT associativity is not the whole story, and a group that pins two conditions to one
+    NESTED-INDEXED record is never spliced. For the 41 paths the Search API nested-indexes,
+    a group is also the record-coherence scope: conditions inside it must hold on the SAME
+    sub-record, and flattening them only requires each to hold SOMEWHERE in the object.
+    That turns a restriction into a relaxation, so the count can go UP -- which no correct
+    AND can do. Measured at return_type=entry, before this carve-out:
+
+        citation.journal=Nature AND citation.year=1995            137
+          spliced with exptl.method=X-RAY                         298   <- larger
+          kept nested                                             124
+        binding_affinity.comp_id=PTR AND .type=IC50                 0   (PTR only has Kd)
+          spliced with exptl.method=X-RAY                           5   <- all false
+        polymer_entity_annotation.type=Pfam AND .annotation_id=GO:0004672
+                                                                    0
+          spliced with exptl.method=X-RAY                       3,846   <- all false
+
+    Verified against the Data API: none of those hits carry both conditions on one record.
     """
     if logical_operator not in {"and", "or"}:
         raise ValueError('logical_operator must be "and" or "or"')
@@ -368,6 +432,7 @@ def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> di
             isinstance(node, dict)
             and node.get("type") == "group"
             and node.get("logical_operator") == logical_operator
+            and not _pins_a_nested_record(node)
         ):
             flat.extend(node["nodes"])
         else:
@@ -375,26 +440,6 @@ def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> di
     if len(flat) == 1:
         return flat[0]
     return {"type": "group", "logical_operator": logical_operator, "nodes": flat}
-
-
-def _refine(
-    node: dict[str, Any],
-    attributes: list[dict[str, Any]] | None,
-    logical_operator: str = "and",
-) -> dict[str, Any]:
-    """AND/OR a service terminal with optional attribute filters — the pre-composer shape.
-
-    Used only by the build_*_query entry points, which take one service payload plus a
-    flat `attributes` list. Because group_node splices a child group sharing the same
-    operator, this produces the same flat sibling list those entry points always did.
-
-    Note the filters go to the "text" service, never "text_chem", which is what those
-    entry points have always done. The composer path has no such limitation: an agent
-    calls rcsb_query_attribute with chemical_attributes=True and composes the result.
-    """
-    if not attributes:
-        return node
-    return group_node([node, attribute_node(attributes, logical_operator)], logical_operator)
 
 
 def fulltext_node(value: str) -> dict[str, Any]:
@@ -596,6 +641,262 @@ def uses_chemical_attributes(node: dict[str, Any]) -> bool:
     has to read it back off the tree.
     """
     return any(t.get("service") == "text_chem" for t in _terminals(node))
+
+
+def scope_of(attribute: str, service: str = "text") -> AttributeScope | None:
+    """The object `attribute` hangs off — entry, assembly, an entity, an instance, or a
+    chemical definition.
+
+    This is the fact needed to tell whether ANDed conditions can be satisfied by
+    DIFFERENT objects: the Search API intersects at the level named by `return_type`, not
+    at the level the attributes live at, so two polymer-entity conditions asked for as
+    entries match when one molecule carries the annotation and another supplies the
+    organism. Measured on AND(source_organism="Homo sapiens", source_organism="Escherichia
+    coli"): 745 entries but 550 entities, so 195 entries — 26% — are cross-molecule.
+
+    `service` picks the catalog, because the two disagree: `rcsb_id` is the entity
+    container in the structure schema and the chemical definition in the chemical one.
+
+    Returns None when the attribute is not in that catalog. Callers must treat that as
+    "unknown", never as a scope — an unrecognised path is usually a typo, and guessing a
+    scope for one would put a confident claim behind a value the API will reject anyway.
+    """
+    chemical = service == "text_chem"
+    entry_constant = CHEMICAL_ATTRIBUTE_ENTRY_CONSTANT if chemical else SEARCH_ATTRIBUTE_ENTRY_CONSTANT
+    if attribute in entry_constant:
+        return "entry"
+    scopes = CHEMICAL_ATTRIBUTE_SCOPES if chemical else SEARCH_ATTRIBUTE_SCOPES
+    return scopes.get(attribute.split(".")[0])
+
+
+# The containment the SEARCH INDEX implements — which is NOT the PDB structural hierarchy.
+#
+# Structurally the PDB nests entry > assembly > entity > instance: an assembly really does
+# hold a subset of the entry's instances. The index does not follow that. Entities hang off
+# the ENTRY, and nothing is indexed as being "inside" an assembly, so a match anywhere in
+# the entry lights up EVERY assembly of it. Measured on 1DEE (S. aureus protein A bound to
+# a human IgM Fab), whose five assemblies genuinely differ:
+#
+#     1DEE-1  chains A,B    entities 1,2    Homo sapiens only
+#     1DEE-2  chains C,D,G  entities 1,2,3  + Staphylococcus aureus
+#     1DEE-3  chains E,F,H  entities 1,2,3  + Staphylococcus aureus
+#     1DEE-4  chains E,F    entities 1,2    Homo sapiens only
+#     1DEE-5  chains C,D    entities 1,2    Homo sapiens only
+#
+#     organism="Staphylococcus aureus"      @assembly -> all five, incl. the three with none
+#     auth_asym_id=G (present ONLY in 1DEE-2) @assembly -> all five
+#                                             @polymer_instance -> 1DEE.G alone
+#
+# So assembly is a LEAF here, not a container. Along entry > entity > instance the index
+# does respect containment: the same instance probe returned 0 false positives in 200.
+_INDEX_PARENT: dict[str, str] = {
+    "assembly": "entry",
+    # Entities and chemical definitions hang off the entry, never off an assembly.
+    "polymer_entity": "entry",
+    "non_polymer_entity": "entry",
+    "branched_entity": "entry",
+    "mol_definition": "entry",
+    "polymer_instance": "polymer_entity",
+    "non_polymer_instance": "non_polymer_entity",
+    "branched_instance": "branched_entity",
+}
+
+
+def scope_contains(outer: str, inner: str) -> bool:
+    """Whether `outer` strictly contains `inner` in the SEARCH INDEX (not structurally).
+
+    Strict: a scope does not contain itself. Following _INDEX_PARENT upward, so
+    entry contains every scope, polymer_entity contains polymer_instance, and assembly
+    contains nothing at all — see the measurements on _INDEX_PARENT.
+    """
+    seen = set()
+    cursor = _INDEX_PARENT.get(inner)
+    while cursor and cursor not in seen:
+        if cursor == outer:
+            return True
+        seen.add(cursor)
+        cursor = _INDEX_PARENT.get(cursor)
+    return False
+
+
+def scopes_are_comparable(a: str, b: str) -> bool:
+    """Whether one scope contains the other, or they are the same.
+
+    Comparable scopes are the safe case for a LONE condition: every object of the finer
+    scope belongs to exactly one object of the coarser one, so projecting a match in
+    either direction cannot invent a hit. Incomparable scopes (assembly against an entity
+    or instance) can, which is what `answers_at_entry_level` is for.
+    """
+    return a == b or scope_contains(a, b) or scope_contains(b, a)
+
+
+def answers_at_entry_level(return_type: str, scope: str) -> bool:
+    """Whether asking for `return_type` will answer a `scope` condition at ENTRY level and
+    project the result onto every assembly of that entry, whatever that assembly holds.
+
+    True only for return_type="assembly" with a condition finer than the entry. There is
+    no query shape that fixes it and no return_type that tightens it: the honest reading
+    of such a result is "assemblies of ENTRIES that match", not "assemblies that match".
+
+    One condition is enough — this needs no AND, which is what separates it from the
+    cross-object case.
+    """
+    return (
+        return_type == "assembly"
+        and scope not in ("entry", "assembly")
+        and scope in _INDEX_PARENT
+    )
+
+
+MAX_INTERSECTION_NOTES = 3
+
+
+def _and_groups(node: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every AND group in the tree.
+
+    ONLY "and" groups. Under OR, different objects satisfying different conditions is
+    precisely what was asked for, so there is nothing to report.
+    """
+    found: list[dict[str, Any]] = []
+
+    def walk(n: dict[str, Any]) -> None:
+        if not isinstance(n, dict) or n.get("type") != "group":
+            return
+        if n.get("logical_operator") == "and":
+            found.append(n)
+        for child in n.get("nodes") or []:
+            walk(child)
+
+    walk(node)
+    return found
+
+
+def _attribute_terminals(group: dict[str, Any]) -> list[dict[str, Any]]:
+    """A group's DIRECT attribute terminals.
+
+    Direct children only: a sub-group is its own intersection scope and is walked on its
+    own turn, so its terminals must not be judged as siblings of this group's.
+    """
+    return [
+        c for c in (group.get("nodes") or [])
+        if isinstance(c, dict) and c.get("type") == "terminal"
+        and c.get("service") in ("text", "text_chem")
+        and (c.get("parameters") or {}).get("attribute")
+    ]
+
+
+def _terminal_scope(terminal: dict[str, Any]) -> tuple[str, str, AttributeScope | None]:
+    attribute = terminal["parameters"]["attribute"]
+    service = terminal.get("service", "text")
+    return attribute, service, scope_of(attribute, service)
+
+
+def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
+    """Where this query's conditions are intersected more loosely than they read.
+
+    The Search API intersects at the level named by `return_type`, and within an object it
+    intersects across repeated records. Neither is visible in the response, so a too-loose
+    answer looks exactly like a correct one. Each note below fires only in its own case and
+    costs nothing otherwise — the silence is as load-bearing as the text, because a note on
+    every query trains the reader to skip it.
+
+    Three findings, in descending order of what the caller can do about them:
+
+    1. two comparable conditions finer than return_type -- FIXABLE by return_type
+    2. conditions on one repeated record -- fixable only if the API nested-indexes it
+    3. return_type="assembly" with anything finer -- NOT fixable at all
+
+    Returns [] when nothing applies, which is the common case.
+    """
+    notes: list[str] = []
+    seen: set[str] = set()
+
+    def add(note: str) -> None:
+        # Capped: a wall of notes reads as boilerplate and gets skipped whole, which
+        # costs more than the notes past the cap were worth.
+        if note not in seen and len(notes) < MAX_INTERSECTION_NOTES:
+            seen.add(note)
+            notes.append(note)
+
+    for group in _and_groups(node):
+        terminals = _attribute_terminals(group)
+        scoped = [(a, s, sc) for a, s, sc in map(_terminal_scope, terminals) if sc]
+
+        # 1. Two conditions finer than return_type that COULD describe one object.
+        #    Incomparable scopes are skipped: "a human protein and an ATP ligand" is two
+        #    different objects by definition and flagging it would be noise.
+        for i, (attr_a, _, scope_a) in enumerate(scoped):
+            for attr_b, _, scope_b in scoped[i + 1:]:
+                if not (scope_contains(return_type, scope_a) and scope_contains(return_type, scope_b)):
+                    continue
+                if not scopes_are_comparable(scope_a, scope_b):
+                    continue
+                finer = scope_b if scope_contains(scope_a, scope_b) else scope_a
+                if finer not in RETURN_TYPES:
+                    continue
+                subject = (f'Two conditions on `{attr_a}`' if attr_a == attr_b
+                           else f'`{attr_a}` and `{attr_b}`')
+                add(
+                    f'{subject} are {finer}-scoped but return_type is "{return_type}", so a '
+                    f'DIFFERENT {finer} can satisfy each one. Use return_type="{finer}" to '
+                    f'require the same one.'
+                )
+
+        # 2. Two conditions on one repeated record inside a single object.
+        by_root: dict[tuple[str, str], list[str]] = {}
+        for attr, service, _ in scoped:
+            by_root.setdefault((service, attr.split(".")[0]), []).append(attr)
+        for (service, root), attrs in by_root.items():
+            if len(attrs) < 2:
+                continue
+            repeating = (CHEMICAL_ATTRIBUTE_REPEATING_ROOTS if service == "text_chem"
+                         else SEARCH_ATTRIBUTE_REPEATING_ROOTS)
+            if root not in repeating:
+                continue
+            subject = (f'Two conditions on `{attrs[0]}`' if attrs[0] == attrs[1]
+                       else f'`{attrs[0]}` and `{attrs[1]}`')
+            if _nested_record_of(attrs[0], service):
+                # Nested-indexed: the API DOES keep such a pair on one record, but only
+                # while it is ALONE in its group. Measured on a pair that can never
+                # co-occur (rcsb_binding_affinity comp_id=PTR + type=IC50, correct answer
+                # 0 everywhere):
+                #     and[PTR, IC50]              -> 0   alone, coherent
+                #     and[PTR, IC50, XRAY]        -> 5   one foreign terminal breaks it
+                #     and[ and[PTR,IC50], XRAY ]  -> 0   own group, coherent again
+                # So the note fires only when something else shares the group -- and it
+                # has an exact fix, which is why it names one.
+                if len(group.get("nodes") or []) <= len(attrs):
+                    continue
+                add(
+                    f'{subject} share a group with other conditions, so they can match '
+                    f'DIFFERENT {root} records of the same object. Put them in ONE '
+                    f'rcsb_query_attribute call to require the same record.'
+                )
+            else:
+                add(
+                    f'One object holds many {root} records, and the Search API cannot '
+                    f'require {subject[0].lower() + subject[1:]} to hold on the SAME one. '
+                    f'No return_type or query shape changes this.'
+                )
+
+    # 3. Assembly. This one needs no AND, no second condition and no group at all, so it
+    #    walks EVERY terminal rather than the AND groups -- a lone attribute query with
+    #    return_type="assembly" is the simplest case that triggers it.
+    if return_type == "assembly":
+        for terminal in _terminals(node):
+            if (terminal.get("service") not in ("text", "text_chem")
+                    or not (terminal.get("parameters") or {}).get("attribute")):
+                continue
+            attr, _, scope = _terminal_scope(terminal)
+            if scope and answers_at_entry_level(return_type, scope):
+                add(
+                    f'`{attr}` is {scope}-scoped, and return_type="assembly" answers it at '
+                    f'ENTRY level: every assembly of a matching entry is returned, including '
+                    f'assemblies that do not contain the match. No return_type narrows this.'
+                )
+                break
+
+    return notes
 
 
 def scoring_strategy_for(node: dict[str, Any]) -> str | None:
