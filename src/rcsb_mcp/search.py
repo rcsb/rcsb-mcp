@@ -56,6 +56,16 @@ Offset = Annotated[int, Field(ge=0)]
 Tolerance = Annotated[int, Field(ge=0, le=3)]
 
 
+# `extra="forbid"` below, because the tool surface has TWO things called an operator:
+# this model's `operator` (the per-condition COMPARISON — exact_match, in, less) and the
+# tool's `logical_operator` (the ONE boolean joining every condition, a sibling of the
+# `attributes` array). Under pydantic's default an unknown key is dropped in SILENCE, so a
+# caller conflating them and writing `logical_operator` in here got "and" while having
+# asked for "or" — a different answer, no error, nothing to notice. It now raises.
+#
+# This note is a COMMENT, not part of the docstring: pydantic ships a model's docstring
+# into the JSON schema as `description`, so putting it there billed every caller 134
+# tokens on every call to explain an internal decision. The class docstring stays short.
 class AttributeFilter(BaseModel):
     """One structured attribute condition — a single `text`/`text_chem` terminal.
 
@@ -63,11 +73,13 @@ class AttributeFilter(BaseModel):
     AND/OR). Find a path/operators with rcsb_list_pdb_search_attributes.
     """
 
+    model_config = {"extra": "forbid"}
+
     attribute: str = Field(
         description="Dotted RCSB attribute path, e.g. 'rcsb_entry_info.resolution_combined'."
     )
     operator: TextOperator = Field(
-        description="Type-specific operator (see rcsb_list_pdb_search_attributes): strings use "
+        description="Comparison operator, type-specific (see rcsb_list_pdb_search_attributes): strings use "
         "exact_match/in or contains_words/contains_phrase; numbers/dates use greater/"
         "greater_or_equal/less/less_or_equal/equals/range; any type supports exists."
     )
@@ -433,10 +445,10 @@ async def rcsb_query_attribute(
             those either: rcsb_list_pdb_search_attributes returns them as `enum`. A value
             outside the set is rejected here, so you can correct it, rather than matching
             nothing and looking like an empty result.
-        logical_operator: Combine these conditions with "and" (default) or "or". They all
-            share this one operator; for a query needing BOTH — e.g. (human OR mouse) AND
-            high-resolution — build each group separately and join them with
-            rcsb_query_composer.
+        logical_operator: Combine these conditions with "and" (default) or "or".
+            For several values of a SINGLE attribute use the attribute operator `in`.
+            For a query needing AND + OR — e.g. (high-resolution OR NMR) AND human —
+            build each group separately and join them with rcsb_query_composer.
         chemical_attributes: Set True when the paths come from
             rcsb_list_pdb_search_attributes(schema="chemical") (e.g. "chem_comp.formula_weight").
             Selects the chemical-component catalog rather than the structure one.

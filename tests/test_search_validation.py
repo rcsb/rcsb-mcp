@@ -133,3 +133,44 @@ def test_every_tool_that_takes_an_attribute_path_validates_it():
     assert obliged, "no tool takes an attribute path — the guard has lost its subject"
     missing = sorted(obliged - validates)
     assert not missing, f"tools taking an attribute path but never validating it: {missing}"
+
+
+def test_an_unknown_key_in_a_filter_is_rejected_not_dropped():
+    """The tool surface has TWO things called an operator, and conflating them was silent.
+
+    `AttributeFilter.operator` is the per-condition COMPARISON (exact_match, in, less);
+    `logical_operator` is the ONE boolean joining every condition, and it is a sibling of
+    the `attributes` array, not a field of it. Under pydantic's default (extra="ignore") a
+    caller who wrote `logical_operator` inside a filter had it dropped in silence and got
+    "and" while having asked for "or" — a different answer, no error, nothing to notice.
+
+    The docstring used to warn ("They all share this one operator"). Prose is the wrong
+    guard for this: the schema already says where the field lives, and a caller who
+    misreads prose will misread that too. Rejecting the key is what actually stops it.
+    """
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    from rcsb_mcp.search import AttributeFilter
+
+    with _pytest.raises(ValidationError) as exc:
+        AttributeFilter.model_validate({
+            "attribute": "rcsb_entity_source_organism.ncbi_scientific_name",
+            "operator": "exact_match", "value": "Homo sapiens",
+            "logical_operator": "or",
+        })
+    assert "logical_operator" in str(exc.value), "the error must name the offending field"
+
+
+def test_every_documented_filter_field_still_validates():
+    """extra="forbid" must not reject the legitimate surface."""
+    from rcsb_mcp.search import AttributeFilter
+
+    f = AttributeFilter.model_validate({
+        "attribute": "exptl.method", "operator": "exact_match",
+        "value": "X-RAY DIFFRACTION", "negation": True, "case_sensitive": True,
+    })
+    assert f.negation and f.case_sensitive
+    assert AttributeFilter.model_validate(
+        {"attribute": "rcsb_nonpolymer_entity.pdbx_description", "operator": "exists"}
+    ).value is None
