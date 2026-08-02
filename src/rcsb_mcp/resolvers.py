@@ -15,6 +15,7 @@ This module imports nothing back from server.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Annotated, Any, Literal
 
 import httpx
@@ -41,14 +42,89 @@ GO_ASPECTS = {
 # can never drift. The body still normalizes (strip/lower/alias) for direct Python callers.
 GoNamespace = Literal[tuple(sorted(GO_ASPECTS))]  # type: ignore[valid-type]
 
-# InterPro domain/family resolver (EBI InterPro REST API) + friendly type aliases.
-INTERPRO_SEARCH_URL = "https://www.ebi.ac.uk/interpro/api/entry/interpro/"
+# InterPro domain/family resolver — EBI Search over the interpro7 index, NOT the InterPro
+# REST API. The REST API's `search` matches entry names only, and misses ordinary phrasings:
+#
+#   "alpha beta hydrolase"                 REST: nothing   here: IPR000073 (994 PDB entries)
+#   "alpha/beta hydrolase fold-3 domain"   REST: nothing   here: IPR013094
+#   "Abhydrolase_3"                        REST: nothing   here: PF07859
+#
+# The last two are why: this index also searches `short_name` and `description`, so a Pfam
+# short name or a fuller phrase resolves. The first is worse than it looks — dropping one
+# slash from a phrase that otherwise works took the caller from a 994-entry anchor to none.
+#
+# TWO REFERENCES EXIST AND ONLY ONE IS CORRECT. Use the OpenAPI spec:
+#     https://www.ebi.ac.uk/ebisearch/ws/rest/openapi.json
+# NOT the WADL (.../ws/rest?_wadl), whose camelCase parameter names are dead. EBI Search
+# ignores unrecognised parameters SILENTLY — no error, no warning — so the WADL's
+# `filterQueries` behaves exactly like a misspelling. Measured on query=kinase:
+#
+#   no restriction         8,136 hits   CDD, INTERPRO, PANTHER, PFAM
+#   filter=...PFAM           761 hits   PFAM only          <- honoured (OpenAPI name)
+#   filterQueries=...PFAM  8,136 hits   unchanged          <- ignored (WADL name)
+#   <made-up name>=...     8,136 hits   unchanged          <- indistinguishable
+#
+# Following the WADL would have shipped a resolver whose safety restriction did nothing.
+#
+# (EBI's "domain" means a SEARCH INDEX — interpro7, intenz — never a protein domain.)
+INTERPRO_SEARCH_URL = "https://www.ebi.ac.uk/ebisearch/ws/rest/interpro7"
+
+# The index spans 14 member databases, but only these two are ingested by RCSB, so only
+# these yield ids that `rcsb_polymer_entity_annotation.annotation_id` can filter on.
+# Measured — every other id space returns ZERO PDB entries, including for domains that are
+# certainly in the archive (SMART SM00220 is the S/T kinase catalytic domain):
+#
+#   IPR000073 -> 994    PF00151 -> 12  |  cd08367, PTHR11352, SM00220, PS50011,
+#                                          NF033838, G3DSA:3.40.50.1820 -> 0 each
+#
+# So the extra breadth is not usable breadth: unrestricted, the top hit for "kinase" and
+# "p53 tumor suppressor" is a CDD accession, and "alpha beta hydrolase" returns PROFILE and
+# PRINTS ids at ranks 2-3. Every one of those would filter to nothing downstream, silently.
+INTERPRO_SOURCE_DATABASES = ("INTERPRO", "PFAM")
+
+# Accepted `entry_type` values -> the vocabulary the index's `type` field uses.
+#
+# The complete set is published as the subdomains of interpro7 at
+#     https://www.ebi.ac.uk/ebisearch/ws/rest/domains/
+# and INTERPRO_SUBDOMAIN_TYPES below records it verbatim, so "did we miss a type?" has an
+# answer that does not depend on what a sample happened to return.
+#
+# Two vocabularies for one concept, and mixing them fails SILENTLY. The subdomain ids are
+# hyphenated ("interpro7_active-site"); the `type` FIELD is underscored ("active_site").
+# `type:active-site` returns 0 hits rather than an error, so a hyphenated value here would
+# be an always-empty filter nothing would flag. Everything below is underscored.
+#
+# (Each result also carries source="interpro7_<type>", the same vocabulary again. Querying
+# a subdomain directly — /interpro7_homologous_superfamily — returns results IDENTICAL to
+# filtering the parent index, verified on three type/query pairs, so the parent index plus
+# `filter` is used: one endpoint, one vocabulary, no hyphen mapping.)
+#
+# Three types the InterPro REST API did not expose are reachable here: coiled_coil,
+# disordered, region.
+INTERPRO_SUBDOMAIN_TYPES = (
+    "active-site", "binding-site", "coiled_coil", "conserved-site", "disordered",
+    "domain", "family", "homologous_superfamily", "ptm", "region", "repeat",
+)
 INTERPRO_TYPES = {
     "domain": "domain", "family": "family",
     "homologous_superfamily": "homologous_superfamily", "superfamily": "homologous_superfamily",
     "repeat": "repeat", "conserved_site": "conserved_site",
     "binding_site": "binding_site", "active_site": "active_site", "ptm": "ptm",
+    "coiled_coil": "coiled_coil", "disordered": "disordered", "region": "region",
 }
+
+# Lucene syntax characters. EBI Search parses the query, so raw caller text is unsafe:
+# "alpha/beta hydrolase" and "serine/threonine kinase" return HTTP 400, and "kinase:
+# activity" is worse — the colon parses as a field qualifier and it returns 0 hits with no
+# error at all. Escaping fixes all three.
+_LUCENE_SPECIAL = re.compile(r'([+\-!(){}\[\]^"~*?:\\/]|&&|\|\|)')
+
+
+def _escape_lucene(text: str) -> str:
+    """Escape a caller's free text so the search engine treats it as terms, not syntax."""
+    return _LUCENE_SPECIAL.sub(r"\\\1", text)
+
+
 # Accepted `entry_type` values, derived from the KEYS of the alias map above — every spelling the
 # resolver actually accepts, including the "superfamily" alias. Typing it (vs a bare str) ships
 # the enum in the tool schema, so the caller picks from the list instead of guessing and the two
@@ -207,35 +283,59 @@ async def rcsb_find_interpro_domains(
 
     Use this whenever a request references a protein DOMAIN, FAMILY, or fold — "structures
     containing / with a <domain>", "<domain>-containing proteins", "members of the <family>
-    family". Resolve the phrase to an InterPro accession (IPRxxxxxx) here, then filter on it
-    with rcsb_query_attribute: exact_match on
-    rcsb_polymer_entity_annotation.annotation_id, accession AS A STRING ("IPR000719").
-    InterPro lineage paths are not available.
+    family". Resolve the phrase to an accession here, then filter on it with
+    rcsb_query_attribute: exact_match on rcsb_polymer_entity_annotation.annotation_id,
+    accession AS A STRING ("IPR000719"). Lineage paths are not available.
+
+    Ids come from InterPro ("IPR000719") or Pfam ("PF07859") — `source_database` on each
+    entry says which. Both filter on the same attribute; nothing else needs to change.
 
     Args:
         query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
-        entry_type: Optional InterPro type filter. Omit to return all types.
+        entry_type: Optional type filter. Omit to return all types.
         limit: Max entries to return.
         with_pdb_counts: If true (default), annotate each entry with pdb_entry_count (PDB
             entries carrying it).
 
     Returns:
-        {query, entry_type, count, entries:[{id, name, type, pdb_entry_count?}]}.
+        {query, entry_type, count, entries:[{id, name, type, source_database,
+        pdb_entry_count?}]}.
     """
     etype = None
     if entry_type:
         etype = INTERPRO_TYPES.get(entry_type.strip().lower())
         if etype is None:
             raise ValueError(f"entry_type must be one of {sorted(set(INTERPRO_TYPES.values()))}")
-    params: dict[str, Any] = {"search": query, "page_size": limit}
+    # `query` carries ONLY the caller's text, so relevance is scored against what they
+    # actually asked for. Our constraints go in `filter`, which the API documents as
+    # "non-scoring queries that do not affect relevance" (GET /{domain}, openapi.json at
+    # https://www.ebi.ac.uk/ebisearch/ws/rest/openapi.json). Measured as equivalent today —
+    # same hitCount and same top hit on 5 of 6 benchmark queries — because a uniformly
+    # matching clause contributes near-constant score. Kept anyway: it is the documented
+    # mechanism, and it stays correct if index statistics ever shift.
+    filters = [f"source_database:({' OR '.join(INTERPRO_SOURCE_DATABASES)})"]
     if etype:
-        params["type"] = etype
-    data = await _get_json(INTERPRO_SEARCH_URL, params, "EBI InterPro")
-    results = data.get("results") or []
+        filters.append(f"type:{etype}")
+    params: dict[str, Any] = {
+        "query": _escape_lucene(query),
+        "filter": " AND ".join(filters),
+        "format": "json",
+        "fields": "name,type,source_database",
+        "start": 0,
+        # `size` is capped at 100 by the API; ResolverLimit already caps callers at 25.
+        "size": limit,
+    }
+    data = await _get_json(INTERPRO_SEARCH_URL, params, "EBI Search (InterPro)")
     entries: list[dict[str, Any]] = []
-    for r in results:
-        meta = r.get("metadata") or {}
-        entries.append({"id": meta.get("accession"), "name": meta.get("name"), "type": meta.get("type")})
+    for r in data.get("entries") or []:
+        fields = r.get("fields") or {}
+        first = lambda key: (fields.get(key) or [None])[0]  # noqa: E731 - each field is a list
+        entries.append({
+            "id": r.get("id"),
+            "name": first("name"),
+            "type": first("type"),
+            "source_database": first("source_database"),
+        })
         if len(entries) >= limit:
             break
     if with_pdb_counts and entries:
