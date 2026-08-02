@@ -680,7 +680,7 @@ async def rcsb_search_request(
             reference. Setting it CONVERTS the result — e.g. a ligand attribute filter
             with return_type="entry" gives the structures containing that ligand. If
             conditions granularity is finer than entry (e.g. entity, instance, ...),
-            matches occur if any subunit satisfies a given condition.
+            matches occur if any subunit satisfies a single one.
         limit: Max hits to return, 1-100 (default 10).
         offset: Hits to skip, for paging; pass the response's next_offset back with the
             same query to fetch the next page.
