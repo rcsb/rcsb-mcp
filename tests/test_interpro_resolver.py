@@ -164,3 +164,27 @@ def test_the_hyphenated_forms_are_never_used_as_filter_values():
     hyphenated = {t for t in INTERPRO_SUBDOMAIN_TYPES if "-" in t}
     assert hyphenated == {"active-site", "binding-site", "conserved-site"}
     assert not hyphenated & set(INTERPRO_TYPES.values())
+
+
+def test_the_docstring_offers_a_way_to_broaden():
+    """InterPro has no lineage, so `in` is the ONLY way to broaden — and it was the one
+    resolver of five not saying so.
+
+    The other four attach "use `in` with several ids to broaden" to their hierarchical
+    *_lineage.id sentence. InterPro has no lineage paths, so it lost that sentence and the
+    `in` hint with it — leaving the resolver where broadening matters MOST as the only one
+    that never mentions how. Verified against the live API:
+
+        IPR000073 alone                994
+        IPR029058 alone              3,295
+        in [both]                    3,295   (union)
+        in [IPR000073, PF07859]      1,062   (id spaces mix)
+
+    Asserted as behaviour, not phrasing: the docstring must name `in`, because the tool
+    returns a LIST of candidates and exact_match uses exactly one of them.
+    """
+    from rcsb_mcp.resolvers import rcsb_find_interpro_domains
+
+    doc = rcsb_find_interpro_domains.__doc__
+    assert "`in`" in doc, "the only broadening route must be named"
+    assert "exact_match" in doc, "the single-id route stays documented too"

@@ -285,7 +285,8 @@ async def rcsb_find_interpro_domains(
     containing / with a <domain>", "<domain>-containing proteins", "members of the <family>
     family". Resolve the phrase to an accession here, then filter on it with
     rcsb_query_attribute: exact_match on rcsb_polymer_entity_annotation.annotation_id,
-    accession AS A STRING ("IPR000719"). Lineage paths are not available.
+    accession AS A STRING ("IPR000719"). Lineage paths are not available; broaden with
+    `in` over several accessions instead (IPR and PF mix freely).
 
     Ids come from InterPro ("IPR000719") or Pfam ("PF07859") — `source_database` on each
     entry says which. Both filter on the same attribute; nothing else needs to change.
