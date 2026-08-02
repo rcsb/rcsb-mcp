@@ -205,6 +205,29 @@ CASES: list[dict[str, Any]] = [
                             "interval": "year"}]}},
     {"name": "config-computed-models-on-sequence",
      "query": _q("sequence", sequence=SEQ), "config": {"include_computed_models": True}},
+
+    # --- nested-record coherence -------------------------------------------
+    # NOT pre-refactor behaviour, and the only case here that is not. Added
+    # deliberately, because the 37 cases above could not express this shape: the flat
+    # build_*_query entry points always spliced same-operator groups, so the fixture
+    # had NO case with two conditions on one nested-indexed record and was silent on
+    # the bug that splice caused. "Baseline unchanged" therefore proved nothing about
+    # the fix -- it only showed the fixture never covered the path.
+    #
+    # The invariant frozen here is the TREE SHAPE: the annotation pair must survive as
+    # its own group rather than being flattened into the outer AND. Flattened, the two
+    # conditions are no longer required to hold on the same annotation record --
+    # measured at return_type=entry, this exact query went from 0 hits (correct: no
+    # Pfam record carries a GO id) to 3,846, every one a false positive.
+    {"name": "nested-record-pair-composed-with-a-plain-filter",
+     "query": _group("and",
+                     _q("attribute", attributes=[
+                         {"attribute": "rcsb_polymer_entity_annotation.type",
+                          "operator": "exact_match", "value": "Pfam"},
+                         {"attribute": "rcsb_polymer_entity_annotation.annotation_id",
+                          "operator": "exact_match", "value": "GO:0004672"}]),
+                     _q("attribute", attributes=[XRAY])),
+     "config": {}},
 ]
 
 

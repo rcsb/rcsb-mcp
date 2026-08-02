@@ -819,6 +819,63 @@
     },
     "return_type": "entry"
   },
+  "nested-record-pair-composed-with-a-plain-filter": {
+    "query": {
+      "logical_operator": "and",
+      "nodes": [
+        {
+          "logical_operator": "and",
+          "nodes": [
+            {
+              "parameters": {
+                "attribute": "rcsb_polymer_entity_annotation.type",
+                "operator": "exact_match",
+                "value": "Pfam"
+              },
+              "service": "text",
+              "type": "terminal"
+            },
+            {
+              "parameters": {
+                "attribute": "rcsb_polymer_entity_annotation.annotation_id",
+                "operator": "exact_match",
+                "value": "GO:0004672"
+              },
+              "service": "text",
+              "type": "terminal"
+            }
+          ],
+          "type": "group"
+        },
+        {
+          "parameters": {
+            "attribute": "exptl.method",
+            "operator": "exact_match",
+            "value": "X-RAY DIFFRACTION"
+          },
+          "service": "text",
+          "type": "terminal"
+        }
+      ],
+      "type": "group"
+    },
+    "request_options": {
+      "paginate": {
+        "rows": 10,
+        "start": 0
+      },
+      "results_content_type": [
+        "experimental"
+      ],
+      "sort": [
+        {
+          "direction": "desc",
+          "sort_by": "score"
+        }
+      ]
+    },
+    "return_type": "entry"
+  },
   "seqmotif-prosite": {
     "query": {
       "parameters": {
