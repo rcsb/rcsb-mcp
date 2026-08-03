@@ -387,9 +387,12 @@ async def rcsb_query_fulltext(query: str) -> dict[str, Any]:
     enzyme/organism), resolve it to an ontology id with the matching rcsb_find_* tool and
     filter on the annotation instead; fall back to keywords only if that yields nothing.
 
-    Matching spans ALL text annotations, so judge each hit yourself: a high `score` is
-    text-relevance, NOT biological importance — never tell the user one hit is better
-    than another because its score is higher.
+    Matching spans many text attributes beyond the title — abstracts, keywords, synonyms,
+    author names — so judge each hit yourself: a high `score` is text-relevance, NOT
+    biological importance; never tell the user one hit is better than another because its
+    score is higher. For evidence on a hit, rcsb_get_entries returns its title and, for
+    many entries, a PubMed abstract (pubmed.rcsb_pubmed_abstract_text). Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
 
     Args:
         query: Terms matched case-insensitively against all text annotations. Quote a
@@ -768,6 +771,12 @@ async def rcsb_search_request(
     # Where this query was intersected more loosely than it reads. Absent on the queries
     # that are fine, which is most of them -- see queries.intersection_notes.
     notes = queries.intersection_notes(node, body["return_type"])
+    # Thin answers from a wording-dependent query. Separate concern from the above: that one
+    # is about a query being looser than it reads, this one about it being narrower.
+    if not facets:
+        thin = queries.small_result_note(node, result.get("total_count", 0))
+        if thin:
+            notes = [*notes, thin]
     if notes:
         result["notes"] = notes
     return result

@@ -69,7 +69,11 @@ def test_the_low_coverage_note_recommends_re_resolving():
     what these numbers are for.)
     """
     note = _resolver_fallback_note(_hits(1), "InterPro entry")
-    assert "broader or differently-worded" in note
+    # The INVARIANT is that re-resolving is offered as the remedy — not the adjectives used
+    # to describe the replacement term. An earlier version asserted the literal phrase
+    # "broader or differently-worded" and broke the moment "synonym" was added to it, which
+    # is a better note failing a worse test.
+    assert "resolve a" in note and "term for the same concept" in note
 
 
 def test_the_low_coverage_note_does_not_suggest_a_full_text_cross_check():

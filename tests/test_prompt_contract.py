@@ -51,7 +51,14 @@ REQUIRED = [
     ("`grounds`", "the tool-sourced half of evidence — provenance colouring keys off the split"),
     ("`interpretation`", "the agent's-own-reading half; folding it into grounds is the bug this prevents"),
     # --- search quality: the agent's actual job ----------------------------
-    ("FAMILY / ONTOLOGY ANCHOR", "rare-term recall strategy"),
+    # The rare-term recall STRATEGY moved OUT of this prompt, same as the score caveat
+    # below: "resolve a concept to an ontology id first" now lives on rcsb_query_fulltext,
+    # the synonym/broaden/cross-check routes are emitted by queries.small_result_note when
+    # a wording-dependent search comes back thin, and the poorly-covered-resolver-hit case
+    # is on all five rcsb_find_* tools. All are always-delivered channels; this prompt is
+    # not. Guarded by tests/test_tool_descriptions.py and tests/test_small_result_note.py.
+    # What stays here is the POLICY it cannot own: how much to trust a first answer.
+    ("recall probe", "the agent's stance on a first result — a client decision, not the server's"),
     ("false positives", "full-text hits must be verified"),
     # The score caveat moved OUT of this prompt: it now lives on rcsb_query_fulltext,
     # rcsb_query_attribute and rcsb_search_request (group_by_ranking), i.e. on the

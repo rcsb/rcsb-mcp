@@ -212,7 +212,7 @@ def _resolver_fallback_note(
         return (f"Matched {label}(s) but none are annotated in the PDB (pdb_entry_count 0). "
                 "A resolver matches your words against TERM NAMES, so it can equally have "
                 "landed on a narrower or adjacent piece of your concept. Read the name that "
-                "came back; if it is not what you meant, resolve a broader or "
+                "came back; if it is not what you meant, resolve a broader, synonym  or "
                 "differently-worded term for the same concept. Separately, a keyword search "
                 "(rcsb_query_fulltext) may still surface relevant structures.")
     # Rank/coverage inversion. Deliberately states the two numbers and stops: the trigger
@@ -245,8 +245,8 @@ def _resolver_fallback_note(
                 "expected for a rare target, but a resolver matches your words against TERM "
                 "NAMES, so it can equally have landed on a narrower or adjacent piece of your "
                 "concept. Read the name that came back before anchoring on this id; if it is "
-                "not what you meant, resolve a broader or differently-worded term for the same "
-                "concept.")
+                "not what you meant, resolve a broader, synonym or differently-worded term for "
+                "the same concept.")
     return None
 
 

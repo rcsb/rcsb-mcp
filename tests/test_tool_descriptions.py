@@ -31,6 +31,10 @@ REQUIRED_IN_TOOL = {
     "rcsb_query_fulltext": [
         "text-relevance, NOT biological importance",   # score is not quality
         "AND/OR/NOT are NOT boolean",                   # query-string gotcha
+        # Rare-term recall: resolve a biological CONCEPT to an ontology id before keyword
+        # searching it. Moved off rcsb_search_assistant.md, which is optional and may never
+        # be loaded — this is the only channel guaranteed to arrive.
+        "resolve it to an ontology id",
     ],
     "rcsb_query_attribute": [
         "an empty result is a valid answer",            # don't fall back to keyword search

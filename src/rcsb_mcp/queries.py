@@ -791,6 +791,59 @@ def _terminal_scope(terminal: dict[str, Any]) -> tuple[str, str, AttributeScope 
     return attribute, service, scope_of(attribute, service)
 
 
+# Deliberately says "any value they share" rather than naming annotation types. An earlier
+# draft listed UniProt/InterPro/Pfam/GO/EC, which reads as the complete set and is not:
+# gene name, struct_keywords, pdbx_description and organism are all re-searchable and often
+# work better. A fixed list in a note also cannot track the catalog, and the server already
+# has a discovery tool for field paths.
+#
+# A small answer from a query that matched on WORDING can mean the archive uses different
+# words, not that it holds little — the failure the depositor's vocabulary causes, which no
+# amount of care with the query shape prevents. Scoped to full text on purpose: for an
+# annotation-id or entry-id filter a small count is almost always simply correct, and for a
+# sequence or structure search the remedy is a threshold, not a synonym.
+#
+# The threshold is calibrated, and honestly it is calibrated to ONE case. Measured over 28
+# realistic full-text queries (2 to 40,751 hits):
+#
+#     < 5   fires on  7%  -- and MISSES "PSII-FCPII supercomplex" at 11, the case that
+#                            prompted this: the entry it was missing, 6JLU, is deposited
+#                            as "PSII-FCP"
+#     < 20  fires on 11%  -- catches it
+#
+# 28 queries is a small sample biased toward interesting ones, so treat 11% as a floor on
+# the real rate. Raise this number, not the message, if it turns out to be chatty.
+_SMALL_RESULT_MAX = 20
+
+
+def small_result_note(node: dict[str, Any], total_count: int) -> str | None:
+    """Flag a thin answer from a query whose recall depends on the depositor's wording."""
+    if total_count >= _SMALL_RESULT_MAX:
+        return None
+    if not any(t.get("service") == "full_text" for t in _terminals(node)):
+        return None
+    # Zero gets its own text. The general note tells the caller to harvest values from the
+    # hits and re-search on them, which is impossible when there are none — and "that is
+    # often simply the answer" is the wrong hedge for nothing at all. Synonyms and an
+    # ontology anchor are the only routes left, and both still work from an empty result.
+    if total_count == 0:
+        return (
+            "total_count is 0. This query matched on WORDING, so an empty result can mean "
+            "the archive words the concept differently rather than that it holds nothing. "
+            "Re-run rcsb_query_fulltext with other names, synonyms or abbreviations for "
+            "the same thing, or resolve the concept with an rcsb_find_* tool and search "
+            "that annotation instead."
+        )
+    return (
+        f"total_count is {total_count}. That is often simply the answer — but this query "
+        f"matched on WORDING, so a thin result can also mean the archive words the concept "
+        f"differently. Three ways to tell: fetch these hits with rcsb_get_* and re-search "
+        f"on any value they share; re-run rcsb_query_fulltext with other names, synonyms "
+        f"or abbreviations for the same thing; or resolve the concept with an rcsb_find_* "
+        f"tool and compare that answer with this one."
+    )
+
+
 def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
     """Where this query's conditions are intersected more loosely than they read.
 

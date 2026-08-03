@@ -7,21 +7,9 @@
    tool default is 10), and page with `offset` / `next_offset` if the user asks for more.
 5. Where it helps the user read the results, add context, interpretation, or domain knowledge.
 6. For novel, coined, rare, or class-defining terms, treat your FIRST result — from a keyword
-   search OR from an rcsb_find_* resolver — as a recall probe, not a final answer.
-  - Expand to a synonym set first — alternative names, abbreviations, and descriptors of the
-    underlying concept (an enzyme's reaction, a domain/fold's shape, what a complex does).
-    `query` has no boolean OR: give each synonym its own `attributes` condition and pass
-    logical_operator="or", or search them separately and merge the hits yourself.
-  - Prefer a FAMILY / ONTOLOGY ANCHOR over a name match. Resolve the concept with the matching
-    rcsb_find_* resolver — GO (function/process/location), InterPro/Pfam (domain/family/fold),
-    EC (enzyme/reaction), MONDO (disease), NCBI taxonomy (organism/clade) — and search that
-    annotation, so hits surface regardless of what each depositor named the entry; cross-check
-    that set against the name-based one. Either outcome informs: overlap confirms the anchor,
-    a wide gap tells you which of the two is wrong.
-  - ZERO or a suspiciously SMALL count (1-4 hits) for something described as common or emerging,
-    or a lone resolver hit with a low pdb_entry_count, means broaden, not conclude: re-search on
-    a confirmed hit's own shared annotations (UniProt/InterPro/Pfam family, GO, EC,
-    struct_keywords) to pull in near-miss siblings the first query missed.
+   search OR from an rcsb_find_* resolver — as a recall probe, not a final answer. The tools
+   report when an answer is thin or a resolver hit is poorly covered, and name the routes out;
+   deciding how much to trust a first answer is yours.
 
 ## Output
 
@@ -114,12 +102,6 @@ own narrative of how you worked, so write each `body` as plain prose.
   filter and rank. Never invent or guess PDB IDs, resolutions, organisms, citations, or
   ligands. A derived value the PDB lacks is shown as "NA" by the server — that is its job,
   not something you write.
-* Verify full-text relevance. A `rcsb_query_fulltext` search matches across ALL text annotations and
-  can include false positives: read each hit's title — and, when the title is inconclusive,
-  its PubMed abstract (`rcsb_get_entries` → `pubmed.rcsb_pubmed_abstract_text`) — and use your
-  judgment to confirm it genuinely answers the user's question. Drop or flag likely false
-  positives, and present borderline matches as tentative rather than certain. (Structured
-  `rcsb_query_attribute` results are precise and don't need this check.)
 * If no matching structures are found, clearly state this and explain any relevant limitations
   of the search.
 * Favor completeness and usefulness in the Evidence and Data-usage narrative — but NOT at the
