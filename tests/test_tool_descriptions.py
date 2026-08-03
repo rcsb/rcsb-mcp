@@ -273,3 +273,47 @@ def test_no_description_cites_a_tool_that_is_not_registered():
     assert not dangling, (
         "tool descriptions name tools that are not registered:\n  " + "\n  ".join(sorted(dangling))
     )
+
+
+def test_no_description_contains_a_near_miss_of_a_tool_name():
+    """`_TOOL_NAME` only sees tokens that already look like tool names, so the likeliest
+    way a reference goes wrong is invisible to it.
+
+    `csb_query_seqmotif` — one dropped letter — shipped in rcsb_search_request's
+    return_type table and every test passed, because the pattern requires the `rcsb_`
+    prefix that the typo destroyed. `rcsb_qeury_attribute` would escape the same way: the
+    family segment is part of the pattern too.
+
+    So this looks for tokens that are CLOSE to a registered name without being one. The
+    0.9 cutoff is tight enough that attribute paths (`rcsb_polymer_entity_annotation`) and
+    field names do not trip it, which the companion test below pins.
+    """
+    import difflib
+    import re
+
+    descs = _descriptions()
+    registered = set(descs)
+    suspicious = []
+    for name, desc in descs.items():
+        for token in set(re.findall(r"\b[a-z][a-z0-9_]{8,}\b", desc)):
+            if token in registered or "_" not in token:
+                continue
+            close = difflib.get_close_matches(token, registered, n=1, cutoff=0.9)
+            if close:
+                suspicious.append(f"{name}: {token!r} — did you mean {close[0]!r}?")
+    assert not suspicious, "near-miss tool references:\n  " + "\n  ".join(suspicious)
+
+
+def test_the_near_miss_check_does_not_fire_on_attribute_paths():
+    """Attribute paths share the `rcsb_` prefix and plenty of substrings with tool names.
+    If the cutoff were loose they would all be flagged and the guard would be turned off.
+    """
+    import difflib
+
+    registered = set(_descriptions())
+    for path in ("rcsb_polymer_entity_annotation", "rcsb_entity_source_organism",
+                 "rcsb_entry_info", "rcsb_nonpolymer_entity_annotation",
+                 "rcsb_polymer_instance_annotation", "rcsb_accession_info"):
+        assert not difflib.get_close_matches(path, registered, n=1, cutoff=0.9), (
+            f"{path!r} would be flagged as a typo'd tool name"
+        )

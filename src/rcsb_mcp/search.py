@@ -685,17 +685,28 @@ async def rcsb_search_request(
     Args:
         query: The query document returned by an rcsb_query_* tool, passed through
             unchanged.
-        return_type: What kind of identifier to return — "entry" (whole structures),
-            "polymer_entity" (distinct macromolecules, sequences, ids like "4HHB_1"),
-            "non_polymer_entity" (ligands, small molecules), "polymer_instance" (chains), "assembly", or
-            "mol_definition" (chemical components). Omit it to use the default implied by
-            the query: entry for keyword/attribute searches, polymer_entity for sequence
-            and sequence-motif, mol_definition for chemical, assembly for structural
-            motifs and assembly shape references, polymer_instance for a chain shape
-            reference. Setting it CONVERTS the result — e.g. a ligand attribute filter
-            with return_type="entry" gives the structures containing that ligand. If
-            conditions granularity is finer than entry (e.g. entity, instance, ...),
-            matches occur if any subunit satisfies a single one.
+        return_type: What kind of identifier to return:
+                Type               Description          Example    Data API tool
+                entry              whole structure      "4HHB"     -> rcsb_get_entries
+                polymer_entity     one molecule         "4HHB_1"   -> rcsb_get_polymer_entities
+                non_polymer_entity ligand entity        "4HHB_3"   -> rcsb_get_nonpolymer_entities
+                polymer_instance   one chain            "4HHB.A"   -> rcsb_get_polymer_entity_instances
+                assembly           biological assembly  "4HHB-1"   -> rcsb_get_assemblies
+                mol_definition     chemical component   "HEM"      -> rcsb_get_chem_comps
+            Omit it to use the default implied by the query:
+                Query                 Return type
+                rcsb_query_fulltext   -> entry
+                rcsb_query_attribute  -> entry
+                rcsb_query_sequence   -> polymer_entity
+                rcsb_query_seqmotif   -> polymer_entity
+                rcsb_query_structure  -> assembly (assembly_id in query) / polymer_instance (asym_id in query)
+                rcsb_query_strucmotif -> assembly
+                rcsb_query_chemical   -> mol_definition
+            Setting it CONVERTS the result — e.g. a ligand attribute filter
+            with return_type="entry" gives the structures containing that ligand.
+            If conditions granularity is finer than entry (e.g. entity, instance, ...),
+            an entry matches when EACH condition holds on SOME subunit — not
+            necessarily the same one.
         limit: Max hits to return, 1-100 (default 10).
         offset: Hits to skip, for paging; pass the response's next_offset back with the
             same query to fetch the next page.

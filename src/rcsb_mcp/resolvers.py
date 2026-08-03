@@ -237,7 +237,8 @@ def _resolver_fallback_note(
             f"same set covers {alt_n}. Rank here is how closely each NAME matched your "
             f"words, not how much of the archive the {label} covers. The larger one may be "
             f"a broader form of what you meant, or an unrelated name collision — read both "
-            f"names before anchoring on either."
+            f"names before anchoring on either. If it is not what you meant, resolve a "
+            f"broader, synonym or differently-worded term for the same concept."
         )
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:
@@ -270,8 +271,9 @@ async def rcsb_find_go_terms(
     it; use `in` with several ids to broaden.
     For ONLY that exact term without descendants use annotation_id instead.
 
-    Results are based on how each entry's text matched your query. Rank is unrelated
-    to how much of the archive each term covers.
+    Results are based on how each entry's text matched your query. Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
+    Rank is unrelated to how much of the archive each term covers.
 
     Args:
         query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
@@ -339,8 +341,9 @@ async def rcsb_find_interpro_domains(
     Ids come from InterPro ("IPR000719") or Pfam ("PF07859") — `source_database` on each
     entry says which. Both filter on the same attribute; nothing else needs to change.
 
-    Results are based on how each entry's text matched your query. Rank is unrelated
-    to how much of the archive each term covers.
+    Results are based on how each entry's text matched your query. Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
+    Rank is unrelated to how much of the archive each term covers.
 
     Args:
         query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
@@ -421,8 +424,9 @@ async def rcsb_find_enzyme_classes(
     it; use `in` with several ids to broaden.
     A partial EC like "3.4.21" therefore matches the whole sub-subclass.
 
-    Results are based on how each entry's text matched your query. Rank is unrelated
-    to how much of the archive each term covers.
+    Results are based on how each entry's text matched your query. Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
+    Rank is unrelated to how much of the archive each term covers.
 
     Args:
         query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
@@ -480,8 +484,9 @@ async def rcsb_find_disease_terms(
     it; use `in` with several ids to broaden.
     A MONDO id therefore finds the disease and its subtypes.
 
-    Results are based on how each entry's text matched your query. Rank is unrelated
-    to how much of the archive each term covers.
+    Results are based on how each entry's text matched your query. Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
+    Rank is unrelated to how much of the archive each term covers.
 
     Args:
         query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
@@ -546,8 +551,9 @@ async def rcsb_find_organisms(
     resolve the nearest CONTAINING taxon, then classify each hit from the lineage its own
     record returns.
 
-    Results are based on how each entry's text matched your query. Rank is unrelated
-    to how much of the archive each term covers.
+    Results are based on how each entry's text matched your query. Broader, synonym,
+    or differently-worded terms for the same concept may produce different results.
+    Rank is unrelated to how much of the archive each term covers.
 
     Args:
         query: Free-text organism / clade / common name, e.g. "human", "mammals", "E. coli".
