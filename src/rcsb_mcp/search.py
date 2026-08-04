@@ -262,6 +262,16 @@ def _format(
     ]
     total = raw.get("total_count", 0)
     result: dict[str, Any] = {"total_count": total, "returned": len(hits)}
+    # With group_by the API keeps total_count as the UNGROUPED hit count and reports the
+    # number of groups separately -- 2,092 SH2-domain entities collapse to 159 UniProt
+    # groups. Surfacing it matters twice over: the caller cannot otherwise see what the
+    # grouping achieved, and paging against 2,092 never terminates. At offset 200 the old
+    # code returned 0 hits with has_more=True and next_offset=200, i.e. an agent following
+    # the documented paging protocol loops on the same offset forever.
+    group_count = raw.get("group_by_count")
+    if group_count is not None:
+        result["group_count"] = group_count
+        total = group_count
     rt = (body or {}).get("return_type")
     if rt:
         result["result_type"] = rt

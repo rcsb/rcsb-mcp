@@ -174,3 +174,50 @@ def test_every_documented_filter_field_still_validates():
     assert AttributeFilter.model_validate(
         {"attribute": "rcsb_nonpolymer_entity.pdbx_description", "operator": "exists"}
     ).value is None
+
+
+def test_grouped_paging_terminates():
+    """With group_by, total_count stays UNGROUPED and paging against it never ends.
+
+    The API reports two numbers for a grouped search: `total_count` is the raw hit count
+    and `group_by_count` is how many groups those collapse into — 2,092 SH2-domain
+    entities become 159 UniProt groups. Paging against 2,092 produced:
+
+        offset  returned  has_more  next_offset
+           150         9      True          159
+           200         0      True          200      <- 0 hits, "more", same offset
+
+    An agent following the documented offset/next_offset protocol loops on 200 forever.
+    Paging must use the group count when there is one.
+    """
+    from rcsb_mcp.search import _format
+
+    raw = {"result_set": [], "total_count": 2092, "group_by_count": 159}
+    out = _format(raw, {"return_type": "polymer_entity"}, offset=200)
+    assert out["group_count"] == 159
+    assert out["has_more"] is False, "past the last group there is nothing more"
+    assert out["next_offset"] is None
+
+    partial = {"result_set": [{"identifier": f"X_{i}"} for i in range(9)],
+               "total_count": 2092, "group_by_count": 159}
+    mid = _format(partial, {"return_type": "polymer_entity"}, offset=150)
+    assert mid["has_more"] is False, "150 + 9 == 159 groups: the last page"
+
+
+def test_total_count_still_reports_ungrouped_hits():
+    """`group_count` is added, not substituted: how many entities carry the annotation is
+    a different question from how many distinct proteins they represent, and callers
+    reporting coverage need the first."""
+    from rcsb_mcp.search import _format
+
+    out = _format({"result_set": [], "total_count": 2092, "group_by_count": 159},
+                  {"return_type": "polymer_entity"}, offset=0)
+    assert out["total_count"] == 2092 and out["group_count"] == 159
+
+
+def test_an_ungrouped_search_gains_no_group_count():
+    """Silence when it does not apply — the field marks that grouping happened."""
+    from rcsb_mcp.search import _format
+
+    out = _format({"result_set": [], "total_count": 42}, {"return_type": "entry"}, offset=0)
+    assert "group_count" not in out

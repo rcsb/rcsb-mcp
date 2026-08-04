@@ -92,7 +92,7 @@ def test_the_zero_case_does_not_tell_the_caller_to_mine_hits_it_does_not_have():
     ontology anchor are what remain, and both work from an empty result.
     """
     note = small_result_note(FULLTEXT, 0)
-    assert "total_count is 0" in note
+    assert "total_count is 0" in note and "an empty result" in note
     assert "these hits" not in note and "they share" not in note
     assert "often simply the answer" not in note
     assert "rcsb_query_fulltext" in note and "rcsb_find_*" in note
@@ -155,3 +155,30 @@ def test_it_does_not_tell_the_caller_to_distrust_results_as_policy():
     note = small_result_note(FULLTEXT, 5)
     for banned in ("always", "never", "do not trust", "distrust"):
         assert banned not in note.lower()
+
+
+def test_the_count_is_the_ARCHIVE_count_not_the_page_the_caller_gets():
+    """Grouping must not change which number this note reads. Got this wrong once.
+
+    With group_by on, a response carries both counts — "hormone-sensitive lipase" is 60
+    entities in 17 UniProt groups — and 17 is what the caller pages. That made group_count
+    look like "the answer size", so the note was rewired to read it, and 17 is under the
+    threshold where 60 is not: a search that found 60 entities started warning that the
+    archive might word the concept differently.
+
+    It does not, because this note is about RECALL — did the wording miss things? — and
+    grouping is a post-hoc collapse of what was already found. It cannot cost recall. The
+    60 is the evidence the wording worked; the 17 is a display choice.
+    """
+    fired_on_the_archive_count = small_result_note(FULLTEXT, 60)
+    fired_on_the_group_count = small_result_note(FULLTEXT, 17)
+    assert fired_on_the_archive_count is None
+    assert fired_on_the_group_count is not None
+    # So the wiring must hand it total_count, whichever is smaller.
+    import inspect
+
+    from rcsb_mcp import search
+
+    assert 'small_result_note(node, result.get("total_count", 0))' in inspect.getsource(
+        search.rcsb_search_request
+    ), "grouping does not affect recall, so the note reads total_count either way"
