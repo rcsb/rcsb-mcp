@@ -143,6 +143,119 @@ OLS_SEARCH_URL = "https://www.ebi.ac.uk/ols4/api/search"
 UNIPROT_TAXONOMY_SEARCH_URL = "https://rest.uniprot.org/taxonomy/search"
 
 
+# --------------------------------------------------------------------------- #
+# Why a hit matched, when its NAME does not say
+#
+# A resolver hit whose name shares no word with the query is the dangerous kind: the notes
+# below all tell the caller to "read the name that came back", and an opaque name makes
+# that unfollowable. Worse than unhelpful — it invites DISCARDING a correct hit.
+# rcsb_find_interpro_domains("7S basic globulin") returns exactly one entry, IPR033868
+# "Xylanase inhibitor I-like", which reads like a wrong-concept match and is not: its
+# description says the domain is also found in basic 7S globulin. Same for "TIM barrel",
+# whose best entries are named "Triosephosphate isomerase".
+#
+# TWO tests, and each alone fails in an opposite direction:
+#
+#   name shares no query word   -- alone, this would emit whatever the API returned,
+#                                  including text that did not match at all
+#   the fragment carries <em>   -- alone, this fires on 94% of results (~2,200 tok per
+#                                  call): highlighting `name` does not reliably mark a
+#                                  name match, so "the name matched" cannot be read off it
+#
+# Together: ~6% of results, ~40 tok per 10-hit call. The <em> test is what stops the
+# `Abhydrolase_3` case, where the match is in short_name and the description fragment comes
+# back as a generic opening line with no <em> in it — a plausible-looking justification
+# that justifies nothing.
+_HL_EM = re.compile(r"</?em>")
+_HL_PMID = re.compile(r"\[\[PMID:\d+\]\]")          # InterPro's citation markup
+_HL_EXCERPT = re.compile(r"\s*\.\.\.\s*")
+_HL_SENTENCE = re.compile(r"(?<=\.)\s+(?=[A-Z(])")
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _significant_words(text: str) -> set[str]:
+    return {w for w in _WORD.findall((text or "").lower()) if len(w) >= 3}
+
+
+def _name_explains_match(query: str, name: str | None) -> bool:
+    """Whether a hit's NAME accounts for why it matched.
+
+    Sharing any word of three characters or more is enough: the caller can then see the
+    connection and judge the hit. Sharing none is the case that traps — "7S basic globulin"
+    against "Xylanase inhibitor I-like" reads as a wrong-concept hit and is not.
+    """
+    return bool(_significant_words(query) & _significant_words(name))
+
+
+def _match_context(highlights: dict[str, Any]) -> str | None:
+    """A whole sentence around the matched words, or None when nothing actually matched.
+
+    The API returns a window into the field, bookended with " ... " — and it uses the SAME
+    marker between disjoint excerpts, so one fragment can hold several unrelated passages.
+    Splitting on it and keeping the first that contains a match is what stops two unrelated
+    sentences being stitched into one misleading quote.
+
+    Partial leading/trailing pieces are dropped only when they carry no matched word: the
+    snippet exists for the match, so tidiness never costs content.
+    """
+    for field in ("short_name", "description"):
+        for fragment in highlights.get(field) or []:
+            # No `if "<em>" not in fragment` fast path: the comprehension below already
+            # filters on it, so the check was dead — a mutation removing it changed
+            # nothing, which is how it was found.
+            excerpts = [x for x in _HL_EXCERPT.split(fragment) if "<em>" in x]
+            if not excerpts:
+                continue
+            # Split BEFORE stripping <em>, so "does this sentence hold a match?" is still
+            # answerable.
+            parts = _HL_SENTENCE.split(excerpts[0].strip())
+            whole = [s for s in parts if "<em>" in s and s.rstrip().endswith(".")]
+            if whole:
+                text = " ".join(whole)
+            else:
+                text = " ".join([s for s in parts if "<em>" in s] or parts)
+                cut = text.rfind(",")
+                if cut > text.rfind("</em>"):
+                    text = text[:cut]
+            text = _HL_PMID.sub("", _HL_EM.sub("", text))
+            text = re.sub(r"\s+", " ", text).strip(" .,;")
+            if text:
+                return text
+    return None
+
+
+# Disease vocabulary too common to explain anything. A MONDO label or synonym shares one of
+# these with almost any disease query, so matching on them manufactures false explanations:
+# "Down syndrome" was "explained" by MONDO:0021702 "alcohol amnestic disorder", whose
+# synonym list contains the word "syndrome". Excluding them dropped that and kept every
+# genuine case (Lou Gehrig / lockjaw / whooping cough / Hansen's).
+_GENERIC_DISEASE_WORDS = frozenset({
+    "disease", "syndrome", "disorder", "deficiency", "infection", "infectious", "condition",
+    "type", "congenital", "hereditary", "familial", "acquired", "chronic", "acute",
+    "primary", "secondary", "idiopathic", "cell", "cancer", "tumor", "tumour",
+})
+
+
+def _matched_synonym(query: str, label: str | None, synonyms: list[str]) -> str | None:
+    """The synonym that explains a hit whose LABEL does not, or None.
+
+    Colloquial disease names are how people ask, and MONDO labels are formal: "lockjaw" ->
+    tetanus, "whooping cough" -> pertussis, "Lou Gehrig's disease" -> amyotrophic lateral
+    sclerosis. Zero shared words in each, correct answer in each, and nothing said why.
+
+    Unlike the InterPro case there is no <em> marker to confirm the backend matched this
+    field -- OLS4 does not highlight -- so the overlap is inferred, and the generic-word
+    exclusion is what keeps that inference honest.
+    """
+    distinctive = _significant_words(query) - _GENERIC_DISEASE_WORDS
+    if not distinctive or distinctive & (_significant_words(label) - _GENERIC_DISEASE_WORDS):
+        return None
+    for synonym in synonyms:
+        if distinctive & (_significant_words(synonym) - _GENERIC_DISEASE_WORDS):
+            return synonym
+    return None
+
+
 async def _annotation_pdb_count(attribute: str, value: str) -> int | None:
     """Count PDB entries whose polymer-entity annotation `attribute` equals `value`. Best-effort."""
     body = queries.build_count_query(
@@ -358,7 +471,8 @@ async def rcsb_find_interpro_domains(
 
     Returns:
         {query, entry_type, count, entries:[{id, name, type, source_database,
-        pdb_entry_count?}]}.
+        matched_text?, pdb_entry_count?}]}. `matched_text` appears only when the entry's
+        NAME does not contain your words — it quotes the text that did match.
     """
     etype = None
     if entry_type:
@@ -383,18 +497,30 @@ async def rcsb_find_interpro_domains(
         "start": 0,
         # `size` is capped at 100 by the API; ResolverLimit already caps callers at 25.
         "size": limit,
+        # Ask where the match landed, for the hits whose name does not say (see
+        # _match_context). Tags are left at the API's `<em>` default on purpose: custom
+        # ones must look like markup -- "**" and "[" both return HTTP 400, and an empty
+        # value is silently ignored rather than honoured.
+        "hlfields": "short_name,description",
     }
     data = await _get_json(INTERPRO_SEARCH_URL, params, "EBI Search (InterPro)")
     entries: list[dict[str, Any]] = []
     for r in data.get("entries") or []:
         fields = r.get("fields") or {}
         first = lambda key: (fields.get(key) or [None])[0]  # noqa: E731 - each field is a list
-        entries.append({
+        entry = {
             "id": r.get("id"),
             "name": first("name"),
             "type": first("type"),
             "source_database": first("source_database"),
-        })
+        }
+        # Only when the NAME cannot account for the match — otherwise the caller can
+        # already judge the hit and a snippet is noise on every result.
+        if not _name_explains_match(query, entry["name"]):
+            context = _match_context(r.get("highlights") or {})
+            if context:
+                entry["matched_text"] = context
+        entries.append(entry)
         if len(entries) >= limit:
             break
     if with_pdb_counts and entries:
@@ -445,7 +571,11 @@ async def rcsb_find_enzyme_classes(
     fetch = min(limit + 5, 30)
     data = await _get_json(
         INTENZ_SEARCH_URL,
-        {"query": query, "format": "json", "size": fetch, "fields": "name"},
+        # Escaped, like the InterPro resolver: this is the same Lucene endpoint and the
+        # same three traps. Unescaped, "serine/threonine kinase" — an entirely ordinary
+        # enzyme query — returned HTTP 400, and "kinase: activity" returned 0 hits with no
+        # error at all because the colon parsed as a field qualifier.
+        {"query": _escape_lucene(query), "format": "json", "size": fetch, "fields": "name"},
         "EBI Search (IntEnz)",
     )
     enzymes: list[dict[str, Any]] = []
@@ -499,13 +629,17 @@ async def rcsb_find_disease_terms(
             carrying it, via annotation_lineage.id).
 
     Returns:
-        {query, count, diseases:[{id, name, pdb_entry_count?}]}.
+        {query, count, diseases:[{id, name, matched_synonym?, pdb_entry_count?}]}.
+        `matched_synonym` appears only when the formal MONDO name does not contain your
+        words — it names the synonym that did match.
     """
     # Over-fetch so de-duplication and obsolete-filtering still fill `limit`.
     fetch = min(limit * 3, 50)
     data = await _get_json(
         OLS_SEARCH_URL,
-        {"q": query, "ontology": "mondo", "rows": fetch, "fieldList": "obo_id,label,is_obsolete"},
+        {"q": query, "ontology": "mondo", "rows": fetch,
+         # Synonyms are what explain a hit whose formal label shares nothing with the query.
+         "fieldList": "obo_id,label,is_obsolete,exact_synonyms,related_synonyms"},
         "EBI OLS (MONDO)",
     )
     docs = ((data.get("response") or {}).get("docs")) or []
@@ -516,7 +650,14 @@ async def rcsb_find_disease_terms(
         if not oid or not oid.startswith("MONDO:") or oid in seen or d.get("is_obsolete"):
             continue
         seen.add(oid)
-        diseases.append({"id": oid, "name": d.get("label")})
+        entry = {"id": oid, "name": d.get("label")}
+        synonym = _matched_synonym(
+            query, d.get("label"),
+            (d.get("exact_synonyms") or []) + (d.get("related_synonyms") or []),
+        )
+        if synonym:
+            entry["matched_synonym"] = synonym
+        diseases.append(entry)
         if len(diseases) >= limit:
             break
     if with_pdb_counts and diseases:

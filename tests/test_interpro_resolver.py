@@ -188,3 +188,81 @@ def test_the_docstring_offers_a_way_to_broaden():
     doc = rcsb_find_interpro_domains.__doc__
     assert "`in`" in doc, "the only broadening route must be named"
     assert "exact_match" in doc, "the single-id route stays documented too"
+
+
+# --- why a hit matched, when its name does not say -------------------------------
+def test_a_fragment_with_no_match_marker_yields_nothing():
+    """The API returns a highlight for a field even when that field did NOT match.
+
+    `Abhydrolase_3` matches on short_name; the description fragment comes back as its
+    generic opening line — "This catalytic domain is found in a very wide range of
+    enzymes" — with no <em> anywhere. Emitting that would be worse than silence: a
+    plausible-looking justification that justifies nothing about this query.
+    """
+    from rcsb_mcp.resolvers import _match_context
+
+    assert _match_context({"description": ["This catalytic domain is found in enzymes."]}) is None
+    assert _match_context({}) is None
+    assert _match_context({"description": []}) is None
+
+
+def test_disjoint_excerpts_are_not_stitched_together():
+    """The API uses " ... " to bookend its window AND to separate unrelated passages, so a
+    single fragment can hold several. Joining them produces a quote that never existed.
+
+    Only the first excerpt containing a match is kept.
+    """
+    from rcsb_mcp.resolvers import _match_context
+
+    got = _match_context({"description": [
+        "Something unrelated entirely. ... The <em>TIM</em> barrel fold occurs widely. ... "
+        "A third passage about something else."
+    ]})
+    assert got == "The TIM barrel fold occurs widely"
+    assert "unrelated" not in got and "third passage" not in got
+
+
+def test_a_partial_sentence_is_dropped_only_when_it_holds_no_match():
+    """Tidiness must never cost content — the snippet exists FOR the matched words.
+
+    The real 7S fragment opens mid-sentence ("... inhibitors [[PMID:15166216]].") and that
+    lead-in carries no match, so it goes. A leading piece that DID match would stay even
+    though it reads as starting mid-sentence.
+    """
+    from rcsb_mcp.resolvers import _match_context
+
+    got = _match_context({"description": [
+        " ...  inhibitors [[PMID:15166216]]. This domain is also found in <em>basic</em> "
+        "<em>7S</em> <em>globulin</em> (Bg7S) from soybean, which is ... "
+    ]})
+    assert got == "This domain is also found in basic 7S globulin (Bg7S) from soybean"
+    assert "inhibitors" not in got, "the unmatched lead-in is dropped"
+    assert "which is" not in got, "the truncated trailing clause is cut back"
+
+    kept = _match_context({"description": ["has eight <em>barrel</em> motifs. Unrelated tail."]})
+    assert kept.startswith("has eight"), "a matched leading piece survives even if partial"
+
+
+def test_citation_markup_is_stripped():
+    """[[PMID:nnnn]] is InterPro's own markup, not prose the caller should read."""
+    from rcsb_mcp.resolvers import _match_context
+
+    got = _match_context({"description": ["The <em>TIM</em> fold [[PMID:2204417]] is common."]})
+    assert "PMID" not in got and "[[" not in got
+
+
+def test_the_name_test_decides_whether_a_snippet_is_offered():
+    """The <em> marker alone is not enough. Highlighting `name` does not reliably mark a
+    name match — "SH2 domain" against name "SH2 domain" produces none — so a marker-only
+    rule fired on 94% of results (~2,200 tok/call). The word overlap is the discriminator;
+    the marker only decides whether there is anything worth saying.
+    """
+    from rcsb_mcp.resolvers import _name_explains_match, _significant_words
+
+    assert not _name_explains_match("7S basic globulin", "Xylanase inhibitor I-like")
+    assert not _name_explains_match("TIM barrel", "Triosephosphate isomerase")
+    assert _name_explains_match("SH2 domain", "SH2 domain superfamily")
+    assert _name_explains_match("alpha beta hydrolase", "Alpha/beta hydrolase fold-1")
+    assert not _name_explains_match("anything", None), "a missing name explains nothing"
+    # two-character tokens are ignored, so "I-like" cannot accidentally explain a match
+    assert "li" not in _significant_words("I-like")

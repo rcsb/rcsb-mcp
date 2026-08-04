@@ -297,3 +297,64 @@ def test_the_three_notes_cannot_fire_together():
     assert "none are annotated" in _resolver_fallback_note(_ranked(0, 0), "GO term")
     assert "covers only" in _resolver_fallback_note(_ranked(1), "GO term")
     assert "Ranked first" in _resolver_fallback_note(_ranked(1, 99), "GO term")
+
+
+# --- MONDO: why a hit matched when its formal label does not say -----------------
+def test_a_colloquial_name_is_explained_by_the_synonym_that_matched():
+    """Colloquial disease names are how people ask; MONDO labels are formal.
+
+        "lockjaw"              -> tetanus                        0 shared words
+        "whooping cough"       -> pertussis                       0
+        "Lou Gehrig's disease" -> amyotrophic lateral sclerosis   0
+
+    Each is the CORRECT answer, and nothing in the response said why — an agent scanning
+    labels has grounds to discard all three.
+    """
+    from rcsb_mcp.resolvers import _matched_synonym
+
+    assert _matched_synonym("lockjaw", "tetanus", ["lockjaw", "trismus"]) == "lockjaw"
+    assert _matched_synonym(
+        "Lou Gehrig's disease", "amyotrophic lateral sclerosis", ["Lou Gehrig disease"]
+    ) == "Lou Gehrig disease"
+
+
+def test_no_synonym_when_the_label_already_explains_the_hit():
+    """Silence is the common case: 42% of hits have the query words in the label.
+
+    The synonym here DOES match the query, so this fails if the label short-circuit is
+    removed. An earlier version passed synonyms that matched nothing, so it returned None
+    whether or not the label was checked — green for the wrong reason, and a mutation
+    deleting the check went undetected.
+    """
+    from rcsb_mcp.resolvers import _matched_synonym
+
+    assert _matched_synonym(
+        "cystic fibrosis", "cystic fibrosis", ["cystic fibrosis of pancreas"]
+    ) is None, "the label already contains the query words; a synonym adds nothing"
+
+
+def test_generic_disease_words_cannot_explain_a_hit():
+    """Without this, word overlap manufactures false explanations.
+
+    "Down syndrome" was "explained" by MONDO:0021702 "alcohol amnestic disorder", whose
+    synonym list contains the word "syndrome" — an unrelated hit given a justification that
+    reads as evidence. Disease vocabulary is generic enough that almost any pair collides.
+
+    This matters more here than for InterPro: OLS4 does not highlight, so there is no <em>
+    marker confirming the backend matched this field. The overlap is INFERRED, and the
+    exclusion is what keeps the inference honest.
+    """
+    from rcsb_mcp.resolvers import _matched_synonym
+
+    assert _matched_synonym("Down syndrome", "alcohol amnestic disorder",
+                            ["Korsakoff syndrome"]) is None
+    assert _matched_synonym("chronic disease", "some other disorder", ["chronic disorder"]) is None
+    # ...but a distinctive word alongside a generic one still explains
+    assert _matched_synonym("Hansen's disease", "leprosy", ["Hansen disease"]) == "Hansen disease"
+
+
+def test_a_query_of_only_generic_words_explains_nothing():
+    """"disease" alone has no distinctive content, so no synonym can justify a hit."""
+    from rcsb_mcp.resolvers import _matched_synonym
+
+    assert _matched_synonym("disease", "tetanus", ["lockjaw", "disease"]) is None
