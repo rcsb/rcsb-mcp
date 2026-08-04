@@ -195,8 +195,12 @@ def _resolver_fallback_note(
     """Advise a keyword fallback when a resolver finds nothing usable — or when what it DID
     find resolved cleanly but may not be the concept that was asked for."""
     if not items:
-        return (f"No {label} matched this concept. Fall back to a keyword search "
-                "(rcsb_query_fulltext, optionally composed with attribute filters) for it.")
+        return (f"No {label} matched this concept. A resolver matches your words against "
+                "TERM NAMES, so a concept whose canonical name differs from your wording "
+                "returns nothing even when the archive covers it. Try a broader, synonym "
+                "or differently-worded term for the same concept, or fall back to a "
+                "keyword search (rcsb_query_fulltext, optionally composed with attribute "
+                "filters).")
     # `pdb_entry_count` is absent when the caller passed with_pdb_counts=False, and None when
     # the count query itself failed. Neither is evidence of absence, and conflating None with
     # 0 would report "not annotated in the PDB" whenever the Search API was merely unreachable.
@@ -236,9 +240,9 @@ def _resolver_fallback_note(
             f"entr{'y' if top_n == 1 else 'ies'}), but {items[best_i].get(id_key)} in this "
             f"same set covers {alt_n}. Rank here is how closely each NAME matched your "
             f"words, not how much of the archive the {label} covers. The larger one may be "
-            f"a broader form of what you meant, or an unrelated name collision — read both "
-            f"names before anchoring on either. If it is not what you meant, resolve a "
-            f"broader, synonym or differently-worded term for the same concept."
+            "a broader form of what you meant, or an unrelated name collision — read both "
+            "names before anchoring on either. If it is not what you meant, resolve a "
+            "broader, synonym or differently-worded term for the same concept."
         )
     best = max(counts)
     if len(items) <= _LOW_COVERAGE_MAX_HITS and best < _LOW_COVERAGE_MAX_ENTRIES:

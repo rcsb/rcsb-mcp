@@ -25,10 +25,35 @@ def _hits(*counts: int | None, n: int | None = None) -> list[dict]:
 
 
 # --- nothing resolved ---------------------------------------------------------
-def test_no_hits_advises_keyword_fallback():
+def test_no_hits_explains_the_failure_and_offers_both_remedies():
+    """An empty resolver result is the branch where the caller has least to go on, so it
+    says WHY before what to do — the words matched no term's indexed text, which is a
+    different failure from "the archive has none of this".
+
+    Re-resolving comes BEFORE the keyword fallback: every rcsb_query_* description prefers
+    an ontology anchor over a name match, so the note should not send the caller to
+    keywords first.
+    """
     note = _resolver_fallback_note([], "InterPro entry")
     assert note and "No InterPro entry matched" in note
+    assert "TERM NAMES" in note, "the note must say why nothing matched"
     assert "rcsb_query_fulltext" in note
+    assert note.index("differently-worded") < note.index("rcsb_query_fulltext"), (
+        "re-resolving is the preferred remedy and must be offered first"
+    )
+
+
+def test_the_empty_note_does_not_call_it_an_intersection():
+    """Nothing is intersected when a resolver returns nothing — the words matched no term.
+
+    It also would not generalise. This note is shared by five resolvers over four backends,
+    and only UniProt taxonomy ANDs the query terms ("human coli" -> 0 while each word alone
+    returns hits); interpro7, QuickGO and OLS4 all still return partial matches. And
+    "intersection" already means conditions ANDed at a return_type level elsewhere on this
+    server, which is a collision worth avoiding.
+    """
+    note = _resolver_fallback_note([], "GO term")
+    assert "intersection" not in note.lower()
 
 
 def test_all_zero_counts_advises_keyword_fallback():
