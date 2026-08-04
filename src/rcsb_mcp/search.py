@@ -693,6 +693,9 @@ async def rcsb_search_request(
                 polymer_instance   one chain            "4HHB.A"   -> rcsb_get_polymer_entity_instances
                 assembly           biological assembly  "4HHB-1"   -> rcsb_get_assemblies
                 mol_definition     chemical component   "HEM"      -> rcsb_get_chem_comps
+            If conditions granularity is finer than entry (e.g. entity, instance, ...),
+            an entry matches when EACH condition holds on SOME subunit — not necessarily
+            the same one.
             Omit it to use the default implied by the query:
                 Query                 Return type
                 rcsb_query_fulltext   -> entry
@@ -704,9 +707,6 @@ async def rcsb_search_request(
                 rcsb_query_chemical   -> mol_definition
             Setting it CONVERTS the result — e.g. a ligand attribute filter
             with return_type="entry" gives the structures containing that ligand.
-            If conditions granularity is finer than entry (e.g. entity, instance, ...),
-            an entry matches when EACH condition holds on SOME subunit — not
-            necessarily the same one.
         limit: Max hits to return, 1-100 (default 10).
         offset: Hits to skip, for paging; pass the response's next_offset back with the
             same query to fetch the next page.
