@@ -91,60 +91,6 @@ def test_OR_stays_silent():
         _attr([_f(ORG, "Homo sapiens"), _f(ORG, "Escherichia coli")], "or"), "entry") == []
 
 
-# --- 2. repeated records inside one object ----------------------------------------
-def test_a_repeating_root_that_the_api_cannot_pin():
-    """software.* is entry-scoped at entry return_type — every scope MATCHES — and still
-    loose, because one entry holds many software records:
-
-        AND(software.name ~ PHENIX, software.classification ~ "data reduction")
-        -> 80,050 entries; of 25 sampled, 18 (72%) had no single record with both.
-
-    This is the case a scope-only rule cannot see, whatever its trigger.
-    """
-    notes = intersection_notes(
-        _attr([_f("software.name", "PHENIX", "contains_phrase"),
-               _f("software.classification", "data reduction", "contains_phrase")]), "entry")
-    assert notes and "software" in notes[0]
-    assert "cannot require" in notes[0]
-    assert "No return_type or query shape changes this" in notes[0], (
-        "there is genuinely no fix; promising one would be worse than silence"
-    )
-
-
-def test_a_nested_record_pair_ALONE_in_its_group_is_silent():
-    """The API keeps such a pair on one record — measured on a pair that can NEVER
-    co-occur (rcsb_binding_affinity comp_id=PTR + type=IC50; PTR only ever carries Kd):
-
-        and[PTR, IC50]             -> 0   alone, coherent -> nothing to report
-        and[PTR, IC50, XRAY]       -> 5   a foreign terminal breaks it
-        and[ and[PTR,IC50], XRAY ] -> 0   own group, coherent again
-    """
-    assert intersection_notes(
-        _attr([_f("rcsb_binding_affinity.comp_id", "PTR"),
-               _f("rcsb_binding_affinity.type", "IC50")]), "entry") == []
-
-
-def test_a_nested_record_pair_sharing_its_group_is_flagged_with_the_exact_fix():
-    """and[PTR, IC50, XRAY] -> 5 hits whose correct answer is 0."""
-    notes = intersection_notes(
-        _flat_and(("rcsb_binding_affinity.comp_id", "exact_match", "PTR"),
-                  ("rcsb_binding_affinity.type", "exact_match", "IC50"),
-                  ("exptl.method", "exact_match", "X-RAY DIFFRACTION")), "entry")
-    assert notes, "a foreign terminal in the group breaks record coherence"
-    assert "ONE rcsb_query_attribute call" in notes[0], "this one HAS a fix, so name it"
-
-
-def test_keeping_the_pair_in_its_own_group_is_silent():
-    """The shape group_node now produces — the fix, verified to be recognised as fixed."""
-    node = queries.group_node([
-        _attr([_f("rcsb_binding_affinity.comp_id", "PTR"),
-               _f("rcsb_binding_affinity.type", "IC50")]),
-        _attr([_f("exptl.method", "X-RAY DIFFRACTION")]),
-    ], "and")
-    assert intersection_notes(node, "entry") == []
-
-
-# --- 3. assembly, which needs no AND at all ----------------------------------------
 def test_a_LONE_condition_at_assembly_is_flagged():
     """No AND, no second condition, no group — the mode a count-based trigger misses.
 
@@ -205,3 +151,78 @@ def test_a_non_attribute_service_is_ignored():
         [queries.sequence_node("MVLSPADKTNVKAAW", "protein"), _attr([_f(ORG, "Homo sapiens")])],
         "and")
     assert intersection_notes(node, "entry") == []
+
+
+# --- same field twice: nothing to bind, so nothing to say -------------------------
+def _annot(value, operator="exact_match"):
+    return {"attribute": "rcsb_polymer_entity_annotation.annotation_id",
+            "operator": operator, "value": value}
+
+
+# --- nested records get NO note, deliberately -------------------------------------
+def test_nothing_is_said_about_nested_records_however_the_query_is_shaped():
+    """Removed 2026-08-05 after the Search API team explained the design. Do not re-add.
+
+    The branch existed on the premise that these queries were "intersected more loosely than
+    they read". They are not. Grouping SELECTS the semantics, on purpose:
+
+        "In our search system and(A, B, C) is not equivalent to and(and(A, B), C) only when
+         A and B are fields stored in nested documents ... we overload the boolean syntax
+         with special semantics for such fields ... users can explicitly control the search
+         semantics. Attributes that don't need to be evaluated against the same nested
+         document don't need to be part of the same group even if they have a nested
+         context available."
+
+    So both shapes are valid and mean different things, and only INTENT separates them —
+    which a query document does not carry:
+
+        type=Kd + value<1        grouped 303, split 481   -- grouped is almost certainly meant
+        IPR001128 + type=GO      grouped   0, split 1549  -- SPLIT is the only sensible one,
+                                                             since no annotation record is
+                                                             both an InterPro id and type GO
+
+    A note firing on the split shape would have called that second query suspect. Detection
+    was never the hard part — a prototype scored 9/9 on every shape measured — but nothing in
+    the tree distinguishes the two rows above, so any trigger is wrong half the time.
+
+    The rule now lives where the choice is actually made: `nested_group` on each catalog
+    record, plus the prose in rcsb_query_attribute and rcsb_list_pdb_search_attributes.
+    queries._pins_a_nested_record still stops rcsb_query_composer SPLICING a group the caller
+    built deliberately — preserving an expressed choice, a different job from guessing an
+    unexpressed one.
+    """
+    KD = _f("rcsb_binding_affinity.type", "Kd")
+    LT = _f("rcsb_binding_affinity.value", 1, "less")
+    shapes = [
+        ("together and alone (303)", _attr([KD, LT]), "entry"),
+        ("sharing their group (456)", _flat_and(
+            ("rcsb_binding_affinity.type", "exact_match", "Kd"),
+            ("rcsb_binding_affinity.value", "less", 1),
+            ("exptl.method", "exact_match", "X-RAY DIFFRACTION")), "entry"),
+        ("split across groups (481)",
+         queries.group_node([_attr([KD]), _attr([LT])], "and"), "entry"),
+        # Asked at polymer_entity so finding 1 has nothing to say either: these are
+        # entity-scoped, and at return_type="entry" it correctly reports that two
+        # different entities could satisfy them. That note is unrelated and stays.
+        ("an intended split (1549)", _attr(
+            [_f("rcsb_polymer_entity_annotation.annotation_id", "IPR001128"),
+             _f("rcsb_polymer_entity_annotation.type", "GO"),
+             _f("exptl.method", "X-RAY DIFFRACTION")]), "polymer_entity"),
+        ("a deep nested record (rcsb_ec_lineage)", _attr(
+            [_f("rcsb_polymer_entity.rcsb_ec_lineage.depth", 1, "equals"),
+             _f("rcsb_polymer_entity.rcsb_ec_lineage.id", "2.7.11.1"),
+             _f("exptl.method", "X-RAY DIFFRACTION")]), "polymer_entity"),
+    ]
+    for why, node, return_type in shapes:
+        assert intersection_notes(node, return_type) == [], why
+
+    # And the entity-scoped pair keeps its finding-1 note at entry level, which is about
+    # DIFFERENT ENTITIES, not different annotation records — removing finding 2 must not
+    # have taken it with it.
+    entity_scoped = _attr([_f("rcsb_polymer_entity_annotation.annotation_id", "IPR001128"),
+                           _f("rcsb_polymer_entity_annotation.type", "GO")])
+    notes = intersection_notes(entity_scoped, "entry")
+    assert any('return_type="polymer_entity"' in n for n in notes), notes
+    assert not any("record" in n for n in notes), (
+        f"nothing may mention nested records any more: {notes}"
+    )

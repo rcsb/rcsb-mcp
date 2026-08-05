@@ -60,6 +60,33 @@ class SearchAttribute(TypedDict):
     type: AttributeValueType
     operators: list[TextOperator]
     description: str
+    # The nested container this attribute belongs to, on the 22% that have one. An object
+    # holds MANY of these records, and GROUPING SELECTS THE SEMANTICS -- per the Search API
+    # team, the boolean syntax is deliberately overloaded for nested fields so that callers
+    # can choose. Conditions sharing a `nested_group`, alone together in one group, must hold
+    # on the SAME record; anywhere else they are matched independently. NEITHER is an error:
+    # type+value on a binding affinity describe one measurement, while an InterPro id and a
+    # GO type are necessarily two different annotation records (grouped they give 0, apart
+    # 1,549). So this field is not a constraint to enforce -- it marks where the caller has a
+    # CHOICE that the query shape silently makes for them.
+    #
+    # What that choice costs when it is not the one intended, "a Kd below 1 nM":
+    #     and[type=Kd, value<1]              303   SAME record
+    #     and[ and[type=Kd], and[value<1] ]  481   independent -- and note nothing foreign is
+    #                                              anywhere here, so a lone condition in a
+    #                                              single-node group is enough to switch the
+    #                                              semantics; that is what the composer
+    #                                              builds from two separate calls
+    #     and[type=Kd, value<1, XRAY]        456   independent -- one foreign terminal in the
+    #                                              group switches it, and the count GROWS
+    #                                              against 303 while a restriction was ADDED
+    #     and[ and[type=Kd, value<1], XRAY]  287   same record, X-ray applied outside
+    #     and[ and[type=Kd, value<1] ]       303   extra depth around an intact group is inert
+    # Only the 456 row is likely to be unintended, and only because it looks like the 303 one.
+    # Carried as the container PATH, not a boolean, because the path is what the caller
+    # acts on and is not derivable: 22 structure attributes group under something that is
+    # not their first path segment.
+    nested_group: NotRequired[str]
     # The complete set of allowed values, on the ~15% of attributes that constrain them.
     # This is the only part of a filter nothing used to check, and the only one whose
     # failure is SILENT: a wrong path or operator is rejected, but a wrong VALUE builds a

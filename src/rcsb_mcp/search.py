@@ -458,6 +458,19 @@ async def rcsb_query_attribute(
             those either: rcsb_list_pdb_search_attributes returns them as `enum`. A value
             outside the set is rejected here, so you can correct it, rather than matching
             nothing and looking like an empty result.
+            Attributes that carry a `nested_group` are stored in nested documents, and an
+            object holds MANY: an entity has many binding affinities, many annotations. For
+            these the CALL BOUNDARY chooses the semantics. Conditions built in one
+            rcsb_query_attribute call, with nothing else in it, are matched against the SAME
+            record; conditions in separate calls are matched independently, each against any
+            record. Pick the one you mean:
+              same record  — "a Kd below 1 nM": type=Kd and value<1 describe ONE
+                measurement, so build them together and alone (303 entries; splitting them
+                across calls gives 481, and adding an X-ray filter to their call gives 456)
+              independently — "has InterPro IPR001128 AND some GO annotation": those are
+                necessarily two different annotation records, so build them in separate
+                calls (1,549 entities; together they describe one impossible record and
+                return 0)
         logical_operator: Combine these conditions with "and" (default) or "or".
             For several values of a SINGLE attribute use the attribute operator `in`.
             For a query needing AND + OR — e.g. (high-resolution OR NMR) AND human —
@@ -840,14 +853,20 @@ async def rcsb_list_pdb_search_attributes(
 
     Returns:
         {count, match_mode, attributes, note?}. `attributes` holds {attribute, type, operators,
-        description, enum?} records — the RCSB/PDB attribute path (e.g.
+        description, enum?, nested_group?} records — the RCSB/PDB attribute path (e.g.
         "rcsb_entry_info.resolution_combined"), its value type (string/number/integer/date), the
         operators it supports (exact_match, greater, range, exists, ...), and a human-readable
         description. `enum` appears on the ~15% of attributes that accept only a FIXED SET of
         values (e.g. exptl.method); when it does, use one of those values verbatim — anything
-        else matches nothing. `match_mode` is "exact" (the query matched), "none" (nothing
-        matched — read `note`, the query shape is the usual cause), or "all" (query omitted,
-        whole catalog).
+        else matches nothing. `nested_group` appears on the ~22% stored in NESTED DOCUMENTS —
+        an entry has many citations, an entity many binding affinities — and its value is the
+        container path. For these, grouping selects the semantics: conditions sharing a
+        nested_group built in ONE rcsb_query_attribute call with nothing else in it must hold
+        on the SAME record; in separate calls each is matched independently. Group the ones
+        that describe one record, leave the rest apart. The value is NOT the attribute's first
+        path segment for all of them, so read it rather than deriving it.
+        `match_mode` is "exact" (the query matched), "none" (nothing matched — read
+        `note`, the query shape is the usual cause), or "all" (query omitted, whole catalog).
     """
     try:
         catalog = ATTRIBUTE_CATALOGS[schema]

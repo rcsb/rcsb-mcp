@@ -196,7 +196,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "The title of the book in which the citation appeared; relevant for books or book chapters."
+        "description": "The title of the book in which the citation appeared; relevant for books or book chapters.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.id",
@@ -206,7 +207,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The value of _citation.id must uniquely identify a record in the CITATION list. The _citation.id 'primary' should be used to indicate the citation that the author(s) consider to be the most pertinent to the contents of the data block. Note that this item need not be a number; it can be any unique identifier."
+        "description": "The value of _citation.id must uniquely identify a record in the CITATION list. The _citation.id 'primary' should be used to indicate the citation that the author(s) consider to be the most pertinent to the contents of the data block. Note that this item need not be a number; it can be any unique identifier.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.journal_abbrev",
@@ -216,7 +218,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Abbreviated name of the cited journal as given in the Chemical Abstracts Service Source Index."
+        "description": "Abbreviated name of the cited journal as given in the Chemical Abstracts Service Source Index.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.journal_id_ASTM",
@@ -226,7 +229,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The American Society for Testing and Materials (ASTM) code assigned to the journal cited (also referred to as the CODEN designator of the Chemical Abstracts Service); relevant for journal articles."
+        "description": "The American Society for Testing and Materials (ASTM) code assigned to the journal cited (also referred to as the CODEN designator of the Chemical Abstracts Service); relevant for journal articles.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.journal_id_ISSN",
@@ -236,7 +240,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The International Standard Serial Number (ISSN) code assigned to the journal cited; relevant for journal articles."
+        "description": "The International Standard Serial Number (ISSN) code assigned to the journal cited; relevant for journal articles.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.pdbx_database_id_DOI",
@@ -246,7 +251,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Document Object Identifier used by doi.org to uniquely specify bibliographic entry."
+        "description": "Document Object Identifier used by doi.org to uniquely specify bibliographic entry.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.rcsb_authors",
@@ -258,7 +264,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Names of the authors of the citation; relevant for journal articles, books and book chapters. Names are separated by vertical bars. The family name(s), followed by a comma and including any dynastic components, precedes the first name(s) or initial(s)."
+        "description": "Names of the authors of the citation; relevant for journal articles, books and book chapters. Names are separated by vertical bars. The family name(s), followed by a comma and including any dynastic components, precedes the first name(s) or initial(s).",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.rcsb_is_primary",
@@ -269,6 +276,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Flag to indicate a primary citation.",
+        "nested_group": "citation",
         "enum": [
             "N",
             "Y"
@@ -282,7 +290,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Normalized journal abbreviation."
+        "description": "Normalized journal abbreviation.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.title",
@@ -292,7 +301,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "The title of the citation; relevant for journal articles, books and book chapters."
+        "description": "The title of the citation; relevant for journal articles, books and book chapters.",
+        "nested_group": "citation"
     },
     {
         "attribute": "citation.unpublished_flag",
@@ -303,6 +313,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Flag to indicate that this citation will not be published.",
+        "nested_group": "citation",
         "enum": [
             "N",
             "Y"
@@ -321,7 +332,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The year of the citation; relevant for journal articles, books and book chapters."
+        "description": "The year of the citation; relevant for journal articles, books and book chapters.",
+        "nested_group": "citation"
     },
     {
         "attribute": "database_2.database_code",
@@ -634,6 +646,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Indicates whether this drug has been approved by the regulating government.",
+        "nested_group": "drugbank_info.drug_products",
         "enum": [
             "N",
             "Y"
@@ -648,6 +661,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The country where this commercially available drug has been approved.",
+        "nested_group": "drugbank_info.drug_products",
         "enum": [
             "Canada",
             "EU",
@@ -667,7 +681,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The ending date for market approval."
+        "description": "The ending date for market approval.",
+        "nested_group": "drugbank_info.drug_products"
     },
     {
         "attribute": "drugbank_info.drug_products.started_marketing_on",
@@ -682,7 +697,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The starting date for market approval."
+        "description": "The starting date for market approval.",
+        "nested_group": "drugbank_info.drug_products"
     },
     {
         "attribute": "drugbank_info.indication",
@@ -3141,6 +3157,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The identifying content type of the related entry.",
+        "nested_group": "pdbx_database_related",
         "enum": [
             "associated EM volume",
             "associated NMR restraints",
@@ -3170,7 +3187,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The identifying code in the related database."
+        "description": "The identifying code in the related database.",
+        "nested_group": "pdbx_database_related"
     },
     {
         "attribute": "pdbx_database_related.db_name",
@@ -3181,6 +3199,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The name of the database containing the related entry.",
+        "nested_group": "pdbx_database_related",
         "enum": [
             "BIOISIS",
             "BMCD",
@@ -3291,7 +3310,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "This data item contains the descriptor value for this entity."
+        "description": "This data item contains the descriptor value for this entity.",
+        "nested_group": "pdbx_entity_branch_descriptor"
     },
     {
         "attribute": "pdbx_entity_branch_descriptor.type",
@@ -3302,6 +3322,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "This data item contains the descriptor type.",
+        "nested_group": "pdbx_entity_branch_descriptor",
         "enum": [
             "Glycam Condensed Core Sequence",
             "Glycam Condensed Sequence",
@@ -3327,7 +3348,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "This item identifies an accession code of the resource where the initial model is used"
+        "description": "This item identifies an accession code of the resource where the initial model is used",
+        "nested_group": "pdbx_initial_refinement_model"
     },
     {
         "attribute": "pdbx_initial_refinement_model.source_name",
@@ -3338,6 +3360,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "This item identifies the resource of initial model used for refinement",
+        "nested_group": "pdbx_initial_refinement_model",
         "enum": [
             "AlphaFold",
             "ITasser",
@@ -3362,6 +3385,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "This item describes the type of the initial model was generated",
+        "nested_group": "pdbx_initial_refinement_model",
         "enum": [
             "experimental model",
             "in silico model",
@@ -4202,7 +4226,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_assembly_annotation"
     },
     {
         "attribute": "rcsb_assembly_annotation.name",
@@ -4214,7 +4239,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_assembly_annotation"
     },
     {
         "attribute": "rcsb_assembly_annotation.type",
@@ -4225,6 +4251,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_assembly_annotation",
         "enum": [
             "MCSA"
         ]
@@ -4746,7 +4773,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Ligand identifier."
+        "description": "Ligand identifier.",
+        "nested_group": "rcsb_binding_affinity"
     },
     {
         "attribute": "rcsb_binding_affinity.type",
@@ -4757,6 +4785,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Binding affinity measurement given in one of the following types: The concentration constants: IC50: the concentration of ligand that reduces enzyme activity by 50%; EC50: the concentration of compound that generates a half-maximal response; The binding constant: Kd: dissociation constant; Ka: association constant; Ki: enzyme inhibition constant; The thermodynamic parameters: delta G: Gibbs free energy of binding (for association reaction); delta H: change in enthalpy associated with a chemical reaction; delta S: change in entropy associated with a chemical reaction.",
+        "nested_group": "rcsb_binding_affinity",
         "enum": [
             "&Delta;G",
             "&Delta;H",
@@ -4781,7 +4810,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Binding affinity value between a ligand and its target molecule."
+        "description": "Binding affinity value between a ligand and its target molecule.",
+        "nested_group": "rcsb_binding_affinity"
     },
     {
         "attribute": "rcsb_branched_entity.details",
@@ -4843,7 +4873,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.annotation_lineage.depth",
@@ -4858,7 +4889,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.annotation_lineage.id",
@@ -4868,7 +4900,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.annotation_lineage.name",
@@ -4880,7 +4913,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.description",
@@ -4892,7 +4926,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.name",
@@ -4904,7 +4939,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_annotation.type",
@@ -4914,7 +4950,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A type or category of the annotation."
+        "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_branched_entity_annotation"
     },
     {
         "attribute": "rcsb_branched_entity_container_identifiers.chem_comp_monomers",
@@ -4984,7 +5021,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference resource accession code"
+        "description": "Reference resource accession code",
+        "nested_group": "rcsb_branched_entity_container_identifiers.reference_identifiers"
     },
     {
         "attribute": "rcsb_branched_entity_container_identifiers.reference_identifiers.resource_name",
@@ -4995,6 +5033,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Reference resource name",
+        "nested_group": "rcsb_branched_entity_container_identifiers.reference_identifiers",
         "enum": [
             "GlyCosmos",
             "GlyGen",
@@ -5014,7 +5053,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The feature count."
+        "description": "The feature count.",
+        "nested_group": "rcsb_branched_entity_feature_summary"
     },
     {
         "attribute": "rcsb_branched_entity_feature_summary.coverage",
@@ -5029,7 +5069,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The fractional feature coverage relative to the full branched entity."
+        "description": "The fractional feature coverage relative to the full branched entity.",
+        "nested_group": "rcsb_branched_entity_feature_summary"
     },
     {
         "attribute": "rcsb_branched_entity_feature_summary.maximum_length",
@@ -5044,7 +5085,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum feature length."
+        "description": "The maximum feature length.",
+        "nested_group": "rcsb_branched_entity_feature_summary"
     },
     {
         "attribute": "rcsb_branched_entity_feature_summary.minimum_length",
@@ -5059,7 +5101,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum feature length."
+        "description": "The minimum feature length.",
+        "nested_group": "rcsb_branched_entity_feature_summary"
     },
     {
         "attribute": "rcsb_branched_entity_feature_summary.type",
@@ -5070,6 +5113,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Type or category of the feature.",
+        "nested_group": "rcsb_branched_entity_feature_summary",
         "enum": [
             "mutation"
         ]
@@ -5162,7 +5206,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.annotation_lineage.depth",
@@ -5177,7 +5222,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.annotation_lineage.id",
@@ -5187,7 +5233,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.annotation_lineage.name",
@@ -5199,7 +5246,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.description",
@@ -5211,7 +5259,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.name",
@@ -5223,7 +5272,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_branched_instance_annotation"
     },
     {
         "attribute": "rcsb_branched_instance_annotation.type",
@@ -5234,6 +5284,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_branched_instance_annotation",
         "enum": [
             "CATH",
             "SCOP"
@@ -5252,7 +5303,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The feature count."
+        "description": "The feature count.",
+        "nested_group": "rcsb_branched_instance_feature_summary"
     },
     {
         "attribute": "rcsb_branched_instance_feature_summary.coverage",
@@ -5267,7 +5319,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The fractional feature coverage relative to the full branched entity."
+        "description": "The fractional feature coverage relative to the full branched entity.",
+        "nested_group": "rcsb_branched_instance_feature_summary"
     },
     {
         "attribute": "rcsb_branched_instance_feature_summary.maximum_length",
@@ -5282,7 +5335,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum feature length."
+        "description": "The maximum feature length.",
+        "nested_group": "rcsb_branched_instance_feature_summary"
     },
     {
         "attribute": "rcsb_branched_instance_feature_summary.minimum_length",
@@ -5297,7 +5351,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum feature length."
+        "description": "The minimum feature length.",
+        "nested_group": "rcsb_branched_instance_feature_summary"
     },
     {
         "attribute": "rcsb_branched_instance_feature_summary.type",
@@ -5308,6 +5363,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Type or category of the feature.",
+        "nested_group": "rcsb_branched_instance_feature_summary",
         "enum": [
             "BINDING_SITE",
             "CATH",
@@ -5331,7 +5387,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.depth",
@@ -5346,7 +5403,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.id",
@@ -5356,7 +5414,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.name",
@@ -5368,7 +5427,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.description",
@@ -5380,7 +5440,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.name",
@@ -5392,7 +5453,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.type",
@@ -5403,6 +5465,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation",
         "enum": [
             "ATC",
             "Carbohydrate Anomer",
@@ -5562,7 +5625,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The resource identifier code for the related chemical reference."
+        "description": "The resource identifier code for the related chemical reference.",
+        "nested_group": "rcsb_chem_comp_related"
     },
     {
         "attribute": "rcsb_chem_comp_related.resource_name",
@@ -5573,6 +5637,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The resource name for the related chemical reference.",
+        "nested_group": "rcsb_chem_comp_related",
         "enum": [
             "CAS",
             "CCDC/CSD",
@@ -5943,6 +6008,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Method used to establish group membership",
+        "nested_group": "rcsb_entry_group_membership",
         "enum": [
             "matching_deposit_group_id"
         ]
@@ -5955,7 +6021,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A unique identifier for a group of entries"
+        "description": "A unique identifier for a group of entries",
+        "nested_group": "rcsb_entry_group_membership"
     },
     {
         "attribute": "rcsb_entry_info.assembly_count",
@@ -6782,7 +6849,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Accession code for the input dataset."
+        "description": "Accession code for the input dataset.",
+        "nested_group": "rcsb_ihm_dataset_source_db_reference"
     },
     {
         "attribute": "rcsb_ihm_dataset_source_db_reference.db_name",
@@ -6793,6 +6861,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Name of the source database for the input dataset.",
+        "nested_group": "rcsb_ihm_dataset_source_db_reference",
         "enum": [
             "AlphaFoldDB",
             "BMRB",
@@ -6881,6 +6950,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The type of global QA metric.",
+        "nested_group": "rcsb_ma_qa_metric_global.ma_qa_metric_global",
         "enum": [
             "PAE",
             "contact probability",
@@ -6910,7 +6980,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Value of the global QA metric."
+        "description": "Value of the global QA metric.",
+        "nested_group": "rcsb_ma_qa_metric_global.ma_qa_metric_global"
     },
     {
         "attribute": "rcsb_membrane_lineage.depth",
@@ -6925,7 +6996,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Hierarchy depth."
+        "description": "Hierarchy depth.",
+        "nested_group": "rcsb_membrane_lineage"
     },
     {
         "attribute": "rcsb_membrane_lineage.id",
@@ -6935,7 +7007,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Automatically assigned ID for membrane classification term in the Membrane Protein Browser."
+        "description": "Automatically assigned ID for membrane classification term in the Membrane Protein Browser.",
+        "nested_group": "rcsb_membrane_lineage"
     },
     {
         "attribute": "rcsb_membrane_lineage.name",
@@ -6945,7 +7018,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Membrane protein classification term."
+        "description": "Membrane protein classification term.",
+        "nested_group": "rcsb_membrane_lineage"
     },
     {
         "attribute": "rcsb_nonpolymer_entity.details",
@@ -7005,7 +7079,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.annotation_lineage.depth",
@@ -7020,7 +7095,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.annotation_lineage.id",
@@ -7030,7 +7106,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.annotation_lineage.name",
@@ -7042,7 +7119,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.comp_id",
@@ -7052,7 +7130,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Non-polymer(ligand) chemical component identifier for the entity."
+        "description": "Non-polymer(ligand) chemical component identifier for the entity.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.description",
@@ -7064,7 +7143,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.name",
@@ -7076,7 +7156,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_annotation.type",
@@ -7087,6 +7168,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_nonpolymer_entity_annotation",
         "enum": [
             "SUBJECT_OF_INVESTIGATION"
         ]
@@ -7157,7 +7239,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The feature count."
+        "description": "The feature count.",
+        "nested_group": "rcsb_nonpolymer_entity_feature_summary"
     },
     {
         "attribute": "rcsb_nonpolymer_entity_feature_summary.type",
@@ -7168,6 +7251,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Type or category of the feature.",
+        "nested_group": "rcsb_nonpolymer_entity_feature_summary",
         "enum": [
             "SUBJECT_OF_INVESTIGATION"
         ]
@@ -7260,7 +7344,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.annotation_lineage.depth",
@@ -7275,7 +7360,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.annotation_lineage.id",
@@ -7285,7 +7371,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.annotation_lineage.name",
@@ -7297,7 +7384,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.comp_id",
@@ -7307,7 +7395,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Non-polymer (ligand) chemical component identifier."
+        "description": "Non-polymer (ligand) chemical component identifier.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.description",
@@ -7319,7 +7408,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.name",
@@ -7331,7 +7421,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation"
     },
     {
         "attribute": "rcsb_nonpolymer_instance_annotation.type",
@@ -7342,6 +7433,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_nonpolymer_instance_annotation",
         "enum": [
             "HAS_COVALENT_LINKAGE",
             "HAS_METAL_COORDINATION_LINKAGE",
@@ -7598,7 +7690,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the enzyme classification lineage as parent classification hierarchy depth (1-N)."
+        "description": "Members of the enzyme classification lineage as parent classification hierarchy depth (1-N).",
+        "nested_group": "rcsb_polymer_entity.rcsb_ec_lineage"
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_ec_lineage.id",
@@ -7608,7 +7701,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the enzyme classification lineage as parent classification codes."
+        "description": "Members of the enzyme classification lineage as parent classification codes.",
+        "nested_group": "rcsb_polymer_entity.rcsb_ec_lineage"
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_ec_lineage.name",
@@ -7618,7 +7712,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the enzyme classification lineage as parent classification names."
+        "description": "Members of the enzyme classification lineage as parent classification names.",
+        "nested_group": "rcsb_polymer_entity.rcsb_ec_lineage"
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_enzyme_class_combined.depth",
@@ -7633,7 +7728,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The enzyme classification hierarchy depth (1-N)."
+        "description": "The enzyme classification hierarchy depth (1-N).",
+        "nested_group": "rcsb_polymer_entity.rcsb_enzyme_class_combined"
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_enzyme_class_combined.ec",
@@ -7645,7 +7741,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Combined list of enzyme class assignments."
+        "description": "Combined list of enzyme class assignments.",
+        "nested_group": "rcsb_polymer_entity.rcsb_enzyme_class_combined"
     },
     {
         "attribute": "rcsb_polymer_entity.rcsb_enzyme_class_combined.provenance_source",
@@ -7656,6 +7753,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Combined list of enzyme class associated provenance sources.",
+        "nested_group": "rcsb_polymer_entity.rcsb_enzyme_class_combined",
         "enum": [
             "PDB Primary Data",
             "UniProt"
@@ -7719,7 +7817,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.annotation_lineage.depth",
@@ -7734,7 +7833,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.annotation_lineage.id",
@@ -7744,7 +7844,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.annotation_lineage.name",
@@ -7756,7 +7857,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.description",
@@ -7768,7 +7870,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.name",
@@ -7780,7 +7883,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_polymer_entity_annotation"
     },
     {
         "attribute": "rcsb_polymer_entity_annotation.type",
@@ -7791,6 +7895,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_polymer_entity_annotation",
         "enum": [
             "CARD",
             "GO",
@@ -7862,7 +7967,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database accession code"
+        "description": "Reference database accession code",
+        "nested_group": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_isoform",
@@ -7872,7 +7978,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database identifier for the sequence isoform"
+        "description": "Reference database identifier for the sequence isoform",
+        "nested_group": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_name",
@@ -7883,6 +7990,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Reference database name",
+        "nested_group": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers",
         "enum": [
             "EMBL",
             "GenBank",
@@ -7908,7 +8016,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Indicates what fraction of this polymer entity sequence is covered by the reference sequence."
+        "description": "Indicates what fraction of this polymer entity sequence is covered by the reference sequence.",
+        "nested_group": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.reference_sequence_coverage",
@@ -7923,7 +8032,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Indicates what fraction of the reference sequence is covered by this polymer entity sequence."
+        "description": "Indicates what fraction of the reference sequence is covered by this polymer entity sequence.",
+        "nested_group": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_polymer_entity_feature_summary.count",
@@ -7938,7 +8048,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The feature count."
+        "description": "The feature count.",
+        "nested_group": "rcsb_polymer_entity_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_entity_feature_summary.coverage",
@@ -7953,7 +8064,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The fractional feature coverage relative to the full entity sequence. For instance, the fraction of features such as mutations, artifacts or modified monomers relative to the length of the entity sequence."
+        "description": "The fractional feature coverage relative to the full entity sequence. For instance, the fraction of features such as mutations, artifacts or modified monomers relative to the length of the entity sequence.",
+        "nested_group": "rcsb_polymer_entity_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_entity_feature_summary.maximum_length",
@@ -7968,7 +8080,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum feature length."
+        "description": "The maximum feature length.",
+        "nested_group": "rcsb_polymer_entity_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_entity_feature_summary.minimum_length",
@@ -7983,7 +8096,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum feature length."
+        "description": "The minimum feature length.",
+        "nested_group": "rcsb_polymer_entity_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_entity_feature_summary.type",
@@ -7994,6 +8108,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Type or category of the feature.",
+        "nested_group": "rcsb_polymer_entity_feature_summary",
         "enum": [
             "CARD_MODEL",
             "IMGT_ANTIBODY_DESCRIPTION",
@@ -8021,6 +8136,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Method used to establish group membership",
+        "nested_group": "rcsb_polymer_entity_group_membership",
         "enum": [
             "matching_uniprot_accession",
             "sequence_identity"
@@ -8034,7 +8150,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A unique identifier for a group of entities"
+        "description": "A unique identifier for a group of entities",
+        "nested_group": "rcsb_polymer_entity_group_membership"
     },
     {
         "attribute": "rcsb_polymer_entity_group_membership.similarity_cutoff",
@@ -8049,7 +8166,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Degree of similarity expressed as a floating-point number"
+        "description": "Degree of similarity expressed as a floating-point number",
+        "nested_group": "rcsb_polymer_entity_group_membership"
     },
     {
         "attribute": "rcsb_polymer_entity_instance_container_identifiers.asym_id",
@@ -8139,7 +8257,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.annotation_lineage.depth",
@@ -8154,7 +8273,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.annotation_lineage.id",
@@ -8164,7 +8284,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.annotation_lineage.name",
@@ -8176,7 +8297,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.description",
@@ -8188,7 +8310,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.name",
@@ -8200,7 +8323,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_polymer_instance_annotation"
     },
     {
         "attribute": "rcsb_polymer_instance_annotation.type",
@@ -8211,6 +8335,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_polymer_instance_annotation",
         "enum": [
             "CATH",
             "ECOD",
@@ -8232,7 +8357,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The feature count per polymer chain."
+        "description": "The feature count per polymer chain.",
+        "nested_group": "rcsb_polymer_instance_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_instance_feature_summary.coverage",
@@ -8247,7 +8373,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The fractional feature coverage relative to the full entity sequence."
+        "description": "The fractional feature coverage relative to the full entity sequence.",
+        "nested_group": "rcsb_polymer_instance_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_instance_feature_summary.maximum_length",
@@ -8262,7 +8389,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum feature length."
+        "description": "The maximum feature length.",
+        "nested_group": "rcsb_polymer_instance_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_instance_feature_summary.minimum_length",
@@ -8277,7 +8405,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum feature length."
+        "description": "The minimum feature length.",
+        "nested_group": "rcsb_polymer_instance_feature_summary"
     },
     {
         "attribute": "rcsb_polymer_instance_feature_summary.type",
@@ -8288,6 +8417,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Type or category of the feature.",
+        "nested_group": "rcsb_polymer_instance_feature_summary",
         "enum": [
             "ANGLE_OUTLIER",
             "ANGLE_OUTLIERS",
@@ -8572,7 +8702,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Hierarchy depth."
+        "description": "Hierarchy depth.",
+        "nested_group": "rcsb_pubmed_mesh_descriptors_lineage"
     },
     {
         "attribute": "rcsb_pubmed_mesh_descriptors_lineage.id",
@@ -8582,7 +8713,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Identifier for MeSH classification term."
+        "description": "Identifier for MeSH classification term.",
+        "nested_group": "rcsb_pubmed_mesh_descriptors_lineage"
     },
     {
         "attribute": "rcsb_pubmed_mesh_descriptors_lineage.name",
@@ -8594,7 +8726,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "MeSH classification term."
+        "description": "MeSH classification term.",
+        "nested_group": "rcsb_pubmed_mesh_descriptors_lineage"
     },
     {
         "attribute": "rcsb_repository_holdings_current.repository_content_types",
@@ -8642,7 +8775,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Average RMSD between members of a given cluster."
+        "description": "Average RMSD between members of a given cluster.",
+        "nested_group": "rcsb_struct_symmetry"
     },
     {
         "attribute": "rcsb_struct_symmetry.kind",
@@ -8653,6 +8787,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The granularity at which the symmetry calculation is performed. In 'Global Symmetry' all polymeric subunits in assembly are used. In 'Local Symmetry' only a subset of polymeric subunits is considered. In 'Pseudo Symmetry' the threshold for subunits similarity is relaxed.",
+        "nested_group": "rcsb_struct_symmetry",
         "enum": [
             "Global Symmetry",
             "Local Symmetry",
@@ -8667,7 +8802,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Oligomeric state refers to a composition of polymeric subunits in quaternary structure. Quaternary structure may be composed either exclusively of several copies of identical subunits, in which case they are termed homo-oligomers, or alternatively by at least one copy of different subunits (hetero-oligomers). Quaternary structure composed of a single subunit is denoted as 'Monomer'."
+        "description": "Oligomeric state refers to a composition of polymeric subunits in quaternary structure. Quaternary structure may be composed either exclusively of several copies of identical subunits, in which case they are termed homo-oligomers, or alternatively by at least one copy of different subunits (hetero-oligomers). Quaternary structure composed of a single subunit is denoted as 'Monomer'.",
+        "nested_group": "rcsb_struct_symmetry"
     },
     {
         "attribute": "rcsb_struct_symmetry.symbol",
@@ -8677,7 +8813,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Symmetry symbol refers to point group or helical symmetry of identical polymeric subunits in Schoenflies notation. Contains point group symbol (e.g., C2, C5, D2, T, O, I) or H for helical symmetry."
+        "description": "Symmetry symbol refers to point group or helical symmetry of identical polymeric subunits in Schoenflies notation. Contains point group symbol (e.g., C2, C5, D2, T, O, I) or H for helical symmetry.",
+        "nested_group": "rcsb_struct_symmetry"
     },
     {
         "attribute": "rcsb_struct_symmetry.type",
@@ -8688,6 +8825,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Symmetry type refers to point group or helical symmetry of identical polymeric subunits. Contains point group types (e.g. Cyclic, Dihedral) or Helical for helical symmetry.",
+        "nested_group": "rcsb_struct_symmetry",
         "enum": [
             "Asymmetric",
             "Cyclic",
@@ -8711,7 +8849,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Hierarchy depth."
+        "description": "Hierarchy depth.",
+        "nested_group": "rcsb_struct_symmetry_lineage"
     },
     {
         "attribute": "rcsb_struct_symmetry_lineage.id",
@@ -8721,7 +8860,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Automatically assigned ID to uniquely identify the symmetry term in the Protein Symmetry Browser."
+        "description": "Automatically assigned ID to uniquely identify the symmetry term in the Protein Symmetry Browser.",
+        "nested_group": "rcsb_struct_symmetry_lineage"
     },
     {
         "attribute": "rcsb_struct_symmetry_lineage.name",
@@ -8731,7 +8871,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "A human-readable term describing protein symmetry."
+        "description": "A human-readable term describing protein symmetry.",
+        "nested_group": "rcsb_struct_symmetry_lineage"
     },
     {
         "attribute": "rcsb_target_neighbors.distance",
@@ -8800,7 +8941,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.annotation_lineage.depth",
@@ -8815,7 +8957,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.annotation_lineage.id",
@@ -8825,7 +8968,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.annotation_lineage.name",
@@ -8837,7 +8981,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.description",
@@ -8849,7 +8994,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.name",
@@ -8861,7 +9007,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_uniprot_annotation"
     },
     {
         "attribute": "rcsb_uniprot_annotation.type",
@@ -8872,6 +9019,7 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_uniprot_annotation",
         "enum": [
             "disease",
             "phenotype",
@@ -8887,7 +9035,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database accession code"
+        "description": "Reference database accession code",
+        "nested_group": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers.database_isoform",
@@ -8897,7 +9046,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database identifier for the sequence isoform"
+        "description": "Reference database identifier for the sequence isoform",
+        "nested_group": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers.database_name",
@@ -8907,7 +9057,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Reference database name"
+        "description": "Reference database name",
+        "nested_group": "rcsb_uniprot_container_identifiers.reference_sequence_identifiers"
     },
     {
         "attribute": "rcsb_uniprot_external_reference.reference_name",

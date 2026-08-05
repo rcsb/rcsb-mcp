@@ -13,11 +13,9 @@ from typing import Any, NamedTuple, get_args
 from rcsb_mcp.attribute_scopes import (
     CHEMICAL_ATTRIBUTE_ENTRY_CONSTANT,
     CHEMICAL_ATTRIBUTE_NESTED_ROOTS,
-    CHEMICAL_ATTRIBUTE_REPEATING_ROOTS,
     CHEMICAL_ATTRIBUTE_SCOPES,
     SEARCH_ATTRIBUTE_ENTRY_CONSTANT,
     SEARCH_ATTRIBUTE_NESTED_ROOTS,
-    SEARCH_ATTRIBUTE_REPEATING_ROOTS,
     SEARCH_ATTRIBUTE_SCOPES,
 )
 from rcsb_mcp.attribute_types import AttributeScope, TextOperator
@@ -372,6 +370,19 @@ def _pins_a_nested_record(group: dict[str, Any]) -> bool:
 
     Only the group's own terminal children count: splicing moves them into the parent,
     while any sub-group keeps its own nesting and its own coherence.
+
+    Counts CONDITIONS, deliberately -- unlike intersection_notes, which counts distinct
+    fields. The asymmetry is not an oversight. A note describes the query as sent, where a
+    same-field pair is provably unbound; a splice REWRITES it, and the rewrite can hand the
+    pair a second field it did not have:
+
+        and[ and[annotation_id in IPR..., annotation_id in GO...], type=Pfam ]   555
+        and[     annotation_id in IPR..., annotation_id in GO... , type=Pfam ]     0
+
+    Same conditions, and the splice is what activates coherence -- so a guard keyed on
+    distinct fields would look at the sub-group alone, see one field, splice, and empty the
+    query. Whether a same-field pair is bindable depends on the group it ends up in, which
+    is exactly what a splice changes.
     """
     seen: dict[tuple[str, str], int] = {}
     for child in group.get("nodes") or []:
@@ -853,11 +864,16 @@ def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
     costs nothing otherwise — the silence is as load-bearing as the text, because a note on
     every query trains the reader to skip it.
 
-    Three findings, in descending order of what the caller can do about them:
+    Two findings:
 
     1. two comparable conditions finer than return_type -- FIXABLE by return_type
-    2. conditions on one repeated record -- fixable only if the API nested-indexes it
-    3. return_type="assembly" with anything finer -- NOT fixable at all
+    2. return_type="assembly" with anything finer -- NOT fixable at all
+
+    Both are about which OBJECT satisfies a condition. Nothing here reports on which nested
+    RECORD does: that reads as a defect but is a deliberate feature, where the query shape
+    selects same-record or independent matching, and the tree carries no intent to judge it
+    against. It is documented on rcsb_query_attribute and as `nested_group` in the attribute
+    catalog instead. See tests/test_intersection_notes.py for the removal and the reasoning.
 
     Returns [] when nothing applies, which is the common case.
     """
@@ -895,44 +911,7 @@ def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
                     f'require the same one.'
                 )
 
-        # 2. Two conditions on one repeated record inside a single object.
-        by_root: dict[tuple[str, str], list[str]] = {}
-        for attr, service, _ in scoped:
-            by_root.setdefault((service, attr.split(".")[0]), []).append(attr)
-        for (service, root), attrs in by_root.items():
-            if len(attrs) < 2:
-                continue
-            repeating = (CHEMICAL_ATTRIBUTE_REPEATING_ROOTS if service == "text_chem"
-                         else SEARCH_ATTRIBUTE_REPEATING_ROOTS)
-            if root not in repeating:
-                continue
-            subject = (f'Two conditions on `{attrs[0]}`' if attrs[0] == attrs[1]
-                       else f'`{attrs[0]}` and `{attrs[1]}`')
-            if _nested_record_of(attrs[0], service):
-                # Nested-indexed: the API DOES keep such a pair on one record, but only
-                # while it is ALONE in its group. Measured on a pair that can never
-                # co-occur (rcsb_binding_affinity comp_id=PTR + type=IC50, correct answer
-                # 0 everywhere):
-                #     and[PTR, IC50]              -> 0   alone, coherent
-                #     and[PTR, IC50, XRAY]        -> 5   one foreign terminal breaks it
-                #     and[ and[PTR,IC50], XRAY ]  -> 0   own group, coherent again
-                # So the note fires only when something else shares the group -- and it
-                # has an exact fix, which is why it names one.
-                if len(group.get("nodes") or []) <= len(attrs):
-                    continue
-                add(
-                    f'{subject} share a group with other conditions, so they can match '
-                    f'DIFFERENT {root} records of the same object. Put them in ONE '
-                    f'rcsb_query_attribute call to require the same record.'
-                )
-            else:
-                add(
-                    f'One object holds many {root} records, and the Search API cannot '
-                    f'require {subject[0].lower() + subject[1:]} to hold on the SAME one. '
-                    f'No return_type or query shape changes this.'
-                )
-
-    # 3. Assembly. This one needs no AND, no second condition and no group at all, so it
+    # 2. Assembly. This one needs no AND, no second condition and no group at all, so it
     #    walks EVERY terminal rather than the AND groups -- a lone attribute query with
     #    return_type="assembly" is the simplest case that triggers it.
     if return_type == "assembly":

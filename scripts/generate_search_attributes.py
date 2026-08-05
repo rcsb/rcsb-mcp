@@ -102,12 +102,23 @@ def _description_of(leaf: dict) -> str | None:
     return " ".join(text.split()) if isinstance(text, str) else text
 
 
-def _walk(node: dict, path: str = ""):
-    """Yield (attribute_path, searchable_leaf) for every searchable attribute.
+def _walk(node: dict, path: str = "", nested_group: str | None = None):
+    """Yield (attribute_path, searchable_leaf, nested_group) for every searchable attribute.
 
     A searchable leaf carries `rcsb_search_context` directly, or — for array
     attributes — on its `items`. The attribute path is the property path; the
     leaf supplying type/context/description may be the array's `items`.
+
+    `nested_group` is the path of the nearest enclosing container the schema marks
+    `rcsb_nested_indexing`, or None. That container is the coherence scope: conditions on
+    attributes sharing a group must be grouped together AND isolated from everything else,
+    or each is answered independently against a different record.
+
+    OUTERMOST wins, which is why it is threaded down rather than recomputed at the leaf.
+    `rcsb_polymer_entity_annotation` and its `.annotation_lineage` are BOTH nested, and
+    `.type` + `.annotation_lineage.id` describe one annotation — keying the second to the
+    deeper container would put them in different groups and split a pair that belongs
+    together. Matches `queries._nested_record_of`, which takes the shallowest match.
     """
     if not isinstance(node, dict):
         return
@@ -119,20 +130,25 @@ def _walk(node: dict, path: str = ""):
             continue
         attr = f"{path}.{key}" if path else key
         items = val.get("items") if isinstance(val.get("items"), dict) else None
+        # A container is nested-indexed via its own flag or, for arrays, its `items`.
+        here = nested_group
+        if here is None and (val.get("rcsb_nested_indexing")
+                             or (items is not None and items.get("rcsb_nested_indexing"))):
+            here = attr
         if "rcsb_search_context" in val:
-            yield attr, val
+            yield attr, val, nested_group
         elif items is not None and "rcsb_search_context" in items:
-            yield attr, items
+            yield attr, items, nested_group
         # Recurse into nested objects (directly and through array items).
-        yield from _walk(val, attr)
+        yield from _walk(val, attr, here)
         if items is not None:
-            yield from _walk(items, attr)
+            yield from _walk(items, attr, here)
 
 
 def build_catalog(schema: dict) -> list[dict]:
     """Build a sorted, de-duplicated attribute catalog from a metadata schema."""
     out: dict[str, dict] = {}
-    for attr, leaf in _walk(schema):
+    for attr, leaf, nested_group in _walk(schema):
         if attr in out:  # keep first occurrence
             continue
         typ = _type_of(leaf)
@@ -142,6 +158,16 @@ def build_catalog(schema: dict) -> list[dict]:
             "operators": _operators_of(leaf.get("rcsb_search_context", []), typ),
             "description": _description_of(leaf),
         }
+        # The coherence scope, on the 22% of attributes that have one. Emitted as the
+        # container PATH rather than a boolean because the path is the actionable part —
+        # "group this with everything else carrying the same value" — and it is not
+        # derivable from the attribute: 22 structure attributes have a group that is not
+        # their first path segment (drugbank_info.drug_products.approved groups under
+        # drugbank_info.drug_products, rcsb_polymer_entity.rcsb_ec_lineage.id under
+        # rcsb_polymer_entity.rcsb_ec_lineage). A boolean would leave the caller to guess,
+        # and the obvious guess is wrong for exactly those.
+        if nested_group:
+            record["nested_group"] = nested_group
         # Allowed values, where the schema constrains them (~15% of attributes). Emitted
         # LAST and only when present, so the 85% without one are byte-identical to before.
         # Kept whole and unsorted: this is the authoritative set the API matches against,

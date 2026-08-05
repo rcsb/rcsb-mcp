@@ -165,3 +165,85 @@ def test_repeated_composition_does_not_stack_wrappers():
         node = _compose([node, queries.attribute_node(
             [_f("rcsb_entry_info.polymer_entity_count", 2, "equals")], "and")], "and")
     assert _is_flat(node), "safe conditions must stay flat however many times they compose"
+
+
+# --- grouping and isolation are SEPARATE requirements ------------------------------
+def test_splitting_a_nested_pair_across_groups_breaks_it_even_with_nothing_foreign():
+    """Isolation is not sufficient — grouping is its own requirement.
+
+    Measured with only rcsb_binding_affinity conditions in the entire tree, so no foreign
+    terminal exists anywhere and isolation holds in every row:
+
+        and[Kd, v<1]                 303   together
+        and[ and[Kd], and[v<1] ]     481   split
+        and[ and[Kd], v<1 ]          481   HALF-split: one condition alone in a single-node
+                                           group is enough, and that is exactly what
+                                           rcsb_query_composer builds from two separate
+                                           rcsb_query_attribute calls
+        and[ and[Kd, v<1] ]          303   extra depth around the intact pair is harmless
+
+    So the splice guard is not the whole story: group_node must also never SEPARATE a pair
+    that arrived together, which is what _pins_a_nested_record already ensures by refusing
+    to splice. This test pins the requirement the guard exists to satisfy.
+    """
+    pair = queries.attribute_node(
+        [_f("rcsb_binding_affinity.type", "Kd"),
+         _f("rcsb_binding_affinity.value", 1, "less")], "and")
+    # Composed with an unrelated condition, the pair must survive as ONE group: spliced flat
+    # it loses isolation (456), and split apart it would lose grouping (481).
+    composed = _compose([pair, XRAY], "and")
+    assert not _is_flat(composed)
+    inner = [c for c in composed["nodes"] if c.get("type") == "group"]
+    assert len(inner) == 1 and len(inner[0]["nodes"]) == 2, (
+        "both affinity conditions must stay together in one group"
+    )
+
+
+def test_a_single_condition_is_not_wrapped_into_a_group_of_its_own():
+    """The half-split shape is 481, so a lone nested condition must NOT be given a private
+    group — it has to stay a bare sibling, free to be grouped with a partner later."""
+    lone = queries.attribute_node([_f("rcsb_binding_affinity.type", "Kd")], "and")
+    assert lone["type"] == "terminal", (
+        "a one-condition build must stay a terminal; wrapping it in a group is the shape "
+        "measured at 481 instead of 303"
+    )
+
+
+def test_the_splice_guard_counts_conditions_not_distinct_fields():
+    """A pair on the SAME field must keep its group too, even though the two conditions
+    cannot bind to one record on their own.
+
+    Splicing them flat can hand them a second field they did not have, which switches the
+    semantics under them:
+
+        and[ and[annot_id in IPR..., annot_id in GO...], type=Pfam ]   555
+        and[     annot_id in IPR..., annot_id in GO... , type=Pfam ]     0
+
+    The caller grouped those two conditions in one rcsb_query_attribute call; the composer's
+    job is to preserve that, not to re-decide it.
+    """
+    pair = queries.attribute_node(
+        [_f("rcsb_polymer_entity_annotation.annotation_id", ["IPR001128"], "in"),
+         _f("rcsb_polymer_entity_annotation.annotation_id", ["GO:0004497"], "in")], "and")
+    assert queries._pins_a_nested_record(pair)
+    composed = _compose([pair, queries.attribute_node(
+        [_f("rcsb_polymer_entity_annotation.type", "Pfam")], "and")], "and")
+    assert any(c.get("type") == "group" for c in composed["nodes"]), (
+        "splicing this pair flat would take the query from 555 hits to 0"
+    )
+
+
+def test_every_nested_record_is_reachable_by_the_splice_guard():
+    """_nested_record_of must place every container the schema marks, or the guard silently
+    stops protecting one. Six of the 41 sit below their first path segment.
+
+    Reachable means it RESOLVES to a nested record, not that it equals the path it came
+    from: the shallowest ancestor is returned deliberately, so
+    `rcsb_polymer_entity_annotation.annotation_lineage` resolves to the annotation — the
+    record coherence actually keys on.
+    """
+    from rcsb_mcp.attribute_scopes import SEARCH_ATTRIBUTE_NESTED_ROOTS
+
+    unreachable = [r for r in SEARCH_ATTRIBUTE_NESTED_ROOTS
+                   if queries._nested_record_of(f"{r}.a", "text") is None]
+    assert unreachable == [], unreachable

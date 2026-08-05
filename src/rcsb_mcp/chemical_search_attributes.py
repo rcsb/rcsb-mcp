@@ -174,6 +174,7 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "Indicates whether this drug has been approved by the regulating government.",
+        "nested_group": "drugbank_info.drug_products",
         "enum": [
             "N",
             "Y"
@@ -188,6 +189,7 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The country where this commercially available drug has been approved.",
+        "nested_group": "drugbank_info.drug_products",
         "enum": [
             "Canada",
             "EU",
@@ -207,7 +209,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The ending date for market approval."
+        "description": "The ending date for market approval.",
+        "nested_group": "drugbank_info.drug_products"
     },
     {
         "attribute": "drugbank_info.drug_products.started_marketing_on",
@@ -222,7 +225,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The starting date for market approval."
+        "description": "The starting date for market approval.",
+        "nested_group": "drugbank_info.drug_products"
     },
     {
         "attribute": "drugbank_info.indication",
@@ -488,7 +492,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "An identifier for the annotation."
+        "description": "An identifier for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.depth",
@@ -503,7 +508,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent lineage depth (1-N)"
+        "description": "Members of the annotation lineage as parent lineage depth (1-N)",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.id",
@@ -513,7 +519,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class identifiers."
+        "description": "Members of the annotation lineage as parent class identifiers.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.annotation_lineage.name",
@@ -525,7 +532,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "Members of the annotation lineage as parent class names."
+        "description": "Members of the annotation lineage as parent class names.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.description",
@@ -537,7 +545,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A description for the annotation."
+        "description": "A description for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.name",
@@ -549,7 +558,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "contains_words",
             "exists"
         ],
-        "description": "A name for the annotation."
+        "description": "A name for the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation"
     },
     {
         "attribute": "rcsb_chem_comp_annotation.type",
@@ -560,6 +570,7 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "A type or category of the annotation.",
+        "nested_group": "rcsb_chem_comp_annotation",
         "enum": [
             "ATC",
             "Carbohydrate Anomer",
@@ -719,7 +730,8 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exact_match",
             "exists"
         ],
-        "description": "The resource identifier code for the related chemical reference."
+        "description": "The resource identifier code for the related chemical reference.",
+        "nested_group": "rcsb_chem_comp_related"
     },
     {
         "attribute": "rcsb_chem_comp_related.resource_name",
@@ -730,6 +742,7 @@ CHEMICAL_SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "exists"
         ],
         "description": "The resource name for the related chemical reference.",
+        "nested_group": "rcsb_chem_comp_related",
         "enum": [
             "CAS",
             "CCDC/CSD",
