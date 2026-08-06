@@ -125,7 +125,12 @@ REQUIRED_IN_TOOL = {
     # Each warning names the CONSEQUENCE, not the rule: "do not invent ids" describes no
     # observable outcome, since a guessed id returns real data about a real molecule.
     "rcsb_get_polymer_entities": [
-        "rcsb_query_sequence",                           # id source hint (renamed with the layer)
+        # Where the ids come FROM. Was "rcsb_query_sequence" until 2026-08-06; that named a
+        # BUILDER, which returns a query document and no ids at all — stale since the
+        # builder/executor split. The executor is what yields them, so the hint has to name
+        # it and the return_type that produces this id shape.
+        "rcsb_search_request",
+        'return_type="polymer_entity"',
         "NEVER form one by appending _1",
         "nothing in the response marks it wrong",
     ],
