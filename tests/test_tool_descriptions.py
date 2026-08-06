@@ -109,11 +109,41 @@ REQUIRED_IN_TOOL = {
         "rcsb_entry_container_identifiers",              # component-id drill-down
         "compose them with the entry id",                # how to build sibling-tool ids
     ],
-    "rcsb_get_nonpolymer_entities": [
-        "rcsb_get_chem_comps",                           # where to get the ligand chemistry
-    ],
+    # An agent reported constructing entity ids as <ENTRY>_1 rather than looking them up.
+    # The composition rule above is correct and the ids ARE readable, which is exactly the
+    # trap: the guess is never REJECTED, so nothing teaches the agent it was wrong.
+    #
+    #   polymer entity   <ENTRY>_1   exists ~always   SILENT: 6J5U_1 is an NLR immune
+    #                                                 receptor, the RLCK is 6J5U_2
+    #   instance         <ENTRY>.A   exists ~always   SILENT: 45-54% of matching instances
+    #                                                 are not .A, and .A is the LABEL asym
+    #                                                 id -- 6J5T.A is author chain I
+    #   assembly         <ENTRY>-1   exists ~always   SILENT: 43% of matching assemblies
+    #                                                 are not -1
+    #   non-polymer      <ENTRY>_1   never exists     LOUD: lands in not_found
+    #
+    # Each warning names the CONSEQUENCE, not the rule: "do not invent ids" describes no
+    # observable outcome, since a guessed id returns real data about a real molecule.
     "rcsb_get_polymer_entities": [
         "rcsb_query_sequence",                           # id source hint (renamed with the layer)
+        "NEVER form one by appending _1",
+        "nothing in the response marks it wrong",
+    ],
+    "rcsb_get_polymer_entity_instances": [
+        'Do not guess ".A"',
+        "LABEL asym_id, not the author",
+    ],
+    "rcsb_get_assemblies": [
+        'Do not guess "-1"',
+        "the first is not necessarily the one",
+    ],
+    "rcsb_get_nonpolymer_entities": [
+        "rcsb_get_chem_comps",                           # where to get the ligand chemistry
+        # See the comment on rcsb_get_polymer_entities. This is the ONE of the four whose
+        # guess fails loudly -- entity numbering is shared with the polymers and they take
+        # the low values, so 0 of 6,495 HEM entities sit at _1 and "<ENTRY>_1" lands in
+        # not_found. Kept anyway so the four ids are documented consistently.
+        "entity numbering is shared with the",
     ],
     "rcsb_get_uniprot": [
         "rcsb_uniprot_annotation",                       # heavier optional annotation sets ...
@@ -332,3 +362,40 @@ def test_the_near_miss_check_does_not_fire_on_attribute_paths():
         assert not difflib.get_close_matches(path, registered, n=1, cutoff=0.9), (
             f"{path!r} would be flagged as a typo'd tool name"
         )
+
+
+def test_every_id_route_points_at_rcsb_get_entries_and_is_followable():
+    """All four warnings send the agent to ONE tool, and each route must resolve there.
+
+    Consistency is the point: an agent that has entry ids should not need a different
+    lookup per id shape. rcsb_get_entries serves all four — but not uniformly, which is the
+    trap this guards. Its container identifiers carry entity and assembly ids as plain
+    fields, and NO chain letters at all; asym_ids hangs off the polymer entity, so the
+    instance route needs a `fields` traversal into polymer_entities.
+
+    An earlier draft named `rcsb_polymer_entity_container_identifiers.asym_ids` alongside
+    `polymer_entity_ids` as though the two were symmetric. The field is real, but nothing on
+    the entry exposes it, so the route dead-ended — worse than the guess it replaced, since
+    the guess at least returns data.
+    """
+    d = _descriptions()
+    for f in ("polymer_entity_ids", "non_polymer_entity_ids", "assembly_ids"):
+        assert f in d["rcsb_get_entries"], f"rcsb_get_entries must name {f}"
+    assert "asym_ids" not in d["rcsb_get_entries"], (
+        "the entry container has no asym_ids; claiming it would send agents nowhere"
+    )
+    routes = {
+        "rcsb_get_polymer_entities": "polymer_entity_ids",
+        "rcsb_get_nonpolymer_entities": "non_polymer_entity_ids",
+        "rcsb_get_assemblies": "assembly_ids",
+        "rcsb_get_polymer_entity_instances": "asym_ids",
+    }
+    for tool, field in routes.items():
+        assert "rcsb_get_entries" in d[tool], f"{tool} must route back to rcsb_get_entries"
+        assert field in d[tool], f"{tool} must name the field that carries its ids"
+    # The one that is not a plain entry field has to spell out the traversal.
+    inst = d["rcsb_get_polymer_entity_instances"]
+    assert "fields=" in inst and "polymer_entities{" in inst, (
+        "asym_ids is reachable from the entry only through a fields traversal; naming it "
+        "without that leaves the route unfollowable"
+    )

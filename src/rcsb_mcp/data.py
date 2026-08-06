@@ -247,8 +247,14 @@ async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = 
     and positional features adding rcsb_polymer_entity_feature.*
 
     Args:
-        entity_ids: entry + entity number, e.g. ["4HHB_1"] — exactly what
-            rcsb_query_sequence searches return. Unknown IDs are returned under "not_found".
+        entity_ids: entry + entity number, e.g. ["4HHB_1"] — exactly what rcsb_search_request
+            returns with return_type="polymer_entity". Unknown IDs are returned under "not_found".
+            NEVER form one by appending _1 to an entry id. Entity numbers are assigned per
+            deposition and carry no meaning: "<ENTRY>_1" essentially always exists, so the
+            guess returns valid data for whatever molecule happens to be numbered first —
+            a DIFFERENT protein, or DNA/RNA — and nothing in the response marks it wrong.
+            Take the number from a search hit, or from
+            rcsb_entry_container_identifiers.polymer_entity_ids on rcsb_get_entries.
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_polymer_entity.pdbx_description"); discover/verify paths with
             rcsb_describe_data_object("polymer_entities").
@@ -263,8 +269,12 @@ async def rcsb_get_nonpolymer_entities(entity_ids: list[str], fields: str | None
     Use rcsb_get_chem_comps for the chemistry of that component.
 
     Args:
-        entity_ids: entry + entity number, e.g. ["4HHB_3"]. Unknown IDs are returned
-            under "not_found".
+        entity_ids: entry + non-polymer entity number, e.g. ["4HHB_3"] — exactly what rcsb_search_request
+            returns with return_type="non_polymer_entity". Unknown IDs are returned
+            under "not_found". Do not guess the number: entity numbering is shared with the
+            polymers and they take the low values, so a ligand is rarely "_1" and that guess
+            lands in not_found. Take it from rcsb_entry_container_identifiers
+            .non_polymer_entity_ids on rcsb_get_entries, or from a search hit.
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_nonpolymer_entity.pdbx_description"); discover/verify paths with
             rcsb_describe_data_object("nonpolymer_entities").
@@ -296,8 +306,16 @@ async def rcsb_get_polymer_entity_instances(instance_ids: list[str], fields: str
         Default fields: the entry/entity/chain identifiers and modeled-residue count.
 
         Args:
-            instance_ids: entry.asym_id (chain), e.g. ["4HHB.A"]. Unknown IDs are returned
-                under "not_found".
+            instance_ids: entry.asym_id (chain), e.g. ["4HHB.A"] — exactly what rcsb_search_request
+                returns with return_type="polymer_instance". Unknown IDs are returned
+                under "not_found". Do not guess ".A". It is the LABEL asym_id, not the author
+                chain — the instance an author calls chain A is often lettered differently —
+                and any entry with more than one chain has several instances, so a guessed
+                ".A" silently returns a chain that is not the one that matched. Take it from
+                a polymer_instance search hit, or from rcsb_get_entries with fields=
+                "polymer_entities{rcsb_polymer_entity_container_identifiers{asym_ids}}" —
+                the entry's own container identifiers stop at entity and assembly ids, so
+                chains need that traversal.
             fields: Optional GraphQL selection replacing the curated default
                 (e.g. "rcsb_polymer_instance_info.modeled_residue_count"); discover/verify paths
                 with rcsb_describe_data_object("polymer_entity_instances").
@@ -344,8 +362,13 @@ async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None
     and positional features rcsb_assembly_feature.*
 
     Args:
-        assembly_ids: entry-assembly, e.g. ["4HHB-1"]. Unknown IDs are returned under
-            "not_found".
+        assembly_ids: entry-assembly, e.g. ["4HHB-1"] — exactly what rcsb_search_request
+            returns with return_type="assembly". Unknown IDs are returned under
+            "not_found". Do not guess "-1". Assembly 1 essentially always exists, so the
+            guess succeeds silently, but an entry's assemblies differ in composition and the
+            first is not necessarily the one carrying what you searched for. Take it from an
+            assembly search hit, or from
+            rcsb_entry_container_identifiers.assembly_ids on rcsb_get_entries.
         fields: Optional GraphQL selection replacing the curated default (e.g.
             "rcsb_assembly_info.polymer_entity_instance_count"); discover/verify paths with
             rcsb_describe_data_object("assemblies").
