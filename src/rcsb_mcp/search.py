@@ -740,8 +740,13 @@ async def rcsb_search_request(
         include_computed_models: Also search computed structure models (AlphaFold and
             similar), not just experimental structures.
         facets: Aggregation specs returning a BREAKDOWN instead of hits — use for "how
-            many by X", "distribution of Y", "which organisms". Each is {name,
-            aggregation_type, attribute} plus: `interval` for histogram/date_histogram,
+            many by X (e.g., experimental method)", "distribution of Y (e.g., EC numbers)",
+            "which Z (e.g., organisms)" queries or to discover what your hits SHARE so
+            you can re-search on it and explore other potential candidates. A terms facet
+            on an attribute returns the values common to the result set, at any hit count.
+            Those counts are within your hits only — a value's archive-wide count is a
+            separate query, and it is what says whether the value is distinctive or generic.
+            Each is {name, aggregation_type, attribute} plus: `interval` for histogram/date_histogram,
             `ranges` for range/date_range, and an optional nested `facets` list.
             aggregation_type is one of terms, histogram, date_histogram, range,
             date_range, cardinality.

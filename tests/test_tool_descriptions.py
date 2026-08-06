@@ -87,6 +87,21 @@ REQUIRED_IN_TOOL = {
         # Picking a cluster representative by relevance score is a distinct mistake from
         # ranking hits by it; this caveat used to live in the guide's grouping section.
         "don't pick a cluster representative by it",
+        # Faceting a result set to find what the hits SHARE is the discovery move that
+        # turns a handful of hits into a re-searchable value. It was documented only as a
+        # reporting device ("how many by X"), so agents reached for it when a COUNTING
+        # question was asked and never when they needed to broaden or explore.
+        "what your hits SHARE",
+        # And the second half, which is what makes the first usable. A facet's population is
+        # within the result set; nothing in the response says how common the value is in the
+        # archive, and that is the only thing separating a useful value from a useless one at
+        # EVERY membership level. Measured on 4 phrase hits for "receptor-like cytoplasmic
+        # kinase": IPR050823 and IPR000719 both appear in 4/4 and are 8 vs 10,744 entities
+        # archive-wide; GO:0002221 and GO:0005634 both appear in 1/4 and are 486 vs 104,027.
+        # Bucket order is no help — it returned the 10,744 first and the 8 last. Without this
+        # sentence the natural read of "what your hits share" is the top bucket.
+        "archive-wide count is a",
+        "distinctive or generic",
     ],
     # rcsb_get_* family: the `fields`-param mechanics were shortened to a pointer, but each
     # tool's cross-reference / drill-down guidance must survive the trim.
