@@ -22,10 +22,6 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: rutgers-acme
     kubernetes.io/tls-acme: "true"
-    haproxy.org/allow-list: >-
-      128.6.158.0/23, 132.249.210.0/24, 132.249.213.0/24, 163.114.226.0/24, 163.114.225.0/24,
-      209.177.156.77/32, 147.75.68.120/29, 163.114.227.0/24, 163.114.228.0/24, 163.114.224.0/24, 147.75.66.200/29,
-      163.114.230.0/24, 163.114.232.0/24
   hosts:
     - host: rcsb-mcp.k8s.rcsb.org
       paths:
