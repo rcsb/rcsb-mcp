@@ -105,8 +105,8 @@ podEnvVars:
   # document. It must be an origin whose ingress routes to this service (any of the
   # ingress hosts below). Confirm the real URL with DevOps before enabling — the
   # hosts here are placeholders. Left unset, the tool falls back to returning html.
-  # - name: RCSB_MCP_REPORT_BASE_URL
-  #   value: "https://rcsb-mcp.rcsb.org"
+  - name: RCSB_MCP_REPORT_BASE_URL
+    value: "https://mcp-beta.rcsb.org"
   #
   # The tool hands back a SHORT link (…/r/<id>) that redirects to the self-contained
   # …/r?d=<token> URL. The id → token map lives in a short-TTL store. With multiple
