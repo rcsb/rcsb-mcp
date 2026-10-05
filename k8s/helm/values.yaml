@@ -94,6 +94,12 @@ secretVolumes:
 podEnvVars:
   - name: HOME
     value: /tmp
+  # User-Agent on every request this service makes to the RCSB (and EBI/UniProt) APIs, so
+  # the hosted deployment's traffic can be told apart from local/stdio installs (which
+  # send the default "rcsb-mcp/<version> (...)") in the upstream access logs. {version}
+  # is replaced with the package version from pyproject.toml. Printable ASCII only.
+  - name: RCSB_MCP_USER_AGENT
+    value: "rcsb-mcp-hosted/{version} (https://github.com/rcsb/rcsb-mcp)"
   # Set to the public origin that serves this MCP to make rcsb_render_report return
   # a report LINK instead of inline HTML, so the agent never reproduces the ~20 KB
   # document. It must be an origin whose ingress routes to this service (any of the

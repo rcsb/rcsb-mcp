@@ -282,6 +282,68 @@ def test_get_json_204_empty():
     print("ok: _get_json 204/empty")
 
 
+# --- User-Agent: overridable per deployment, sent by every request helper ------------------ #
+def _user_agent_with(value):
+    """client._user_agent() with RCSB_MCP_USER_AGENT set to ``value`` (None = unset)."""
+    import os
+
+    saved = os.environ.pop("RCSB_MCP_USER_AGENT", None)
+    if value is not None:
+        os.environ["RCSB_MCP_USER_AGENT"] = value
+    try:
+        return client._user_agent()
+    finally:
+        os.environ.pop("RCSB_MCP_USER_AGENT", None)
+        if saved is not None:
+            os.environ["RCSB_MCP_USER_AGENT"] = saved
+
+
+def test_user_agent_env_override():
+    # "unknown" means the metadata lookup missed (e.g. a misspelt distribution name), which
+    # would silently drop the version from every request.
+    assert client.PACKAGE_VERSION != "unknown"
+    assert f"/{client.PACKAGE_VERSION} " in client.DEFAULT_USER_AGENT
+    assert _user_agent_with(None) == client.DEFAULT_USER_AGENT
+    assert _user_agent_with("   ") == client.DEFAULT_USER_AGENT
+    assert _user_agent_with("  rcsb-mcp-hosted/0.1 (k8s)\n") == "rcsb-mcp-hosted/0.1 (k8s)"
+    assert _user_agent_with("rcsb-mcp-hosted/{version}") == f"rcsb-mcp-hosted/{client.PACKAGE_VERSION}"
+    # httpx would raise an uncaught UnicodeEncodeError on every request; refuse it up front.
+    for bad in ("rcsb-mcp-é", "a\nb", "a\tb"):
+        try:
+            _user_agent_with(bad)
+        except ValueError as e:
+            assert "RCSB_MCP_USER_AGENT" in str(e)
+        else:
+            raise AssertionError(f"{bad!r} should be rejected")
+    print("ok: RCSB_MCP_USER_AGENT override")
+
+
+def test_every_request_helper_sends_user_agent():
+    # The header is read from client.USER_AGENT at call time, by all three helpers — a helper
+    # that hardcoded its own string would make the deployment's traffic unattributable.
+    seen = []
+
+    class _Capture(_FakeClient):
+        def __init__(self, **kwargs):
+            super().__init__(_FakeResp(200, b"{}"))
+            seen.append(kwargs["headers"]["User-Agent"])
+
+        async def post(self, url, json=None):
+            return self._resp
+
+    orig_client, orig_ua = client.httpx.AsyncClient, client.USER_AGENT
+    client.httpx.AsyncClient = lambda *a, **k: _Capture(**k)
+    client.USER_AGENT = "rcsb-mcp-test/9"
+    try:
+        asyncio.run(client._post_search({}))
+        asyncio.run(client._post_graphql("{ x }"))
+        asyncio.run(client._get_json("http://x", {}, "Test"))
+    finally:
+        client.httpx.AsyncClient, client.USER_AGENT = orig_client, orig_ua
+    assert seen == ["rcsb-mcp-test/9"] * 3, seen
+    print("ok: every request helper sends USER_AGENT")
+
+
 def test_interpro_no_match_graceful():
     # with no matches (empty payload) the resolver returns count 0 + a fall-back-to-keyword note,
     # instead of propagating the JSONDecodeError that this input used to trigger.
@@ -437,6 +499,8 @@ if __name__ == "__main__":
     test_enrich_syntax_error()
     test_search_request_return_type_defaults_to_none()
     test_get_json_204_empty()
+    test_user_agent_env_override()
+    test_every_request_helper_sends_user_agent()
     test_interpro_no_match_graceful()
     print("\nAll server tests passed.")
 

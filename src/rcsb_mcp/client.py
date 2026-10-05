@@ -14,6 +14,8 @@ here that is schema- or domain-specific does NOT belong here; keep it to transpo
 
 from __future__ import annotations
 
+import os
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import httpx
@@ -28,8 +30,38 @@ SEARCH_EDITOR_URL = "https://search.rcsb.org/query-editor.html"
 DATA_GRAPHIQL_URL = "https://data.rcsb.org/graphiql/index.html"
 SEQCOORD_GRAPHIQL_URL = "https://sequence-coordinates.rcsb.org/graphiql/index.html"
 
-USER_AGENT = "rcsb-mcp/0.1 (https://github.com/rcsb/rcsb-mcp)"
+# pyproject's [project].version, read from the installed distribution's metadata (the
+# source pyproject.toml isn't shipped in the wheel). Exact for the image and PyPI/uvx
+# installs, which both build a wheel; an editable dev install keeps the version it was
+# installed with until it is reinstalled.
+try:
+    PACKAGE_VERSION = version("rcsb-mcp")
+except PackageNotFoundError:  # imported from a source tree that was never installed
+    PACKAGE_VERSION = "unknown"
+
+DEFAULT_USER_AGENT = f"rcsb-mcp/{PACKAGE_VERSION} (https://github.com/rcsb/rcsb-mcp)"
 TIMEOUT = httpx.Timeout(30.0)
+
+
+def _user_agent() -> str:
+    """The User-Agent sent on every outbound request (RCSB and EBI/UniProt alike).
+
+    ``RCSB_MCP_USER_AGENT`` overrides the default so the hosted deployment's traffic can
+    be told apart from local/stdio installs in the upstream access logs; unset or blank
+    keeps the default. A ``{version}`` in the override is replaced with PACKAGE_VERSION,
+    so the deployment's value needn't be edited on every release.
+    """
+    ua = os.environ.get("RCSB_MCP_USER_AGENT", "").strip().replace("{version}", PACKAGE_VERSION)
+    if not ua:
+        return DEFAULT_USER_AGENT
+    # httpx encodes header values as ASCII, so anything else fails every request with a
+    # UnicodeEncodeError the helpers below don't catch. Refuse it at startup instead.
+    if not all(" " <= c <= "~" for c in ua):
+        raise ValueError(f"RCSB_MCP_USER_AGENT must be printable ASCII, got {ua!r}")
+    return ua
+
+
+USER_AGENT = _user_agent()
 
 
 # --- HTTP ----------------------------------------------------------------------

@@ -294,6 +294,11 @@ size fallback is rare.
   RCSB annotation searches (`rcsb_polymer_entity_annotation.*`, `rcsb_polymer_entity.rcsb_ec_lineage.id`,
   `rcsb_uniprot_annotation.annotation_lineage.id`).
 - No API key required; the APIs are public. Be considerate with request volume.
+- Every outbound request sends `User-Agent: rcsb-mcp/<version> (https://github.com/rcsb/rcsb-mcp)`,
+  `<version>` being the installed package's (`pyproject.toml`'s) version. Set
+  `RCSB_MCP_USER_AGENT` to override it (printable ASCII; a `{version}` in it is filled in the
+  same way); the Helm chart does, so the hosted service's traffic is distinguishable from
+  local installs in upstream logs.
 - A full list of searchable attributes for `rcsb_query_attribute` is in the
   [Search API attribute reference](https://search.rcsb.org/structure-search-attributes.html);
   the Data API schema is documented at
