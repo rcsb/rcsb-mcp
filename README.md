@@ -150,8 +150,12 @@ entry, query each polymer entity.
 
 ## Install
 
+RCSB hosts the server, so **most clients need no install** — point them at
+`https://mcp-beta.rcsb.org/mcp` (see [Connect an agent](#connect-an-agent)). Install only
+to run it yourself, pin a version, or develop against it:
+
 ```bash
-# run the published package without installing (recommended for clients)
+# run the published package without installing
 uvx rcsb-mcp
 # or install it
 pip install rcsb-mcp
@@ -189,7 +193,74 @@ PDB questions, and [`evals/tool_selection/`](evals/tool_selection/), a first-too
 harness for catching routing regressions after a docstring edit. See
 [`evals/README.md`](evals/README.md) to run either.
 
-## Connect to Claude Desktop
+## Connect an agent
+
+### Hosted (beta)
+
+```
+https://mcp-beta.rcsb.org/mcp
+```
+
+Streamable HTTP, no install, no API key, no account. The deployment is **stateless** — any
+replica answers any request, so no session header is needed and there is nothing to keep
+alive between calls. It serves the same 38 tools and the `rcsb_search_assistant` prompt as
+a local run.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport http rcsb-mcp https://mcp-beta.rcsb.org/mcp
+```
+
+**Claude Desktop** — Settings → Connectors → Add custom connector, and paste the URL.
+
+**Any client that takes a URL** (`.mcp.json`, Cursor, VS Code, Zed, …):
+
+```json
+{
+  "mcpServers": {
+    "rcsb-mcp": {
+      "type": "http",
+      "url": "https://mcp-beta.rcsb.org/mcp"
+    }
+  }
+}
+```
+
+**Stdio-only clients** can bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):
+
+```json
+{
+  "mcpServers": {
+    "rcsb-mcp": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp-beta.rcsb.org/mcp"]
+    }
+  }
+}
+```
+
+**Check it by hand** — a bare `initialize` needs no session setup:
+
+```bash
+curl -s https://mcp-beta.rcsb.org/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+        "protocolVersion":"2025-06-18","capabilities":{},
+        "clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+`GET /healthz` returns 200 for liveness checks.
+
+> **Beta.** The endpoint, the tool surface and the tool descriptions may change without
+> notice, and there is no stability guarantee — pin `uvx rcsb-mcp==<version>` and run it
+> yourself if you need a fixed surface. When reporting a problem, include the
+> `serverInfo.version` from the `initialize` response so the build is identifiable.
+
+### Local (stdio)
+
+Run the server as a subprocess instead — for development, or to pin a version.
 
 Edit `claude_desktop_config.json`:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`

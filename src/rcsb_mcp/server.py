@@ -19,6 +19,7 @@ Run locally (stdio, for Claude Desktop / MCP Inspector):
 from __future__ import annotations
 
 import os
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,24 @@ def _load_prompt(name: str) -> str:
     return (_PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
+def _server_version() -> str:
+    """This package's version, for the MCP initialize handshake.
+
+    Must be passed explicitly. The SDK's fallback is
+    `server_version=self.version if self.version else pkg_version("mcp")`, so leaving it
+    unset advertises the SDK's OWN version — the beta deployment reported "1.30.0" (mcp
+    1.30.0 resolved at image build) while this package was 0.18.0. A bug report quoting
+    that number identifies the SDK, not the build, and it drifts upward on its own because
+    the Dockerfile resolves dependencies fresh.
+    """
+    try:
+        return _pkg_version("rcsb-mcp")
+    except PackageNotFoundError:
+        # Running from a source tree that was never installed (python -m rcsb_mcp.server
+        # with src on the path). Say so rather than inventing a number.
+        return "0+unknown"
+
+
 mcp = FastMCP(
     name="rcsb_mcp",
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
@@ -94,6 +113,11 @@ mcp = FastMCP(
     # Accept the real Host header seen behind the ingress (see _transport_security).
     transport_security=_transport_security(),
 )
+
+# FastMCP takes no `version` kwarg and forwards none to the lowlevel Server it builds, so
+# the version has to be set on that server directly. Read per request in
+# create_initialization_options, so assigning after construction is sufficient.
+mcp._mcp_server.version = _server_version()
 
 from rcsb_mcp.data import register_data_tools
 from rcsb_mcp.report.routes import register_report_routes

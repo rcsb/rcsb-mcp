@@ -540,3 +540,44 @@ def test_nested_group_names_a_real_container_and_matches_the_scope_map():
         "removed all of them, a boolean flag would now be as good as the path, and this "
         "test is the record of why the path was chosen"
     )
+
+
+# --- the initialize handshake must identify THIS package, not the SDK ---------------
+def test_the_handshake_reports_this_package_version_not_the_sdks():
+    """A deployed beta reported serverInfo.version "1.30.0" while the package was 0.18.0.
+
+    The number was the MCP SDK's. FastMCP accepts no `version` argument and forwards none
+    to the lowlevel Server it builds, and that server's fallback is:
+
+        server_version=self.version if self.version else pkg_version("mcp")
+
+    So leaving it unset advertises the SDK's own version — a number that identifies the
+    wrong software, contradicts pyproject.toml, and drifts upward on its own whenever the
+    image rebuilds (the Dockerfile resolves dependencies fresh). A bug report quoting it is
+    unactionable.
+
+    Asserted on the InitializationOptions the server actually sends, not on the attribute,
+    because the fallback lives in create_initialization_options rather than __init__.
+    """
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as pkg_version
+
+    from rcsb_mcp import server
+
+    opts = server.mcp._mcp_server.create_initialization_options()
+    assert opts.server_name == "rcsb_mcp"
+
+    try:
+        expected = pkg_version("rcsb-mcp")
+    except PackageNotFoundError:
+        expected = "0+unknown"   # source tree, never installed — see server._server_version
+    assert opts.server_version == expected, (
+        f"handshake reports {opts.server_version!r}, expected this package's "
+        f"version {expected!r}"
+    )
+    # The specific regression: never the SDK's version.
+    assert opts.server_version != pkg_version("mcp"), (
+        "serverInfo.version equals the mcp SDK version — the explicit version was dropped "
+        "and the SDK fallback is being advertised again"
+    )
+    print(f"ok: handshake reports rcsb_mcp {opts.server_version}")
