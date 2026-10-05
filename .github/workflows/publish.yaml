@@ -70,6 +70,39 @@ jobs:
     uses: ./.github/workflows/_workflow-docker.yaml
     secrets: inherit
 
+  restart-k8s-prod-deployment:
+    name: "Restart production deployments"
+    # A release retags the image as `production` in harbor, but the Deployment's tag STRING
+    # never changes — so Kubernetes sees nothing to reconcile and the pods keep serving the
+    # old image. `kubectl rollout restart` replaces them, and because values.yaml sets
+    # pullPolicy: Always each new pod re-resolves :production and gets the release. This is
+    # the step whose absence left production serving a stale image.
+    #
+    # It does NOT apply k8s/helm changes — a rollout restart reuses the existing Deployment
+    # spec. Chart/values edits still need `helm upgrade`, which no shared action provides.
+    uses: rcsb/devops-cicd-github-actions/.github/workflows/restart_k8s_deployment.yaml@master
+    needs:
+      # push-image is what moves the `production` tag, so the restart must follow it.
+      - push-image
+    # Redundant today (push-image already only runs on releases, via hatch-build) but
+    # explicit, so enabling image builds on master pushes cannot silently start restarting
+    # production. The shared workflow's `rollout status --watch` fails the job if the new
+    # image never becomes ready, which makes this a deployment gate rather than fire-and-forget.
+    if: github.event_name == 'release'
+    strategy:
+      matrix:
+        # Both clusters serve mcp-beta — see the east/west ingress hosts in
+        # k8s/helm/values/production.yaml.
+        coast: ['west', 'east']
+    with:
+      namespace: production
+      region: ${{ matrix.coast }}
+      # Confirmed against both clusters (2026-10-05): production-rcsb-mcp, 2/2 ready in
+      # rcsb-west and rcsb-east, image …/rcsb-mcp:production with pullPolicy Always. The
+      # sibling production-rcsb-mcp-redis is deliberately NOT restarted — it holds the
+      # report short-link store, and cycling it would drop live links for no benefit.
+      deployment_name: production-rcsb-mcp
+
   publish-to-pypi:
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
