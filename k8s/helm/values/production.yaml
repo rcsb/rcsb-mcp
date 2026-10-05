@@ -23,27 +23,27 @@ ingress:
     cert-manager.io/cluster-issuer: rutgers-acme
     kubernetes.io/tls-acme: "true"
   hosts:
-    - host: rcsb-mcp.k8s.rcsb.org
+    - host: mcp-beta.k8s.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
-    - host: rcsb-mcp.east.k8s.rcsb.org
+    - host: mcp-beta.east.k8s.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
-    - host: rcsb-mcp.west.k8s.rcsb.org
+    - host: mcp-beta.west.k8s.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
-    - host: rcsb-mcp.rcsb.org
+    - host: mcp-beta.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
-    - host: rcsb-mcp-east.rcsb.org
+    - host: mcp-beta-east.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
-    - host: rcsb-mcp-west.rcsb.org
+    - host: mcp-beta-west.rcsb.org
       paths:
         - path: /
           pathType: ImplementationSpecific
