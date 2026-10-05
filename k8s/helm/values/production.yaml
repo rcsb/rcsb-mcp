@@ -49,13 +49,23 @@ ingress:
           pathType: ImplementationSpecific
   tls:
     - hosts:
-        - rcsb-mcp.k8s.rcsb.org
-        - rcsb-mcp.east.k8s.rcsb.org
-        - rcsb-mcp.west.k8s.rcsb.org
-        - rcsb-mcp.rcsb.org
-        - rcsb-mcp-east.rcsb.org
-        - rcsb-mcp-west.rcsb.org
-      secretName: rcsb-mcp.k8s.rcsb.org-tls
+        - mcp-beta.k8s.rcsb.org
+      secretName: mcp-beta.k8s.rcsb.org-tls
+    - hosts:
+        - mcp-beta.east.k8s.rcsb.org
+      secretName: mcp-beta.east.k8s.rcsb.org-tls
+    - hosts:
+        - mcp-beta.west.k8s.rcsb.org
+      secretName: mcp-beta.west.k8s.rcsb.org-tls
+    - hosts:
+        - mcp-beta.rcsb.org
+      secretName: mcp-beta.rcsb.org-tls
+    - hosts:
+        - mcp-beta-east.rcsb.org
+      secretName: mcp-beta-east.rcsb.org-tls
+    - hosts:
+        - mcp-beta-west.rcsb.org
+      secretName: mcp-beta-west.rcsb.org-tls
 
 autoscaling:
   enabled: true
