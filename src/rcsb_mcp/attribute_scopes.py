@@ -12,7 +12,7 @@ chemical one.
 
 from rcsb_mcp.attribute_types import AttributeScope
 
-# structure: 148 roots covering 675 attributes.
+# structure: 150 roots covering 683 attributes.
 SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "audit_author": "entry",
     "cell": "entry",
@@ -56,6 +56,7 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "ihm_entry_collection_mapping": "entry",
     "pdbx_SG_project": "entry",
     "pdbx_audit_support": "entry",
+    "pdbx_chem_comp_pcm": "mol_definition",
     "pdbx_database_PDB_obs_spr": "entry",
     "pdbx_database_related": "entry",
     "pdbx_database_status": "entry",
@@ -64,6 +65,7 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "pdbx_entity_branch_descriptor": "branched_entity",
     "pdbx_entity_nonpoly": "non_polymer_entity",
     "pdbx_initial_refinement_model": "entry",
+    "pdbx_modification_feature": "polymer_instance",
     "pdbx_molecule_features": "entry",
     "pdbx_nmr_details": "entry",
     "pdbx_nmr_refine": "entry",
@@ -168,10 +170,6 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
 # the COARSEST — the direction that can only make the split detector quieter.
 # Recorded so the collapse is visible rather than buried in the map.
 SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS: dict[str, list[AttributeScope]] = {
-    "pdbx_vrpt_summary_entity_fit_to_map": [
-        "non_polymer_instance",
-        "polymer_instance"
-    ],
     "rcsb_id": [
         "assembly",
         "branched_entity",
@@ -203,7 +201,7 @@ SEARCH_ATTRIBUTE_ENTRY_CONSTANT: list[str] = [
     "rcsb_polymer_entity_instance_container_identifiers.entry_id"
 ]
 
-# Roots holding MANY records per object (103 of 148).
+# Roots holding MANY records per object (105 of 150).
 # Two conditions on one of these can land on DIFFERENT records of the SAME object, so
 # scope equality does not mean the conditions co-occur — software.name and
 # software.classification are both entry-scoped, yet 18 of 25 sampled hits for
@@ -245,11 +243,13 @@ SEARCH_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "ihm_entry_collection_mapping",
     "pdbx_SG_project",
     "pdbx_audit_support",
+    "pdbx_chem_comp_pcm",
     "pdbx_database_PDB_obs_spr",
     "pdbx_database_related",
     "pdbx_deposit_group",
     "pdbx_entity_branch_descriptor",
     "pdbx_initial_refinement_model",
+    "pdbx_modification_feature",
     "pdbx_molecule_features",
     "pdbx_nmr_refine",
     "pdbx_nmr_sample_details",
@@ -364,12 +364,13 @@ SEARCH_ATTRIBUTE_NESTED_ROOTS: list[str] = [
     "rcsb_uniprot_container_identifiers.reference_sequence_identifiers"
 ]
 
-# chemical: 16 roots covering 57 attributes.
+# chemical: 17 roots covering 61 attributes.
 CHEMICAL_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "chem_comp": "mol_definition",
     "drugbank_container_identifiers": "mol_definition",
     "drugbank_info": "mol_definition",
     "drugbank_target": "mol_definition",
+    "pdbx_chem_comp_pcm": "mol_definition",
     "pdbx_reference_molecule": "mol_definition",
     "pdbx_reference_molecule_family": "mol_definition",
     "pdbx_reference_molecule_related_structures": "mol_definition",
@@ -389,13 +390,14 @@ CHEMICAL_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
 # different siblings. `queries.scope_of` returns "entry" for these.
 CHEMICAL_ATTRIBUTE_ENTRY_CONSTANT: list[str] = []
 
-# Roots holding MANY records per object (7 of 16).
+# Roots holding MANY records per object (8 of 17).
 # Two conditions on one of these can land on DIFFERENT records of the SAME object, so
 # scope equality does not mean the conditions co-occur — software.name and
 # software.classification are both entry-scoped, yet 18 of 25 sampled hits for
 # AND(name~PHENIX, classification~'data reduction') have no single record with both.
 CHEMICAL_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "drugbank_target",
+    "pdbx_chem_comp_pcm",
     "pdbx_reference_molecule_related_structures",
     "pdbx_reference_molecule_synonyms",
     "rcsb_chem_comp_annotation",

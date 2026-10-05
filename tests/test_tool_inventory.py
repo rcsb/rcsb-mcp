@@ -75,3 +75,67 @@ def test_inventory_count_is_stable():
     """A blunt second signal: the count itself, so a swap (drop one, add one) still trips."""
     assert len(EXPECTED_TOOLS) == 38
     assert len(asyncio.run(server.mcp.list_tools())) == 38
+
+
+# --- the markdown docs cite tool names too, and nothing used to check them ----------
+#
+# README.md and AGENTS.md both drifted badly across the builder/executor refactor: they
+# documented seven `rcsb_search_by_*` tools that had been replaced by `rcsb_query_*` +
+# `rcsb_search_request`, a `group_by_identity` parameter that had become `group_by`, a
+# `pdb_assistant` prompt renamed to `rcsb_search_assistant`, and a server `instructions`
+# block that no longer exists. None of it failed anything; it was found by a human reading
+# the README months later.
+#
+# This is the cheap half of that problem — a name that no longer exists is mechanically
+# detectable, so it should never again be found by eye.
+
+# Backticked `rcsb_...` tokens that are deliberately NOT tools. Keep this short: each entry
+# is a promise that the name is discussed on purpose.
+ALLOWED_NON_TOOLS = {
+    "rcsb_search_assistant",  # the served MCP prompt
+    "rcsb_mcp_guide",         # the retired prompt, named where the docs explain the retirement
+}
+
+DOCS = ("README.md", "AGENTS.md")
+
+
+def _cited_names(text: str) -> set[str]:
+    """Backticked rcsb_* tokens that look like a TOOL name.
+
+    Dotted tokens are attribute or module paths (`rcsb_entity_source_organism.ncbi_...`,
+    `rcsb_mcp.server`), not tools, so they are excluded by the absence of a dot rather than
+    by an allowlist — there are hundreds of them and they change constantly.
+    """
+    import re
+    return {m for m in re.findall(r"`(rcsb_[a-z0-9_]+)`", text) if "." not in m}
+
+
+def test_the_markdown_docs_only_cite_tools_that_exist():
+    import pathlib
+
+    registered = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    root = pathlib.Path(__file__).resolve().parents[1]
+    stale = {}
+    for name in DOCS:
+        cited = _cited_names((root / name).read_text())
+        bad = sorted(cited - registered - ALLOWED_NON_TOOLS)
+        if bad:
+            stale[name] = bad
+    assert not stale, (
+        "these docs name tools that are not registered — renamed, removed, or a typo:\n  "
+        + "\n  ".join(f"{f}: {', '.join(n)}" for f, n in stale.items())
+    )
+
+
+def test_every_tool_is_documented_in_the_readme():
+    """The reverse: a tool nobody can find is nearly as bad as one that doesn't exist.
+
+    README.md is the user-facing inventory, so every registered tool has to appear in it.
+    AGENTS.md is deliberately exempt — it describes modules and conventions, not a roster.
+    """
+    import pathlib
+
+    readme = (pathlib.Path(__file__).resolve().parents[1] / "README.md").read_text()
+    cited = _cited_names(readme)
+    missing = sorted(EXPECTED_TOOLS - cited)
+    assert not missing, f"registered but absent from README.md: {missing}"

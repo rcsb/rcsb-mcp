@@ -17,49 +17,78 @@ Bank structures** — discover, inspect, and cross-reference — from LLM client
 
 ### Search (search.rcsb.org)
 
+Searching is **two steps**: build a query with an `rcsb_query_*` tool, then execute it with
+`rcsb_search_request`. The builders are pure — they return a query document (readable JSON
+plus a digest) and touch no network, so **nothing is searched until you call
+`rcsb_search_request`**. `rcsb_query_composer` joins two or more documents with AND/OR,
+which is also how a single search mixes services (e.g. sequence similarity AND an organism
+filter).
+
+**Build**
+
 | Tool | What it does |
 |------|--------------|
-| `rcsb_list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~677) or `schema="chemical"` (~57: `chem_comp.*`, `drugbank_info.*`, ...). |
+| `rcsb_query_fulltext` | Free-text keyword query (e.g. `"CRISPR Cas9"`). |
+| `rcsb_query_attribute` | Structured query on one or more indexed attributes (resolution, organism, release date, ...) joined by a single `logical_operator`. Each condition supports `exists`, `negation`, `case_sensitive`; `chemical_attributes=True` selects the chemical-component catalog. |
+| `rcsb_query_sequence` | MMseqs2 sequence-similarity query (BLAST-like), with identity / e-value cutoffs. |
+| `rcsb_query_chemical` | Chemical query by SMILES/InChI descriptor (whole-molecule or substructure) or molecular formula. |
+| `rcsb_query_structure` | 3D shape-similarity query against a reference PDB assembly or chain. |
+| `rcsb_query_seqmotif` | Short **sequence**-motif query (PROSITE pattern, regex, or simple wildcards). |
+| `rcsb_query_strucmotif` | 3D **structural**-motif query: a geometric arrangement of specific residues (e.g. a catalytic triad). |
+| `rcsb_query_composer` | Join 2+ query documents with AND/OR — nested boolean logic, and the only way to combine different services in one search. |
+
+**Run**
+
+| Tool | What it does |
+|------|--------------|
+| `rcsb_search_request` | Execute a query document and return matching **identifiers only**. Carries every output option: `return_type`, `limit`/`offset`, `all_hits`, `facets`, `sort_by`/`sort_direction`, `group_by`/`group_by_ranking`, `include_computed_models`. |
+
+**Discover**
+
+| Tool | What it does |
+|------|--------------|
+| `rcsb_list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~683) or `schema="chemical"` (~61: `chem_comp.*`, `drugbank_info.*`, ...). Records also carry `enum` (closed value sets) and `nested_group` (attributes stored in nested objects — see below). |
 | `rcsb_find_go_terms` | Resolve a free-text molecular function / biological process / cellular component to Gene Ontology ids (via EBI QuickGO), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_lineage.id`. |
-| `rcsb_find_interpro_domains` | Resolve a free-text protein domain / family / fold to InterPro ids (via EBI InterPro API), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_id`. |
+| `rcsb_find_interpro_domains` | Resolve a free-text protein domain / family / fold to InterPro and Pfam ids (via EBI Search), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_id`. |
 | `rcsb_find_enzyme_classes` | Resolve a free-text enzyme / reaction to Enzyme Commission (EC) numbers (via EBI Search/IntEnz), annotated with PDB entry counts — then search by `rcsb_polymer_entity.rcsb_ec_lineage.id` (hierarchical). |
 | `rcsb_find_disease_terms` | Resolve a free-text disease / condition to MONDO ids (via EBI OLS), annotated with PDB entry counts — then search by `rcsb_uniprot_annotation.annotation_lineage.id` (hierarchical, UniProt-based). |
 | `rcsb_find_organisms` | Resolve a free-text organism / common name / clade to NCBI Taxonomy ids (via UniProt taxonomy), annotated with PDB entry counts — then search by `rcsb_entity_source_organism.taxonomy_lineage.id` (hierarchical: a clade id matches every organism beneath it). |
-| `rcsb_search_fulltext` | Free-text keyword search (e.g. `"CRISPR Cas9"`), optionally refined with structured `attributes` filters (AND/OR) and `sort`. |
-| `rcsb_search_by_attribute` | Structured search on one or more indexed attributes (resolution, organism, release date, ...) combined with a single AND/OR. Each `AttributeFilter` supports `exists`, `negation`, `case_sensitive`; `chemical=True` (text_chem). |
-| `rcsb_search_by_sequence` | MMseqs2 sequence-similarity search (BLAST-like). |
-| `rcsb_search_by_chemical` | Chemical search by SMILES/InChI descriptor (whole-molecule or substructure) or molecular formula. |
-| `rcsb_search_by_structure` | 3D shape-similarity search against a reference PDB assembly or chain. |
-| `rcsb_search_by_seqmotif` | Short **sequence**-motif search (PROSITE pattern, regex, or simple wildcards). |
-| `rcsb_search_strucmotif` | 3D **structural**-motif search: structures sharing a geometric arrangement of specific residues (e.g. a catalytic triad). |
 
-The two text tools (`rcsb_search_fulltext`, `rcsb_search_by_attribute`)
-also take `group_by_identity` (100/95/90/70/50/30) to return one representative
-per sequence-identity cluster — i.e. non-redundant results. To search
+Both attribute catalogs are generated from the live metadata schemas by
+[`scripts/generate_search_attributes.py`](scripts/generate_search_attributes.py). To search
 chemical-component attributes, find the path with
-`rcsb_list_pdb_search_attributes(schema="chemical")`, then pass `chemical=True` to
-`rcsb_search_by_attribute` / `rcsb_search_fulltext` (usually with `return_type="mol_definition"`).
-Both catalogs (structure and chemical) are generated from the live metadata schemas by
-[`scripts/generate_search_attributes.py`](scripts/generate_search_attributes.py).
+`rcsb_list_pdb_search_attributes(schema="chemical")`, pass `chemical_attributes=True` to
+`rcsb_query_attribute`, and usually set `return_type="mol_definition"`.
 
-Counting and faceting are **output options on every `rcsb_search_*` tool**, not separate
-tools: each response includes `total_count` (the full match count — for "how many ..." run a
+**Nested attributes.** An object can hold many annotations, many binding affinities, many
+citations. For attributes carrying a `nested_group`, the query shape selects the semantics:
+conditions built in **one** `rcsb_query_attribute` call, with nothing else in it, must hold on
+the **same** record; conditions in separate calls are matched independently against any
+record. Both are valid and mean different things — `type=Kd` with `value<1` describes one
+measurement, while an InterPro id and a GO type are necessarily two different annotations.
+
+**Counting and faceting** are output options on `rcsb_search_request`, not separate tools:
+every response includes `total_count` (the full match count — for "how many ..." run the
 search with `limit=1` and read it), and passing `facets` returns a breakdown
-(terms/histogram/date_histogram/range/cardinality) instead of hits. The `rcsb_search_by_*`
-service tools (sequence, chemical, structure, seq/struc-motif) also take optional `attributes`
-filters, so e.g. a sequence search can be restricted to an organism in one call.
+(terms/histogram/date_histogram/range/cardinality) instead of hits. A terms facet also tells
+you what your hits **share**, which is how a handful of results becomes a re-searchable value.
 
-**Sorting** is likewise available on **every `rcsb_search_*` tool** via `sort_by` (an
-attribute path) + `sort_direction` (`asc`/`desc`), replacing the default score ordering (for
-the similarity searches this overrides the similarity-ranked order). Only attributes indexed
-for sorting work — those exposing `exact_match` (strings) or `equals` (numbers/dates) in
-`rcsb_list_pdb_search_attributes`; sorting is not available for `return_type="mol_definition"`
-(chemical-component results are ranked by score only).
+**Grouping.** `group_by` returns one representative per cluster — `seqid_30` … `seqid_95`
+for sequence-identity clusters, or `uniprot` to collapse by accession — with
+`group_by_ranking` choosing the representative. Requires `return_type="polymer_entity"`;
+the response reports `group_count` alongside `total_count`.
 
-**Paging.** Every search tool that returns hits accepts `limit` (1–100, default
-10) and `offset` (default 0). Each response reports `total_count`, `has_more`,
-and `next_offset`; to fetch the next page, call the tool again with the same
-query and `offset` set to the returned `next_offset`.
+**Sorting.** `sort_by` (an attribute path) + `sort_direction` (`asc`/`desc`) replaces the
+default score ordering (for similarity searches this overrides the similarity-ranked order).
+Only attributes indexed for sorting work — those exposing `exact_match` (strings) or `equals`
+(numbers/dates) in `rcsb_list_pdb_search_attributes`; sorting is not available for
+`return_type="mol_definition"`.
+
+**Paging.** `rcsb_search_request` accepts `limit` (1–100, default 10) and `offset`
+(default 0), and each response reports `total_count`, `has_more`, and `next_offset` — call
+again with the same query document and `offset=next_offset`. For an explicit "ALL ..."
+request, `all_hits=True` returns the complete set in one call (refused above 10,000 hits,
+and it cannot be combined with `offset`).
 
 ### Data (data.rcsb.org/graphql)
 
@@ -154,9 +183,11 @@ rcsb-mcp
 npx @modelcontextprotocol/inspector python -m rcsb_mcp.server
 ```
 
-There is also an end-to-end **evaluation suite** ([`evals/`](evals/)) — 10
-read-only, stable questions that measure how well an LLM can drive these tools to
-answer real PDB questions. See [`evals/README.md`](evals/README.md) to run it.
+There are two **evaluation suites** ([`evals/`](evals/)): `rcsb_pdb_eval.xml`, 14
+read-only, stable questions measuring how well an LLM can drive these tools to answer real
+PDB questions, and [`evals/tool_selection/`](evals/tool_selection/), a first-tool-call A/B
+harness for catching routing regressions after a docstring edit. See
+[`evals/README.md`](evals/README.md) to run either.
 
 ## Connect to Claude Desktop
 
@@ -193,22 +224,22 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 
 ## Example prompts
 
-- "Find high-resolution human hemoglobin structures." → `rcsb_search_fulltext` (keyword + `attributes`)
-- "Human hemoglobin structures better than 2 Å, best resolution first." → `rcsb_search_fulltext` (keyword + `attributes`, `sort_by`)
-- "What PDB entries match this protein sequence: MTEY..." → `rcsb_search_by_sequence`
-- "Find structures containing a ligand like this SMILES / with formula C8H9NO2." → `rcsb_search_by_chemical`
-- "Which structures have a 3D fold similar to 4HHB?" → `rcsb_search_by_structure`
-- "Find proteins with a zinc-finger motif." → `rcsb_search_by_seqmotif`
-- "Structures of proteins with kinase activity / involved in DNA repair / in the mitochondrial membrane." → `rcsb_find_go_terms` → `rcsb_search_by_attribute` on `rcsb_polymer_entity_annotation.annotation_lineage.id`
-- "Structures containing an SH2 domain / immunoglobulin fold." → `rcsb_find_interpro_domains` → `rcsb_search_by_attribute` on `rcsb_polymer_entity_annotation.annotation_id`
-- "Alcohol dehydrogenase structures / any EC 3.4.21 serine protease." → `rcsb_find_enzyme_classes` → `rcsb_search_by_attribute` on `rcsb_polymer_entity.rcsb_ec_lineage.id`
-- "Structures of proteins associated with cystic fibrosis / breast cancer." → `rcsb_find_disease_terms` → `rcsb_search_by_attribute` on `rcsb_uniprot_annotation.annotation_lineage.id`
-- "Structures from mammals / from a particular organism or clade." → `rcsb_find_organisms` → `rcsb_search_by_attribute` on `rcsb_entity_source_organism.taxonomy_lineage.id`
-- "Non-redundant human kinase structures (90% identity clusters)." → `rcsb_search_fulltext` with `group_by_identity=90`
-- "How many human X-ray structures are there?" → `rcsb_search_by_attribute` (read `total_count`)
-- "Break down ribosome structures by experimental method / by release year." → `rcsb_search_fulltext` with `facets`
-- "Find structures with the same catalytic-site geometry as residues 162/193/219 of 2MNR." → `rcsb_search_strucmotif`
-- "Find chemical components under 150 Da." → `rcsb_list_pdb_search_attributes(schema="chemical")` + `rcsb_search_by_attribute` with `chemical=True`
+- "Find high-resolution human hemoglobin structures." → `rcsb_query_fulltext` + `rcsb_query_attribute` → `rcsb_query_composer` → `rcsb_search_request`
+- "Human hemoglobin structures better than 2 Å, best resolution first." → same, with `sort_by` on `rcsb_search_request`
+- "What PDB entries match this protein sequence: MTEY..." → `rcsb_query_sequence` → `rcsb_search_request`
+- "Find structures containing a ligand like this SMILES / with formula C8H9NO2." → `rcsb_query_chemical` → `rcsb_search_request`
+- "Which structures have a 3D fold similar to 4HHB?" → `rcsb_query_structure` → `rcsb_search_request`
+- "Find proteins with a zinc-finger motif." → `rcsb_query_seqmotif` → `rcsb_search_request`
+- "Structures of proteins with kinase activity / involved in DNA repair / in the mitochondrial membrane." → `rcsb_find_go_terms` → `rcsb_query_attribute` on `rcsb_polymer_entity_annotation.annotation_lineage.id`
+- "Structures containing an SH2 domain / immunoglobulin fold." → `rcsb_find_interpro_domains` → `rcsb_query_attribute` on `rcsb_polymer_entity_annotation.annotation_id`
+- "Alcohol dehydrogenase structures / any EC 3.4.21 serine protease." → `rcsb_find_enzyme_classes` → `rcsb_query_attribute` on `rcsb_polymer_entity.rcsb_ec_lineage.id`
+- "Structures of proteins associated with cystic fibrosis / breast cancer." → `rcsb_find_disease_terms` → `rcsb_query_attribute` on `rcsb_uniprot_annotation.annotation_lineage.id`
+- "Structures from mammals / from a particular organism or clade." → `rcsb_find_organisms` → `rcsb_query_attribute` on `rcsb_entity_source_organism.taxonomy_lineage.id`
+- "Non-redundant human kinase structures (90% identity clusters)." → `rcsb_search_request` with `group_by="seqid_90"`, `return_type="polymer_entity"`
+- "How many human X-ray structures are there?" → `rcsb_query_attribute` → `rcsb_search_request` with `limit=1` (read `total_count`)
+- "Break down ribosome structures by experimental method / by release year." → `rcsb_search_request` with `facets`
+- "Find structures with the same catalytic-site geometry as residues 162/193/219 of 2MNR." → `rcsb_query_strucmotif` → `rcsb_search_request`
+- "Find chemical components under 150 Da." → `rcsb_list_pdb_search_attributes(schema="chemical")` → `rcsb_query_attribute` with `chemical_attributes=True` → `rcsb_search_request` with `return_type="mol_definition"`
 - "Summarize PDB entries 4HHB, 1MBN and 6VXX." → `rcsb_get_entries`
 - "What's the sequence and organism of entity 4HHB_1?" → `rcsb_get_polymer_entities`
 - "Tell me about the ligand HEM." → `rcsb_get_chem_comps`
@@ -256,33 +287,31 @@ size fallback is rare.
 - Sequence Coordinates endpoint: `https://sequence-coordinates.rcsb.org/graphql`
   (POST, GraphQL; same HTTP-200-with-`errors` behavior).
 - The `rcsb_find_*` resolvers map free text to ontology ids via EBI services — the non-RCSB
-  dependencies: GO via QuickGO (`.../QuickGO/services/ontology/go/search`), InterPro
-  (`.../interpro/api/entry/interpro/`), EC via EBI Search/IntEnz (`.../ebisearch/ws/rest/intenz`),
-  and disease via OLS/MONDO (`.../ols4/api/search?ontology=mondo`). The resolved ids then drive
+  dependencies: GO via QuickGO (`.../QuickGO/services/ontology/go/search`), InterPro and Pfam
+  via EBI Search (`.../ebisearch/ws/rest/interpro7`), EC via EBI Search/IntEnz
+  (`.../ebisearch/ws/rest/intenz`), disease via OLS/MONDO (`.../ols4/api/search?ontology=mondo`),
+  and organisms via UniProt (`.../rest.uniprot.org/taxonomy/search`). The resolved ids then drive
   RCSB annotation searches (`rcsb_polymer_entity_annotation.*`, `rcsb_polymer_entity.rcsb_ec_lineage.id`,
   `rcsb_uniprot_annotation.annotation_lineage.id`).
 - No API key required; the APIs are public. Be considerate with request volume.
-- A full list of searchable attributes for `rcsb_search_by_attribute` is in the
+- A full list of searchable attributes for `rcsb_query_attribute` is in the
   [Search API attribute reference](https://search.rcsb.org/structure-search-attributes.html);
   the Data API schema is documented at
   [data.rcsb.org/index.html#gql-api](https://data.rcsb.org/index.html#gql-api).
 
 ## Prompt
 
-The server also exposes an MCP **prompt**, `rcsb_search_assistant` ("RCSB PDB search
-assistant") — the full tool-routing guide, followed by the search requirements and the
-HTML-report output format. Because it is served over the protocol's `prompts`
-capability, any MCP client can list and invoke it (e.g. Claude Desktop surfaces server
-prompts in the `+` / prompt menu); there's nothing to copy-paste. The policy half lives
-in
+The server exposes one MCP **prompt**, `rcsb_search_assistant` ("RCSB PDB search
+assistant") — the search requirements plus the HTML-report output format. Because it is
+served over the protocol's `prompts` capability, any MCP client can list and invoke it
+(Claude Desktop surfaces server prompts in the `+` / prompt menu); there's nothing to
+copy-paste. The text lives in
 [`src/rcsb_mcp/prompts/rcsb_search_assistant.md`](src/rcsb_mcp/prompts/rcsb_search_assistant.md)
-and the guide half is
-[`rcsb_mcp_guide.md`](src/rcsb_mcp/prompts/rcsb_mcp_guide.md), joined at request time so
-the two never drift; both ship with the package.
+and ships with the package.
 
-Invoke it when you want answers formatted as a PDB report. It is self-sufficient: the
-appended guide is the same text as the always-on server `instructions`, so the prompt
-still works on clients that never inject those — and the tool descriptions' "see the
-server instructions" cross-references resolve against it. A second prompt,
-`rcsb_mcp_guide`, serves that guide on its own for sessions that want the routing
-guidance without the report policy; load one or the other, not both.
+Invoke it when you want answers formatted as a PDB report. It is **not** required for the
+tools to work: every routing rule, gotcha and cross-reference lives on the tool descriptions
+themselves, which the protocol always delivers. A server `instructions` block and a second
+`rcsb_mcp_guide` prompt both used to carry that guidance and were retired — `instructions`
+because clients truncate or drop it, the prompt because it is opt-in and may never be loaded.
+`prompts/rcsb_mcp_guide.md` is kept on disk, unserved, as a source to rescue prose from.

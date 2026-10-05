@@ -178,13 +178,19 @@ def test_ambiguous_roots_collapse_to_the_coarsest_scope():
     assert SEARCH_ATTRIBUTE_SCOPES["rcsb_id"] == "entry"
 
 
-@pytest.mark.parametrize(
-    "root", ["rcsb_ligand_neighbors", "pdbx_vrpt_summary_entity_fit_to_map"]
-)
+@pytest.mark.parametrize("root", sorted(SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS))
 def test_a_rank_tie_prefers_a_scope_that_HAS_a_return_type(root):
     """Ties are NOT broken alphabetically, and this is the bug that taught us why.
 
-    Both roots resolve to two rank-2 instance scopes. The alphabetical winner was
+    Parametrized from the DATA, not a hand-written list. It used to name two roots, and the
+    second (`pdbx_vrpt_summary_entity_fit_to_map`) stopped being a tie when RCSB removed the
+    field from CoreNonpolymerEntityInstance — leaving only CorePolymerEntityInstance. Its
+    scope did not change, nothing regressed, and the test still failed, which is the same
+    mistake its own docstring warns about one paragraph down: pinning today's data instead
+    of the invariant. The invariant is that whichever candidate wins a tie must be a level
+    the API will actually accept.
+
+    Such a root resolves to two rank-2 instance scopes. The alphabetical winner was
     `branched_instance`, which has no return_type — so the map reported a granularity a
     caller cannot ask for, and anything built on it would have said "this cannot be
     narrowed" when it can:
@@ -200,6 +206,16 @@ def test_a_rank_tie_prefers_a_scope_that_HAS_a_return_type(root):
     """
     assert SEARCH_ATTRIBUTE_SCOPES[root] in RETURN_TYPES
     assert len(SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS[root]) > 1
+
+
+def test_there_is_still_a_tie_to_break():
+    """Guards the test above against passing vacuously: parametrizing over a derived set
+    means an empty set is green. If the schema ever leaves no ambiguous root, the tie-break
+    is untested and this says so instead of going quiet."""
+    assert SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS, (
+        "no ambiguous roots left, so the tie-break rule is no longer exercised — either the "
+        "schema changed shape or the generator stopped recording ambiguity"
+    )
 
 
 # --- the second splitting axis: repeated records inside one object ---------------

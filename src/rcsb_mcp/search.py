@@ -844,16 +844,16 @@ async def rcsb_list_pdb_search_attributes(
     """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
 
     Call this FIRST when a request resolves to a clear attribute and value but you don't know
-    the exact path; pick the attribute here, then use it in `rcsb_query_attribute` (or as an
-    `attributes` entry on any `rcsb_search_*`).
+    the exact path; pick the attribute here, build the condition with `rcsb_query_attribute`,
+    then execute with `rcsb_search_request`.
 
     Args:
         query: Optional case-insensitive keyword to filter the catalog. Matched as a LITERAL
             SUBSTRING against the attribute path and description, so pass ONE keyword
             ("resolution", "comp_id"), not a phrase — a multi-word query only matches where
             those exact words are adjacent in a description. Omit to return everything.
-        schema: Which catalog — "structure" (~675 attrs: entry/entity/assembly/instance) or
-            "chemical" (~57 attrs: chemical-component). Paths from the chemical catalog need
+        schema: Which catalog — "structure" (~683 attrs: entry/entity/assembly/instance) or
+            "chemical" (~61 attrs: chemical-component). Paths from the chemical catalog need
             chemical_attributes=True on rcsb_query_attribute.
 
     Returns:
