@@ -15,6 +15,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, RedirectRespons
 from . import link as report_link
 from .models import ReportDocument
 from .render import render_report
+from . import tools as report_tools
 from .store import REPORT_STORE, URL_ID_RE
 
 # The report render page is inert: fixed template, all values escaped, no scripts,
@@ -76,9 +77,20 @@ async def redirect_report_link(request):
     token = await asyncio.to_thread(REPORT_STORE.get, url_id)
     if not token:
         return HTMLResponse(_EXPIRED_HTML, status_code=410, headers=_EXPIRED_HEADERS)
-    # Relative target: it inherits the caller's scheme/host, so the redirect works
-    # behind any ingress without this endpoint knowing its own public origin.
-    return RedirectResponse(f"/r?d={token}", status_code=302, headers=_REPORT_ERROR_HEADERS)
+    # ABSOLUTE target when the public origin is known, so the browser lands on the public
+    # hostname rather than the cluster-pinned one the short link had to use (see
+    # REPORT_LINK_BASE_URL in tools.py). The /r?d= URL is self-contained, so sending it to
+    # the GSLB name is safe -- any cluster renders it -- and it is what the user ends up
+    # sharing: no store lookup, no TTL, so it still works for anyone days later.
+    #
+    # Relative is kept as the fallback: with no configured origin it inherits the caller's
+    # scheme/host, so the redirect still works behind any ingress (stdio/dev, or a
+    # deployment that never set a base URL).
+    # Read through the module so there is ONE source of truth: `from .tools import
+    # REPORT_BASE_URL` would snapshot the value at import time and silently diverge.
+    base = report_tools.REPORT_BASE_URL
+    target = f"{base}/r?d={token}" if base else f"/r?d={token}"
+    return RedirectResponse(target, status_code=302, headers=_REPORT_ERROR_HEADERS)
 
 
 async def render_report_link(request):

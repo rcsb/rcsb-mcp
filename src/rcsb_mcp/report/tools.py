@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,6 +30,66 @@ __all__ = ["RenderReportInput", "RenderReportResult", "register_report_tools"]
 # remote users. The dev server sets this explicitly (scripts/dev-server.sh).
 _BASE_ENV = os.environ.get("RCSB_MCP_REPORT_BASE_URL", "").strip()
 REPORT_BASE_URL = _BASE_ENV.rstrip("/") or None
+
+# Where the SHORT /r/<id> link points, when that must differ from REPORT_BASE_URL.
+#
+#   REPORT_LINK_BASE_URL  cluster-PINNED (mcp-beta.west.k8s.rcsb.org)  ->  /r/<id>
+#   REPORT_BASE_URL       the public name (mcp-beta.rcsb.org)          ->  /r?d=<token>
+#
+# The short id is resolvable only by a process sharing the store, so it must be fetched
+# from the cluster that minted it. The /r?d=<token> URL it redirects to is self-contained
+# and renders anywhere, so that one stays on the public hostname -- which is also what the
+# user ends up sharing: no store lookup, no TTL.
+#
+# Measured on the live beta: mcp-beta.rcsb.org is GSLB'd across two clusters, each with its
+# OWN Redis. An agent resolved it to east and the token was written there (EXISTS=1), while
+# the browser resolved the same name to west and got the expired page (EXISTS=0). Pinning
+# only the short hop fixes that and keeps the saving -- the short link is ~22 tokens for the
+# agent to emit against ~2,764 for the self-contained one.
+#
+# Unset => falls back to REPORT_BASE_URL, so single-cluster and stdio deployments are
+# unchanged and need no new configuration.
+# None here means "no pinned host configured" — resolve the fallback at USE time via
+# _link_base(), never at import. Defaulting to REPORT_BASE_URL on this line would snapshot
+# it, so anything that changes the public base afterwards leaves this stale and the link
+# comes out as "None/r/<id>". That is not hypothetical: it is what the first version of
+# this change did, and tests/test_report_output.py caught it.
+_LINK_BASE_ENV = os.environ.get("RCSB_MCP_REPORT_LINK_BASE_URL", "").strip()
+REPORT_LINK_BASE_URL = _LINK_BASE_ENV.rstrip("/") or None
+
+
+# Which cluster this pod is in, injected by the chart from the `cluster-metadata` ConfigMap
+# (key COAST) that both clusters already carry: {"COAST": "west"} / {"COAST": "east"}. The
+# cluster identifies itself, so one values file serves both regions and nothing has to be
+# remembered at `helm upgrade` time.
+#
+# Hostname component, so restrict it: this builds a URL the agent hands to a user, and a
+# stray value would produce a link pointing somewhere unintended. Anything outside the set
+# is treated as unset, which falls back to the public base rather than emitting a bad host.
+COAST = os.environ.get("COAST", "").strip()
+_COAST_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+
+
+def _link_base() -> str | None:
+    """The host the SHORT /r/<id> link points at — pinned when configured, else public.
+
+    `{coast}` in RCSB_MCP_REPORT_LINK_BASE_URL is substituted with COAST, the same shape as
+    `{version}` in RCSB_MCP_USER_AGENT (see client.py). That lets the chart ship ONE value,
+    "https://mcp-beta.{coast}.k8s.rcsb.org", to both clusters.
+
+    An unsubstituted placeholder must never reach a user: with COAST unset or malformed the
+    template would render a literally broken hostname, so fall back to the public base. That
+    loses the short link's cluster pinning (links resolve ~half the time behind a GSLB name)
+    but never hands out a URL that cannot resolve at all.
+    """
+    base = REPORT_LINK_BASE_URL
+    if not base:
+        return REPORT_BASE_URL
+    if "{coast}" in base:
+        if not _COAST_RE.match(COAST):
+            return REPORT_BASE_URL
+        base = base.replace("{coast}", COAST)
+    return base
 
 # Above this the packed link is too long to hand out, so we fall back to `html`.
 #
@@ -185,7 +246,9 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
                 # which needs no store and always renders. Offload the (possibly blocking,
                 # e.g. Redis-socket) write so it can't stall the event loop.
                 url_id = await asyncio.to_thread(REPORT_STORE.put, token) if REPORT_STORE.shared else None
-                url = f"{REPORT_BASE_URL}/r/{url_id}" if url_id else fat_url
+                # Short link off the PINNED base; the fat fallback keeps the public
+                # one, since it needs no store and renders from any cluster.
+                url = f"{_link_base()}/r/{url_id}" if url_id else fat_url
                 html = None  # the link renders the document on demand instead
 
         return RenderReportResult(

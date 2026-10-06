@@ -90,41 +90,57 @@ secretVolumes:
   filename: secret.txt
   secretName: app-generic-secret
 
-# Root filesystem is read-only; point HOME at the writable /tmp tmpfs to be safe.
-podEnvVars:
-  - name: HOME
-    value: /tmp
-  # User-Agent on every request this service makes to the RCSB (and EBI/UniProt) APIs, so
-  # the hosted deployment's traffic can be told apart from local/stdio installs (which
-  # send the default "rcsb-mcp/<version> (...)") in the upstream access logs. {version}
-  # is replaced with the package version from pyproject.toml. Printable ASCII only.
-  - name: RCSB_MCP_USER_AGENT
-    value: "rcsb-mcp-hosted/{version} (https://github.com/rcsb/rcsb-mcp)"
-  # Set to the public origin that serves this MCP to make rcsb_render_report return
-  # a report LINK instead of inline HTML, so the agent never reproduces the ~20 KB
-  # document. It must be an origin whose ingress routes to this service (any of the
-  # ingress hosts below). Confirm the real URL with DevOps before enabling — the
-  # hosts here are placeholders. Left unset, the tool falls back to returning html.
-  - name: RCSB_MCP_REPORT_BASE_URL
-    value: "https://mcp-beta.rcsb.org"
-  #
-  # The tool hands back a SHORT link (…/r/<id>) that redirects to the self-contained
-  # …/r?d=<token> URL. The id → token map lives in a short-TTL store. With multiple
-  # replicas and no session affinity, that store MUST be shared or a link minted on
-  # one pod won't resolve on another (it degrades to the fat …/r?d= link, which always
-  # works, but the token saving is lost). Enable the bundled Redis below (redis.enabled)
-  # and the chart wires RCSB_MCP_REDIS_URL into the MCP pods automatically — don't set
-  # it here as well. Unset ⇒ per-pod in-memory store.
-  # - name: RCSB_MCP_REPORT_TTL_SECONDS   # short-link lifetime; default 3600
-  #   value: "3600"
+# Env for the MCP pods, as a MAP: per-environment files (values/*.yaml) deep-MERGE into
+# this, so an override adds or changes one key without restating the rest. It used to be a
+# list, which Helm replaces wholesale -- values/development.yaml overrode it with two
+# entries and silently dropped RCSB_MCP_USER_AGENT.
+#
+# For env needing valueFrom (secretKeyRef/fieldRef), use `podEnvVars` instead -- still a
+# list, still replaced, documented in templates/deployment.yaml.
+podEnv:
+  # Root filesystem is read-only; point HOME at the writable /tmp tmpfs to be safe.
+  HOME: /tmp
 
-# Bundled Redis: shared short-TTL store so report short links minted on one MCP replica
-# resolve on every replica. Deploys a single ephemeral Redis pod plus a ClusterIP
-# Service; nothing routes to it from outside the cluster (no ingress rule, no external
-# IP), so it is cluster-internal by construction. Persistence is off: a restart voids
-# already-issued short links (they 410 — the token exists only in Redis), which is an
-# accepted cost since links expire after an hour anyway; links minted while Redis is
-# down degrade to the long self-contained …/r?d= form and keep working.
+  # User-Agent on every request this service makes to the RCSB (and EBI/UniProt) APIs, so
+  # the hosted deployment's traffic can be told apart from local/stdio installs (which send
+  # the default "rcsb-mcp/<version> (...)") in the upstream access logs. {version} is
+  # substituted at RUNTIME by client.py from the package version -- a literal {version} in
+  # the rendered manifest is correct, not a templating bug.
+  RCSB_MCP_USER_AGENT: "rcsb-mcp-hosted/{version} (https://github.com/rcsb/rcsb-mcp)"
+
+  # RCSB_MCP_REPORT_BASE_URL and RCSB_MCP_REPORT_LINK_BASE_URL are deliberately NOT set
+  # here -- they are HOSTNAMES, so they belong to an environment, not to the chart. They
+  # live in values/production.yaml and values/development.yaml.
+  #
+  # Unset is also the safe default: with no REPORT_BASE_URL the tool returns inline html
+  # instead of a link, which is correct for stdio dev and for any deployment that has not
+  # been given a real, remote-reachable origin. A default here would have emitted links to
+  # someone else's host -- which is exactly what happened: the beta URL sat in this file and
+  # the development deployment inherited it, so dev short links pointed at mcp-beta, whose
+  # store has never seen those ids.
+  #
+  # RCSB_MCP_REPORT_TTL_SECONDS -- short-link lifetime; default 3600. Only governs the gap
+  # between the agent emitting the link and the first click; after the redirect the URL is
+  # self-contained and never expires.
+
+# Env requiring valueFrom (secretKeyRef, fieldRef). A LIST, so an override REPLACES it.
+podEnvVars: []
+
+# Which cluster a pod is in, read from the `cluster-metadata` ConfigMap that both clusters
+# already carry ({"COAST": "west"} / {"COAST": "east"}). The CLUSTER identifies itself, so
+# one values file serves both regions and nothing has to be passed at `helm upgrade` time.
+#
+# Consumed by RCSB_MCP_REPORT_LINK_BASE_URL above, whose `{coast}` the app substitutes at
+# startup -- the same shape as `{version}` in RCSB_MCP_USER_AGENT.
+#
+# optional: true below, so a namespace WITHOUT this ConfigMap still starts. The pod then has
+# no COAST, the app declines to substitute, and the short link falls back to the public base
+# -- degraded (links resolve about half the time behind a GSLB name) but never a broken URL.
+# Without `optional` the pod would fail to start instead.
+coastConfigMap: "cluster-metadata"
+coastConfigMapKey: "COAST"
+coastConfigMapOptional: true
+
 redis:
   enabled: false
   image:

@@ -275,14 +275,15 @@ def test_endpoint_error_responses_are_hardened(client):
 # --------------------------------------------------------------------------
 
 
-def test_short_id_redirects_to_the_self_contained_url(client):
+def test_short_id_redirect_is_relative_when_no_public_origin_is_configured(client):
+    """The fallback path: with REPORT_BASE_URL unset the target inherits the caller's
+    scheme/host, so the redirect still works behind any ingress (stdio/dev)."""
     from rcsb_mcp.report.store import REPORT_STORE
 
     token = _token(REPORT)
     uid = REPORT_STORE.put(token)
     r = client.get(f"/r/{uid}", follow_redirects=False)
     assert r.status_code == 302
-    # A relative target, so it inherits the caller's host behind any ingress.
     assert r.headers["location"] == f"/r?d={token}"
 
 
@@ -379,3 +380,86 @@ def test_tool_never_emits_a_link_the_endpoint_would_reject(monkeypatch):
     _c, res = asyncio.run(mcp.call_tool("rcsb_render_report", {"params": {"report": big}}))
     assert res["url"] is None, "must not emit a link the endpoint would reject"
     assert res["html"].startswith("<!DOCTYPE html>")
+
+
+# --------------------------------------------------------------------------
+# Two bases, on purpose: the short hop is cluster-PINNED, the redirect is PUBLIC
+# --------------------------------------------------------------------------
+#
+# mcp-beta.rcsb.org is GSLB'd across two clusters, each with its own Redis. Measured on the
+# live beta: an agent resolved it to east and the token was stored there (EXISTS=1), while
+# the browser resolved the same name to west and got the expired page (EXISTS=0). The short
+# id is only resolvable where it was minted; the /r?d=<token> URL it redirects to is
+# self-contained and renders anywhere. So they need different hosts, and collapsing them
+# back into one variable reintroduces the bug.
+
+
+def test_the_short_link_uses_the_pinned_base_and_the_redirect_uses_the_public_one(
+    client, monkeypatch
+):
+    """The whole point of the split, asserted end to end in one test.
+
+    Costs matter here: the short link is ~22 tokens for the agent to emit, the
+    self-contained one ~2,764. Pinning only the short hop keeps that saving while making
+    the link resolvable, and the user still lands on (and shares) the public hostname.
+    """
+    from rcsb_mcp.report import tools as report_tools
+    from rcsb_mcp.report.store import REPORT_STORE
+
+    monkeypatch.setattr(report_tools, "REPORT_BASE_URL", "https://public.example.org")
+    monkeypatch.setattr(report_tools, "REPORT_LINK_BASE_URL", "https://west.example.org")
+
+    token = _token(REPORT)
+    uid = REPORT_STORE.put(token)
+    r = client.get(f"/r/{uid}", follow_redirects=False)
+    assert r.status_code == 302
+    # ABSOLUTE, and to the PUBLIC host — not the pinned one the request arrived on.
+    assert r.headers["location"] == f"https://public.example.org/r?d={token}"
+
+
+def test_the_redirect_target_is_read_at_request_time_not_import_time():
+    """`from .tools import REPORT_BASE_URL` would snapshot the value and silently diverge
+    from the one the tool mints links with. routes must reach through the module."""
+    import inspect
+
+    from rcsb_mcp.report import routes
+
+    src = inspect.getsource(routes)
+    assert "report_tools.REPORT_BASE_URL" in src
+    assert "from .tools import REPORT_BASE_URL" not in src
+
+
+def test_an_unset_pinned_base_falls_back_to_the_public_one(monkeypatch):
+    """Single-cluster and stdio deployments must need no new configuration: with
+    RCSB_MCP_REPORT_LINK_BASE_URL unset the short link keeps using REPORT_BASE_URL."""
+    import importlib
+
+    monkeypatch.setenv("RCSB_MCP_REPORT_BASE_URL", "https://only.example.org")
+    monkeypatch.delenv("RCSB_MCP_REPORT_LINK_BASE_URL", raising=False)
+    mod = importlib.reload(importlib.import_module("rcsb_mcp.report.tools"))
+    try:
+        assert mod.REPORT_BASE_URL == "https://only.example.org"
+        # The constant stays None — "nothing pinned" — and the fallback is applied at USE
+        # time. Defaulting it here instead would snapshot REPORT_BASE_URL and go stale.
+        assert mod.REPORT_LINK_BASE_URL is None
+        assert mod._link_base() == "https://only.example.org"
+    finally:
+        # Restore the module other tests (and the live server) share.
+        monkeypatch.undo()
+        importlib.reload(mod)
+
+
+def test_the_pinned_base_is_read_from_its_own_env_var(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("RCSB_MCP_REPORT_BASE_URL", "https://public.example.org/")
+    monkeypatch.setenv("RCSB_MCP_REPORT_LINK_BASE_URL", "https://east.example.org/")
+    mod = importlib.reload(importlib.import_module("rcsb_mcp.report.tools"))
+    try:
+        # Trailing slashes stripped on both, so f"{base}/r/..." never doubles up.
+        assert mod.REPORT_BASE_URL == "https://public.example.org"
+        assert mod.REPORT_LINK_BASE_URL == "https://east.example.org"
+        assert mod._link_base() == "https://east.example.org"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(mod)

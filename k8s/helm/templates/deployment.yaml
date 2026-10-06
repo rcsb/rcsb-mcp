@@ -62,13 +62,40 @@ spec:
             httpGet:
               path: {{ .Values.readinessProbe.http.path }}
               port: {{ .Values.service.containerPort }}
-          {{- if or .Values.podEnvVars .Values.redis.enabled }}
+          {{- if or .Values.podEnv .Values.podEnvVars .Values.redis.enabled .Values.coastConfigMap }}
           env:
             {{- if .Values.redis.enabled }}
-            # Auto-wired to the bundled Redis Service; don't also set this in podEnvVars.
+            # Auto-wired to the bundled Redis Service; don't also set this in podEnv.
             - name: RCSB_MCP_REDIS_URL
               value: "redis://{{ include "helm_chart.redisFullname" . }}:{{ .Values.redis.port }}/0"
             {{- end }}
+            {{- /* podEnv is a MAP so per-environment files deep-MERGE into it. A list is
+                   replaced wholesale, which silently drops entries the override forgot to
+                   restate -- values/development.yaml did exactly that to
+                   RCSB_MCP_USER_AGENT. `range` over a map iterates in sorted key order, so
+                   the rendered manifest is stable. */}}
+            {{- range $name, $value := .Values.podEnv }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- /* COAST: which cluster this pod is in, read from the ConfigMap both
+                   clusters already carry. The app substitutes it into `{coast}` in
+                   RCSB_MCP_REPORT_LINK_BASE_URL, so ONE values file serves both
+                   regions and no --set is needed at upgrade time.
+
+                   Marked optional so a namespace without the ConfigMap still starts:
+                   the app then skips substitution and falls back to the public base,
+                   rather than the pod failing to schedule. */}}
+            {{- if .Values.coastConfigMap }}
+            - name: COAST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.coastConfigMap }}
+                  key: {{ .Values.coastConfigMapKey }}
+                  optional: {{ .Values.coastConfigMapOptional }}
+            {{- end }}
+            {{- /* Escape hatch kept as a LIST for env that needs valueFrom (secretKeyRef,
+                   fieldRef) which a plain map cannot express. Replaced, not merged. */}}
             {{- with .Values.podEnvVars }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

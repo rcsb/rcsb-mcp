@@ -78,3 +78,15 @@ autoscaling:
 # report short links minted on one MCP replica resolve on all of them.
 redis:
   enabled: true
+
+# Hostnames for THIS environment. podEnv is a map, so this merges into values.yaml.
+podEnv:
+  # The public origin: makes rcsb_render_report return a link instead of inline html, and
+  # is where the short link REDIRECTS to. That /r?d=<token> URL is self-contained, so the
+  # GSLB name is correct here -- any cluster renders it.
+  RCSB_MCP_REPORT_BASE_URL: "https://mcp-beta.rcsb.org"
+  # Where the SHORT /r/<id> link POINTS. Must be cluster-pinned, because the id resolves
+  # only against the store that minted it. `{coast}` is substituted by the app from the
+  # COAST env var (see coastConfigMap in values.yaml), so this one value is correct in both
+  # west and east.
+  RCSB_MCP_REPORT_LINK_BASE_URL: "https://mcp-beta.{coast}.k8s.rcsb.org"

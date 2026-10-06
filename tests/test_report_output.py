@@ -215,3 +215,121 @@ def test_fallback_html_is_emitted_in_both_content_and_structured(no_base_url):
     in_content = any("<!DOCTYPE html>" in (getattr(c, "text", "") or "") for c in content)
     assert in_content, "html should appear in a content[] text block"
     assert structured["html"].startswith("<!DOCTYPE html>"), "and in structuredContent"
+
+
+# --------------------------------------------------------------------------
+# The short link is minted off the PINNED base, the fat fallback off the public one
+# --------------------------------------------------------------------------
+#
+# mcp-beta.rcsb.org is GSLB'd across two clusters, each with its own Redis. Measured on the
+# live beta: an agent resolved it to east and the token was written there (EXISTS=1), while
+# the browser resolved the SAME name to west and got the expired page (EXISTS=0). The short
+# id resolves only where it was minted, so it must be fetched from that cluster; the
+# /r?d=<token> URL it redirects to is self-contained and renders from any of them.
+#
+# Hence two bases. Collapsing them back into one reintroduces the bug, which is why the
+# minted host is asserted here and not just the redirect target.
+
+
+@pytest.fixture
+def pinned_link_base(monkeypatch):
+    monkeypatch.setattr(report_tools, "REPORT_LINK_BASE_URL", "https://west.example.org")
+    return "https://west.example.org"
+
+
+def test_the_short_link_is_minted_off_the_PINNED_base(
+    with_base_url, shared_store, pinned_link_base
+):
+    """The agent must receive the cluster-pinned host, NOT the public one.
+
+    This is the assertion a "simplification" back to a single base has to fail: with both
+    configured and different, the short link carries the pinned host.
+    """
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"{pinned_link_base}/r/"), res["url"]
+    assert not res["url"].startswith(with_base_url), (
+        "the short link went to the public GSLB host — that is the split-brain bug"
+    )
+    assert "?d=" not in res["url"]
+
+
+def test_the_fat_fallback_still_uses_the_PUBLIC_base(with_base_url, pinned_link_base):
+    """No shared store ⇒ the self-contained URL, which needs no lookup and renders from any
+    cluster — so it belongs on the public hostname, not the pinned one."""
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"{with_base_url}/r?d="), res["url"]
+    assert "west.example.org" not in res["url"], (
+        "the self-contained URL is cluster-independent; pinning it would hand users an "
+        "internal hostname for no benefit"
+    )
+
+
+def test_with_nothing_pinned_the_short_link_uses_the_public_base(with_base_url, shared_store):
+    """Single-cluster and stdio deployments need no new configuration."""
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"{with_base_url}/r/"), res["url"]
+
+
+# --------------------------------------------------------------------------
+# {coast} substitution: one chart value, correct in every cluster
+# --------------------------------------------------------------------------
+#
+# Both clusters carry a `cluster-metadata` ConfigMap ({"COAST": "west"} / {"COAST": "east"}),
+# which the chart injects as COAST. So RCSB_MCP_REPORT_LINK_BASE_URL ships ONE value --
+# "https://mcp-beta.{coast}.k8s.rcsb.org" -- and the pod resolves it at startup, the same
+# shape as {version} in RCSB_MCP_USER_AGENT. No --set at upgrade time, nothing to forget.
+
+
+@pytest.fixture
+def templated_link_base(monkeypatch):
+    monkeypatch.setattr(
+        report_tools, "REPORT_LINK_BASE_URL", "https://mcp-beta.{coast}.k8s.rcsb.org"
+    )
+
+
+@pytest.mark.parametrize("coast", ["west", "east"])
+def test_coast_is_substituted_into_the_short_link(
+    with_base_url, shared_store, templated_link_base, monkeypatch, coast
+):
+    monkeypatch.setattr(report_tools, "COAST", coast)
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"https://mcp-beta.{coast}.k8s.rcsb.org/r/"), res["url"]
+    assert "{coast}" not in res["url"]
+
+
+def test_an_unsubstituted_placeholder_never_reaches_the_user(
+    with_base_url, shared_store, templated_link_base, monkeypatch
+):
+    """COAST missing (a namespace without the ConfigMap — it is mounted `optional`).
+
+    Falling back to the public base loses the cluster pinning, so short links resolve only
+    about half the time behind the GSLB name. Emitting "https://mcp-beta.{coast}.k8s…"
+    resolves NEVER, so the degraded answer is the right one.
+    """
+    monkeypatch.setattr(report_tools, "COAST", "")
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"{with_base_url}/r/"), res["url"]
+    assert "{coast}" not in res["url"]
+
+
+@pytest.mark.parametrize("bad", ["we st", "west/../evil", "WEST", "-west", "x" * 40, "a.b"])
+def test_a_malformed_coast_is_refused_rather_than_interpolated(
+    with_base_url, shared_store, templated_link_base, monkeypatch, bad
+):
+    """COAST becomes a HOSTNAME component in a URL handed to a user, so anything outside
+    [a-z0-9-] is treated as unset. A stray value must not build a link to somewhere else."""
+    monkeypatch.setattr(report_tools, "COAST", bad)
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith(f"{with_base_url}/r/"), res["url"]
+    assert bad not in res["url"]
+
+
+def test_a_literal_pinned_host_is_still_used_verbatim(
+    with_base_url, shared_store, monkeypatch
+):
+    """No placeholder ⇒ no substitution, so a hand-set absolute host keeps working and
+    COAST is irrelevant."""
+    monkeypatch.setattr(report_tools, "REPORT_LINK_BASE_URL", "https://pinned.example.org")
+    monkeypatch.setattr(report_tools, "COAST", "")
+    res = _structured(**MINIMAL)
+    assert res["url"].startswith("https://pinned.example.org/r/"), res["url"]
