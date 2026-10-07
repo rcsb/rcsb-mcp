@@ -144,8 +144,6 @@ entry, query each polymer entity.
 |------|--------------|
 | `rcsb_seqcoord_alignments` | Cross-reference a sequence across PDB / UniProt / NCBI with aligned ranges (e.g. `4HHB_1` → NCBI proteins `NP_000508`, `NP_000549`). |
 | `rcsb_seqcoord_annotations` | Positional features for one sequence, from one or more annotation `sources` (`UNIPROT`, `PDB_ENTITY`, `PDB_INSTANCE`, `PDB_INTERFACE`). |
-| `rcsb_seqcoord_group_alignments` | Alignments among members of a sequence group (`MATCHING_UNIPROT_ACCESSION` / `SEQUENCE_IDENTITY`). |
-| `rcsb_seqcoord_group_annotations` | Annotations across a group; `summary=True` returns a positional summary. |
 | `rcsb_describe_seqcoord_object` | Introspect the live schema to discover fields available on a seqcoord object (for use with `fields=`). |
 
 ### Report
@@ -209,7 +207,7 @@ https://mcp-beta.rcsb.org/mcp
 
 Streamable HTTP, no install, no API key, no account. The deployment is **stateless** — any
 replica answers any request, so no session header is needed and there is nothing to keep
-alive between calls. It serves the same 38 tools and the `rcsb_search_assistant` prompt as
+alive between calls. It serves the same 36 tools and the `rcsb_search_assistant` prompt as
 a local run.
 
 **Claude Code**

@@ -42,6 +42,16 @@ rcsb-mcp = "rcsb_mcp.server:main"
 [tool.hatch.envs.hatch-test]
 extra-dependencies = ["pyflakes>=3"]
 
+# The interpreters `hatch test` runs on: the Docker image's Python FIRST, then the
+# requires-python floor. Without this, hatch uses its built-in 3.8-3.13 matrix and plain
+# `hatch test` picks the Python hatch itself runs on (3.13 for a Homebrew hatch), so a
+# local run never touched the image's interpreter. With it, plain `hatch test` runs on the
+# image's Python unless hatch itself runs on another listed version (as in CI, where each
+# matrix job installs hatch into its own interpreter); `hatch test --all` runs both.
+# tests/test_python_support.py keeps this in step with the Dockerfile and the floor.
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.11", "3.10"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -20,6 +20,8 @@ jobs:
         # actually runs. Test both, or a break that only shows below 3.12 reaches
         # production as a CrashLoopBackOff (the container never binds its port, so
         # the only symptom is a readiness probe that never passes).
+        # Every version here must also be in the hatch-test matrix in pyproject.toml: for an
+        # unlisted one `hatch test --python` runs nothing and exits 0 (test_python_support.py).
         python-version: ["3.10", "3.11"]
     steps:
       - name: Checkout code
@@ -34,7 +36,10 @@ jobs:
         run: pip install hatch
 
       - name: Run tests
-        run: hatch test
+        # Name the version: without --python, hatch reuses ANY existing hatch-test env before
+        # creating the matching one, so on a runner that keeps hatch's envs between jobs the
+        # 3.10 job could silently re-run 3.11.
+        run: hatch test --python ${{ matrix.python-version }}
 
   hatch-build:
     name: Build to PyPI

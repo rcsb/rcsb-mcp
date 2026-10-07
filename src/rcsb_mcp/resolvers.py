@@ -23,6 +23,13 @@ from pydantic import Field
 
 from rcsb_mcp import queries
 from rcsb_mcp.client import _get_json, _post_search
+from rcsb_mcp.descriptions.resolvers import (
+    find_disease_terms,
+    find_enzyme_classes,
+    find_go_terms,
+    find_interpro_domains,
+    find_organisms,
+)
 from rcsb_mcp.tooling import READ_ONLY
 
 
@@ -369,10 +376,12 @@ def _resolver_fallback_note(
 
 
 async def rcsb_find_go_terms(
-    query: str,
-    namespace: GoNamespace | None = None,
-    limit: ResolverLimit = 10,
-    with_pdb_counts: bool = True,
+    query: Annotated[str, Field(description=find_go_terms.QUERY_DOC)],
+    namespace: Annotated[
+        GoNamespace | None, Field(description=find_go_terms.NAMESPACE_DOC)
+    ] = None,
+    limit: Annotated[ResolverLimit, Field(description=find_go_terms.LIMIT_DOC)] = 10,
+    with_pdb_counts: Annotated[bool, Field(description=find_go_terms.WITH_PDB_COUNTS_DOC)] = True,
 ) -> dict[str, Any]:
     """Resolve a free-text molecular function, biological process, or cellular component /
     location (e.g. kinase activity, ATP binding, DNA repair, apoptosis, signal transduction,
@@ -391,13 +400,6 @@ async def rcsb_find_go_terms(
     Results are based on how each entry's text matched your query. Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
     Rank is unrelated to how much of the archive each term covers.
-
-    Args:
-        query: Free-text function / process / location, e.g. "kinase activity", "DNA repair".
-        namespace: Optional GO aspect to restrict to. Omit to search all three.
-        limit: Max GO terms to return.
-        with_pdb_counts: If true (default), annotate each term with pdb_entry_count (PDB
-            entries carrying it, via annotation_lineage.id).
 
     Returns:
         {query, namespace, count, terms:[{id, name, aspect, pdb_entry_count?}]}.
@@ -439,10 +441,14 @@ async def rcsb_find_go_terms(
 
 
 async def rcsb_find_interpro_domains(
-    query: str,
-    entry_type: InterProEntryType | None = None,
-    limit: ResolverLimit = 10,
-    with_pdb_counts: bool = True,
+    query: Annotated[str, Field(description=find_interpro_domains.QUERY_DOC)],
+    entry_type: Annotated[
+        InterProEntryType | None, Field(description=find_interpro_domains.ENTRY_TYPE_DOC)
+    ] = None,
+    limit: Annotated[ResolverLimit, Field(description=find_interpro_domains.LIMIT_DOC)] = 10,
+    with_pdb_counts: Annotated[
+        bool, Field(description=find_interpro_domains.WITH_PDB_COUNTS_DOC)
+    ] = True,
 ) -> dict[str, Any]:
     """Resolve a free-text protein domain, family, or fold (e.g. SH2 domain, immunoglobulin
     fold, zinc finger, beta-barrel, WD40 repeat, kinase domain) to InterPro entries, for
@@ -461,13 +467,6 @@ async def rcsb_find_interpro_domains(
     Results are based on how each entry's text matched your query. Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
     Rank is unrelated to how much of the archive each term covers.
-
-    Args:
-        query: Free-text domain/family name, e.g. "SH2 domain", "immunoglobulin".
-        entry_type: Optional type filter. Omit to return all types.
-        limit: Max entries to return.
-        with_pdb_counts: If true (default), annotate each entry with pdb_entry_count (PDB
-            entries carrying it).
 
     Returns:
         {query, entry_type, count, entries:[{id, name, type, source_database,
@@ -538,9 +537,11 @@ async def rcsb_find_interpro_domains(
 
 
 async def rcsb_find_enzyme_classes(
-    query: str,
-    limit: ResolverLimit = 10,
-    with_pdb_counts: bool = True,
+    query: Annotated[str, Field(description=find_enzyme_classes.QUERY_DOC)],
+    limit: Annotated[ResolverLimit, Field(description=find_enzyme_classes.LIMIT_DOC)] = 10,
+    with_pdb_counts: Annotated[
+        bool, Field(description=find_enzyme_classes.WITH_PDB_COUNTS_DOC)
+    ] = True,
 ) -> dict[str, Any]:
     """Resolve a free-text enzyme, enzyme class, or catalyzed reaction (e.g. alcohol
     dehydrogenase, protease, kinase, DNA polymerase, hydrolase, oxidoreductase) to Enzyme
@@ -557,12 +558,6 @@ async def rcsb_find_enzyme_classes(
     Results are based on how each entry's text matched your query. Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
     Rank is unrelated to how much of the archive each term covers.
-
-    Args:
-        query: Free-text enzyme / reaction, e.g. "alcohol dehydrogenase", "protein kinase".
-        limit: Max EC numbers to return.
-        with_pdb_counts: If true (default), annotate each with pdb_entry_count (PDB entries
-            carrying it, via rcsb_ec_lineage.id).
 
     Returns:
         {query, count, enzymes:[{ec, name, pdb_entry_count?}]}.
@@ -602,9 +597,11 @@ async def rcsb_find_enzyme_classes(
 
 
 async def rcsb_find_disease_terms(
-    query: str,
-    limit: ResolverLimit = 10,
-    with_pdb_counts: bool = True,
+    query: Annotated[str, Field(description=find_disease_terms.QUERY_DOC)],
+    limit: Annotated[ResolverLimit, Field(description=find_disease_terms.LIMIT_DOC)] = 10,
+    with_pdb_counts: Annotated[
+        bool, Field(description=find_disease_terms.WITH_PDB_COUNTS_DOC)
+    ] = True,
 ) -> dict[str, Any]:
     """Resolve a free-text disease, disorder, syndrome, or condition (e.g. diabetes, cancer,
     Alzheimer disease, cystic fibrosis) to MONDO ontology ids, for precise disease-based PDB
@@ -621,12 +618,6 @@ async def rcsb_find_disease_terms(
     Results are based on how each entry's text matched your query. Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
     Rank is unrelated to how much of the archive each term covers.
-
-    Args:
-        query: Free-text disease / condition, e.g. "cystic fibrosis", "breast cancer".
-        limit: Max MONDO terms to return.
-        with_pdb_counts: If true (default), annotate each with pdb_entry_count (PDB entries
-            carrying it, via annotation_lineage.id).
 
     Returns:
         {query, count, diseases:[{id, name, matched_synonym?, pdb_entry_count?}]}.
@@ -675,9 +666,9 @@ async def rcsb_find_disease_terms(
 
 
 async def rcsb_find_organisms(
-    query: str,
-    limit: ResolverLimit = 10,
-    with_pdb_counts: bool = True,
+    query: Annotated[str, Field(description=find_organisms.QUERY_DOC)],
+    limit: Annotated[ResolverLimit, Field(description=find_organisms.LIMIT_DOC)] = 10,
+    with_pdb_counts: Annotated[bool, Field(description=find_organisms.WITH_PDB_COUNTS_DOC)] = True,
 ) -> dict[str, Any]:
     """Resolve a free-text organism, common name, or clade (e.g. human, mouse, baker's yeast,
     Escherichia coli, mammals, bacteria, primates) to NCBI Taxonomy ids, for precise
@@ -699,13 +690,6 @@ async def rcsb_find_organisms(
     Results are based on how each entry's text matched your query. Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
     Rank is unrelated to how much of the archive each term covers.
-
-    Args:
-        query: Free-text organism / clade / common name, e.g. "human", "mammals", "E. coli".
-        limit: Max taxa to return.
-        with_pdb_counts: If true (default), annotate each taxon with pdb_entry_count (PDB
-            entries from it or any organism beneath it, via taxonomy_lineage.id) — this also
-            disambiguates a species from its strains.
 
     Returns:
         {query, count, taxa:[{tax_id, scientific_name, common_name, rank, pdb_entry_count?}]}.

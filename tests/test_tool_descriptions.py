@@ -1,10 +1,20 @@
 """Deterministic guard for load-bearing tool-description content.
 
-The search-tool docstrings were deduplicated — shared config detail (return types,
-grouping, paging, faceting, ontology-resolver routing, assembly attributes) was moved
-into the FastMCP ``instructions=`` block, and each docstring left a pointer. These
-assertions lock in the cross-field rules and routing gotchas the JSON schema cannot
-encode, so a future trim can't silently delete one (or gut the block a pointer targets).
+Tool descriptions and their input schemas are the only text the protocol always delivers
+to the model: the server ships no ``instructions`` block, and prompts are opt-in. These
+assertions lock in the cross-field rules and routing gotchas the JSON schema cannot encode,
+so a future trim can't silently delete one.
+
+"Delivered" is narrower than "present". Claude Code cuts each tool description at
+DESCRIPTION_CUTOFF characters of whitespace-collapsed text, so a phrase past that point is
+in the docstring but never reaches the model there. Input-schema descriptions are not cut,
+which is why per-argument documentation lives in ``Field(description=...)`` (see
+rcsb_mcp/descriptions/). The checks below therefore read two things:
+
+* ``_descriptions()`` -- everything the model can read: description + schema descriptions.
+  The "must not contain" scanners use it, so text moved into a schema stays guarded.
+* ``_delivered()`` -- what actually arrives in Claude Code: the description up to the
+  cutoff, plus the schema. The "must reach the model" checks use it.
 
 No network, no API key, no model — this is the cheap CI gate. The behavioral A/B that
 checks whether the model still *acts* on this text lives in ``evals/tool_selection/``.
@@ -14,15 +24,75 @@ import re
 
 from rcsb_mcp import server
 
+#: Claude Code truncates each MCP tool description here, counting whitespace-collapsed text.
+#: Measured 2026-10-06: rcsb_search_request's 5,416-char description arrived cut at exactly
+#: char 2,048 ("...request. Ignore... [truncated]"), losing 9 of its 14 guarded phrases.
+DESCRIPTION_CUTOFF = 2048
+
 
 def _norm(s: str) -> str:
     """Collapse whitespace so line-wrapping in a docstring never hides a phrase."""
     return re.sub(r"\s+", " ", s or "")
 
 
+def _utf16_len(s: str) -> int:
+    """String length as a JavaScript client counts it (UTF-16 code units)."""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _utf16_prefix(s: str, n: int) -> str:
+    return s.encode("utf-16-le")[: 2 * n].decode("utf-16-le", "ignore")
+
+
+def _schema_descriptions(node) -> list[str]:
+    """The readable text of a JSON schema: property NAMES and every description string.
+
+    Names count because the model reads them -- `group_by` used to be satisfied by the
+    `group_by:` label of an Args section and is now a property name, delivered either way.
+    The schema is not matched as JSON because escaping breaks phrases (`return_type=\\"...`).
+    Only a ``description`` key whose value is a STRING counts, so a property that happens to
+    be NAMED ``description`` (its value is a schema dict) is descended into, not collected.
+    """
+    if isinstance(node, dict):
+        out: list[str] = []
+        for key, value in node.items():
+            if key == "description" and isinstance(value, str):
+                out.append(value)
+            else:
+                if key == "properties" and isinstance(value, dict):
+                    out.extend(value)  # the property names themselves
+                out.extend(_schema_descriptions(value))
+        return out
+    if isinstance(node, list):
+        return [d for item in node for d in _schema_descriptions(item)]
+    return []
+
+
+def _tools():
+    return asyncio.run(server.mcp.list_tools())
+
+
+def _collapsed(description: str | None) -> str:
+    return _norm(description).strip()
+
+
 def _descriptions():
-    tools = asyncio.run(server.mcp.list_tools())
-    return {t.name: _norm(t.description) for t in tools}
+    """Everything a model can read about each tool: description AND input-schema text."""
+    return {
+        t.name: _norm(" || ".join([t.description or "", *_schema_descriptions(t.inputSchema)]))
+        for t in _tools()
+    }
+
+
+def _delivered():
+    """What reaches the model in Claude Code: the description up to the cutoff + the schema."""
+    return {
+        t.name: _norm(" || ".join([
+            _utf16_prefix(_collapsed(t.description), DESCRIPTION_CUTOFF),
+            *_schema_descriptions(t.inputSchema),
+        ]))
+        for t in _tools()
+    }
 
 
 # Gotchas that must stay in the SPECIFIC tool's own description: they are not derivable
@@ -180,9 +250,9 @@ REQUIRED_IN_TOOL = {
     "rcsb_find_organisms": [
         "disambiguates a species from its strains",      # not in instructions ('strain' absent)
     ],
-    # rcsb_seqcoord_*: the ref/group/source VALUES are Literals (SequenceRef/GroupRef/
-    # AnnotationRef), so the schema ships them and the prose was cut. These are what the schema
-    # cannot express — the per-system id FORMATS and the entity-level rule.
+    # rcsb_seqcoord_*: the ref/source VALUES are Literals (SequenceRef/AnnotationRef), so the
+    # schema ships them and the prose was cut. These are what the schema cannot express — the
+    # per-system id FORMATS and the entity-level rule.
     "rcsb_seqcoord_alignments": [
         "entry_entityNumber",                            # PDB_ENTITY id format
         "entry.asym_id",                                 # PDB_INSTANCE id format
@@ -225,17 +295,109 @@ NOT_RELOCATED = [
 
 
 def test_tool_gotchas_survive():
-    descs = _descriptions()
+    delivered = _delivered()
     missing = []
     for tool, phrases in REQUIRED_IN_TOOL.items():
-        assert tool in descs, f"tool {tool} is not registered"
+        assert tool in delivered, f"tool {tool} is not registered"
         for phrase in phrases:
-            if _norm(phrase) not in descs[tool]:
+            if _norm(phrase) not in delivered[tool]:
                 missing.append(f"{tool}: {phrase!r}")
     assert not missing, (
-        "load-bearing text was removed from a tool description "
-        "(move it to the instructions block or keep it):\n  " + "\n  ".join(missing)
+        "load-bearing text does not reach the model: keep it in the tool's description "
+        f"BEFORE the {DESCRIPTION_CUTOFF}-char cutoff, or move it into the input schema "
+        "with Field(description=...):\n  " + "\n  ".join(missing)
     )
+
+
+def test_every_description_fits_the_claude_code_cutoff():
+    """Text past the cutoff is silently lost in Claude Code, and nothing else would say so.
+
+    rcsb_search_request carried its Args and Returns past the cut for weeks while
+    test_tool_gotchas_survive passed, because that test only checked the phrases were
+    PRESENT. Per-argument documentation belongs in Field(description=...), which travels
+    in the input schema and is not cut.
+    """
+    over = {
+        t.name: _utf16_len(_collapsed(t.description))
+        for t in _tools()
+        if _utf16_len(_collapsed(t.description)) > DESCRIPTION_CUTOFF
+    }
+    assert not over, (
+        f"tool descriptions longer than {DESCRIPTION_CUTOFF} chars (collapsed) are truncated "
+        "in Claude Code; move per-argument docs into Field(description=...):\n  "
+        + "\n  ".join(f"{name}: {n}" for name, n in sorted(over.items(), key=lambda kv: -kv[1]))
+    )
+
+
+def test_no_tool_description_has_an_args_section():
+    """Argument documentation lives in the input schema, never in an ``Args:`` section.
+
+    An Args section is what pushed five descriptions past DESCRIPTION_CUTOFF, silently dropping
+    their tails in Claude Code. One rule for every tool: the description says what the tool is
+    for and when to use it; each argument's text is a ``Field(description=...)`` whose wording
+    lives in rcsb_mcp/descriptions/<module>/<tool>.py.
+    """
+    offenders = sorted(t.name for t in _tools() if re.search(r"^\s*Args:\s*$", t.description or "", re.M))
+    assert not offenders, (
+        "move these tools' argument docs into Field(description=...) "
+        "(wording in rcsb_mcp/descriptions/):\n  " + "\n  ".join(offenders)
+    )
+
+
+def _documents_itself(prop: dict, defs: dict) -> bool:
+    """True for an argument that is a $ref to a model which is documented and describes
+    every one of its own fields -- the model carries the documentation instead
+    (rcsb_render_report's `params`, a ReportRequest wrapper)."""
+    target = defs.get(prop.get("$ref", "").split("/")[-1]) if prop.get("$ref") else None
+    return bool(
+        target
+        and target.get("description")
+        and all(field.get("description") for field in target.get("properties", {}).values())
+    )
+
+
+def test_every_argument_has_a_schema_description():
+    """With Args sections gone, an argument without a schema description is undocumented."""
+    missing = []
+    for t in _tools():
+        defs = t.inputSchema.get("$defs", {})
+        for name, prop in t.inputSchema.get("properties", {}).items():
+            if not prop.get("description") and not _documents_itself(prop, defs):
+                missing.append(f"{t.name}.{name}")
+    assert not missing, (
+        "arguments with no schema description -- add Field(description=...) with its "
+        "wording in rcsb_mcp/descriptions/:\n  " + "\n  ".join(missing)
+    )
+
+
+def test_every_get_tool_fields_doc_names_the_object_the_tool_queries():
+    """Each rcsb_get_* `fields` text is the shared template filled with one Data API object.
+
+    It must be the object the tool's own code queries: naming another one sends the model to
+    rcsb_describe_data_object for paths that then fail on this tool. Both sides are read
+    from the source -- the description as delivered, the object from the tool's body -- so
+    neither can drift alone.
+    """
+    import inspect
+
+    from rcsb_mcp import data, queries
+
+    problems = []
+    for t in _tools():
+        if not t.name.startswith("rcsb_get_"):
+            continue
+        named = re.search(
+            r'rcsb_describe_data_object\("([a-z_]+)"\)',
+            t.inputSchema["properties"]["fields"].get("description", ""),
+        )
+        queried = re.search(r'_query_(?:batch|single)\(\s*"([a-z_]+)"', inspect.getsource(getattr(data, t.name)))
+        if not (named and queried):
+            problems.append(f"{t.name}: could not read the object (named={named}, queried={queried})")
+        elif named.group(1) != queried.group(1):
+            problems.append(f"{t.name}: fields text names {named.group(1)!r}, code queries {queried.group(1)!r}")
+        elif named.group(1) not in queries.DATA_OBJECTS:
+            problems.append(f"{t.name}: {named.group(1)!r} is not a DATA_OBJECTS key")
+    assert not problems, "\n  ".join(["fields text out of step with the tool:", *problems])
 
 
 def test_relocated_guidance_reaches_the_model():
@@ -245,7 +407,7 @@ def test_relocated_guidance_reaches_the_model():
     Anything that mattered had to move to tools/list, which always arrives — this checks
     it actually did, rather than that it survived somewhere no one may read.
     """
-    everything = " || ".join(_descriptions().values())
+    everything = " || ".join(_delivered().values())
     missing = [p for p in REQUIRED_SOMEWHERE_IN_TOOL_DESCRIPTIONS if _norm(p) not in everything]
     assert not missing, (
         "these rules moved off the retired guide but reached no tool description:\n  "

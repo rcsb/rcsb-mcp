@@ -21,6 +21,26 @@ from rcsb_mcp.client import (
     DATA_GRAPHQL_URL,
     _graphiql_editor,
 )
+from rcsb_mcp.descriptions.data import (
+    describe_data_object,
+    get_assemblies,
+    get_branched_entities,
+    get_branched_entity_instances,
+    get_chem_comps,
+    get_entries,
+    get_entry_groups,
+    get_group_provenance,
+    get_interfaces,
+    get_nonpolymer_entities,
+    get_nonpolymer_entity_groups,
+    get_nonpolymer_entity_instances,
+    get_polymer_entities,
+    get_polymer_entity_groups,
+    get_polymer_entity_instances,
+    get_pubmed,
+    get_uniprot,
+    shared,
+)
 from rcsb_mcp.graphql import (
     DATA_FIELDS_RESULT_CAP,
     _flatten_object_fields,
@@ -75,85 +95,46 @@ async def _query_single(
 
 
 async def rcsb_describe_data_object(
-    object_key: DataObjectKey | None = None,
-    into: str | None = None,
-    query: str | None = None,
-    max_depth: Annotated[int, Field(ge=1, le=6)] | None = None,
+    object_key: Annotated[
+        DataObjectKey | None, Field(description=describe_data_object.OBJECT_KEY_DOC)
+    ] = None,
+    into: Annotated[str | None, Field(description=describe_data_object.INTO_DOC)] = None,
+    query: Annotated[str | None, Field(description=describe_data_object.QUERY_DOC)] = None,
+    max_depth: Annotated[
+        Annotated[int, Field(ge=1, le=6)] | None,
+        Field(description=describe_data_object.MAX_DEPTH_DOC),
+    ] = None,
 ) -> dict[str, Any]:
     """Discover the fields available on a Data API object, from the live GraphQL schema.
 
-    Use this to find exactly what to request in a rcsb_get_* tool's `fields=` argument.
-    The rcsb_get_* default selections are compact summaries, but the
-    underlying GraphQL types have far more (e.g. CoreEntry has ~100 fields). Every path it
-    returns is verified against the live schema, so it is safe to pass to `fields=` directly.
+    Use this to find what to request in a rcsb_get_* tool's `fields=` argument: its default
+    selection is a compact summary of a far richer type (CoreEntry has ~100 fields). Every
+    path returned is verified against the live schema, so it is safe to pass directly.
 
     NEVER invent, guess, or infer a field path from memory, from a naming convention, or
     from another API. An unverified path fails GraphQL schema validation and wastes the
     call. Paths shown in a rcsb_get_* tool's own description or examples are already
     verified — use those directly; for anything else, confirm it here FIRST.
 
-    `fields=` accepts EITHER dotted paths ("rcsb_polymer_entity.pdbx_description") OR
-    GraphQL nested-brace syntax ("rcsb_polymer_entity { pdbx_description }"); the two may
-    be mixed, and multiple paths are separated by spaces or commas.
+    `fields=` takes dotted paths ("rcsb_polymer_entity.pdbx_description"), GraphQL brace
+    syntax ("rcsb_polymer_entity { pdbx_description }"), or both, separated by spaces or
+    commas.
 
-    Three ways to use it, all returning dotted paths ready for `fields=`:
-    - FIND which tool has a field: pass ONLY `query` and omit `object_key`. Searches every
-      object and answers with the tool to call and the path to give it, best matches first.
-      Start here whenever you know what you want but not where it lives —
-      rcsb_describe_data_object(query="release_date") ->
-      rcsb_get_entries + "rcsb_accession_info.initial_release_date".
-      A SEARCH ATTRIBUTE PATH works as the `query` too: every attribute from
-      rcsb_list_pdb_search_attributes is also a Data API field, so pasting one in tells you
-      which tool fetches the value you can filter on.
-    - SEARCH one object: name `object_key` as well, to keep only that object's matches.
-    - BROWSE a level: name `object_key` and omit `query` to list its own fields, then drill
-      into a nested one with `into`. Workflow: rcsb_describe_data_object("entries") -> spot a
-      nested object such as "rcsb_entry_info" -> rcsb_describe_data_object("entries",
-      into="rcsb_entry_info") to list its leaves.
-    The walk depth follows which one you are doing, so you do not have to set it: browsing
-    lists one level, searching goes three deep. `into` scopes a search to a sub-tree (cheaper
-    and more focused than flattening from the root) and needs an `object_key`.
-
-    An empty result from a NAMED object means that object has no matching field — not that
-    the field does not exist. Re-run without `object_key` to search them all.
-
-    Each returned field has:
-    - path: dotted path from the object root, ready to use in `fields=`
-    - kind: "scalar" (a leaf you can select directly) or "object" (drill in, or select with a
-      sub-selection)
-    - type: the field's GraphQL type name
-    - list: whether the field returns a list
-    - description: schema description, when present
-    - searchable: present (true) only when this field can ALSO be filtered on with
-      rcsb_query_attribute — i.e. it is a Search API attribute as well as a Data API field.
-      About 3% are. Use it to go from "I can read this" to "I can search by this" without a
-      separate lookup; rcsb_list_pdb_search_attributes still has its operators and values.
-
-    Args:
-        object_key: Which object to describe — the key matching the rcsb_get_* tool. OMIT it
-            to search every object at once and be told which tool owns each match; that needs
-            a `query` and cannot be combined with `into`.
-        into: Optional dot-path of nested object field(s) to scope to, e.g.
-            "rcsb_entry_info" or "polymer_entities.rcsb_polymer_entity".
-        query: Optional case-insensitive keyword, matched against each field's path (relative
-            to the scope) and its description, e.g. "resolution", "abstract", "organism".
-        max_depth: How many levels to walk (1-6). Omit it: the default follows what you are
-            doing — 1 when browsing, 3 when searching, which is what it takes to reach
-            "polymer_entities.rcsb_polymer_entity.pdbx_description". Set it only to go
-            deeper still, or to cap a broad walk. Deeper is slower on a cold cache; prefer
-            narrowing with `query` and `into`.
+    Start with only a `query` when you know what you want but not where it lives: it
+    searches every object and answers with the tool to call and the path to give it, best
+    matches first — rcsb_describe_data_object(query="release_date") -> rcsb_get_entries +
+    "rcsb_accession_info.initial_release_date". Name an `object_key` to search just that
+    object, or omit `query` to browse its fields level by level with `into`.
 
     Returns:
         For a named object: {object_key, graphql_type, path, query, max_depth, field_count,
-        fields:[{path, kind, type, list, description, searchable?}], truncated?, note?}.
-        Searching every object instead: {object_key: null, searched, query, max_depth,
-        field_count, fields:[{tool, path, kind, type, list, description, searchable?}],
-        truncated?, note?}
-        — each field names the rcsb_get_* `tool` that owns it and the `path` to pass that
-        tool's `fields=`. One field is reported once, attributed to the object reaching it
-        most directly, and matches are ordered exact field name, then partial, then
-        description-only. When the result set is capped, `truncated` is true and `note`
-        explains how to narrow it.
+        fields, truncated?, note?}. Searching every object: the same with object_key null
+        plus `searched`, and each field also names the rcsb_get_* `tool` that owns it. Each
+        field is {path, kind, type, list, description, searchable?}: `kind` is "scalar"
+        (select it directly) or "object" (drill in, or select with a sub-selection);
+        `searchable` (about 3% of fields) marks one you can ALSO filter on with
+        rcsb_query_attribute. A field is reported once, under the object reaching it most
+        directly. A capped result sets `truncated`, and `note` says how to narrow it.
     """
     depth = resolve_max_depth(max_depth, query)
     if object_key is None:
@@ -218,7 +199,21 @@ async def rcsb_describe_data_object(
     return result
 
 
-async def rcsb_get_entries(entry_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+def _fields_doc(example: str, object_key: str) -> str:
+    """The shared `fields` wording (descriptions/data/shared.py), filled in for one rcsb_get_* tool.
+
+    Pass `object_key` the same literal the tool's own body queries, so the text always names the
+    object the tool actually hits.
+    """
+    return shared.FIELDS_DOC.format(example=example, object_key=object_key)
+
+
+async def rcsb_get_entries(
+    entry_ids: Annotated[list[str], Field(description=get_entries.ENTRY_IDS_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_entries.FIELDS_EXAMPLE, "entries"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch metadata for one or more PDB entries (title, method, resolution, size,
     dates, and primary citation).
 
@@ -227,17 +222,21 @@ async def rcsb_get_entries(entry_ids: list[str], fields: str | None = None) -> d
     bare numbers; compose them with the entry id to call the matching rcsb_get_* tool:
     polymer_entity_ids/non_polymer_entity_ids "N" -> "<ENTRY>_N" (rcsb_get_polymer_entities /
     rcsb_get_nonpolymer_entities); assembly_ids "N" -> "<ENTRY>-N" (rcsb_get_assemblies).
-
-    Args:
-        entry_ids: 4-character PDB entry codes, e.g. ["4HHB", "1MBN"]; pass a one-element
-            list for a single entry. Unknown IDs are returned under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "struct.title"); discover/verify paths with rcsb_describe_data_object("entries").
     """
     return await _query_batch("entries", entry_ids, fields)
 
 
-async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_polymer_entities(
+    entity_ids: Annotated[list[str], Field(description=get_polymer_entities.ENTITY_IDS_DOC)],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_polymer_entities.FIELDS_EXAMPLE, "polymer_entities"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch polymer entities (protein/nucleic-acid molecules) — description, length,
     weight, and source organism.
 
@@ -245,213 +244,207 @@ async def rcsb_get_polymer_entities(entity_ids: list[str], fields: str | None = 
 
     Polymer-based (sequence) annotations can be fetched adding rcsb_polymer_entity_annotation.* fields,
     and positional features adding rcsb_polymer_entity_feature.*
-
-    Args:
-        entity_ids: entry + entity number, e.g. ["4HHB_1"] — exactly what rcsb_search_request
-            returns with return_type="polymer_entity". Unknown IDs are returned under "not_found".
-            NEVER form one by appending _1 to an entry id. Entity numbers are assigned per
-            deposition and carry no meaning: "<ENTRY>_1" essentially always exists, so the
-            guess returns valid data for whatever molecule happens to be numbered first —
-            a DIFFERENT protein, or DNA/RNA — and nothing in the response marks it wrong.
-            Take the number from a search hit, or from
-            rcsb_entry_container_identifiers.polymer_entity_ids on rcsb_get_entries.
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_polymer_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("polymer_entities").
     """
     return await _query_batch("polymer_entities", entity_ids, fields)
 
 
-async def rcsb_get_nonpolymer_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_nonpolymer_entities(
+    entity_ids: Annotated[list[str], Field(description=get_nonpolymer_entities.ENTITY_IDS_DOC)],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_nonpolymer_entities.FIELDS_EXAMPLE, "nonpolymer_entities"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch non-polymer (ligand/cofactor) entities, e.g. ["4HHB_3"].
 
     Default fields: description, weight, copy count, and the bound chemical component ID.
     Use rcsb_get_chem_comps for the chemistry of that component.
-
-    Args:
-        entity_ids: entry + non-polymer entity number, e.g. ["4HHB_3"] — exactly what rcsb_search_request
-            returns with return_type="non_polymer_entity". Unknown IDs are returned
-            under "not_found". Do not guess the number: entity numbering is shared with the
-            polymers and they take the low values, so a ligand is rarely "_1" and that guess
-            lands in not_found. Take it from rcsb_entry_container_identifiers
-            .non_polymer_entity_ids on rcsb_get_entries, or from a search hit.
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_nonpolymer_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("nonpolymer_entities").
     """
     return await _query_batch("nonpolymer_entities", entity_ids, fields)
 
 
-async def rcsb_get_branched_entities(entity_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_branched_entities(
+    entity_ids: Annotated[list[str], Field(description=get_branched_entities.ENTITY_IDS_DOC)],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_branched_entities.FIELDS_EXAMPLE, "branched_entities"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch branched (carbohydrate / oligosaccharide) entities, e.g. ["5FMB_2"].
 
     Default fields: description, weight, copy count, branch type, and component count.
-
-    Args:
-        entity_ids: entry + entity number, e.g. ["5FMB_2"]. Unknown IDs are returned
-            under "not_found".
-        fields: Optional GraphQL selection replacing the curated default
-            (e.g. "rcsb_branched_entity.pdbx_description"); discover/verify paths with
-            rcsb_describe_data_object("branched_entities").
     """
     return await _query_batch("branched_entities", entity_ids, fields)
 
 
-async def rcsb_get_polymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_polymer_entity_instances(
+    instance_ids: Annotated[
+        list[str], Field(description=get_polymer_entity_instances.INSTANCE_IDS_DOC)
+    ],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_polymer_entity_instances.FIELDS_EXAMPLE, "polymer_entity_instances"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch polymer entity instances (individual chains), e.g. ["4HHB.A"] (entry.asym_id).
 
-        Instance-based (chain) annotations can be fetched adding rcsb_polymer_instance_annotation.* fields,
-        and positional features rcsb_polymer_instance_feature.*
+    Instance-based (chain) annotations can be fetched adding rcsb_polymer_instance_annotation.* fields,
+    and positional features rcsb_polymer_instance_feature.*
 
-        Default fields: the entry/entity/chain identifiers and modeled-residue count.
-
-        Args:
-            instance_ids: entry.asym_id (chain), e.g. ["4HHB.A"] — exactly what rcsb_search_request
-                returns with return_type="polymer_instance". Unknown IDs are returned
-                under "not_found". Do not guess ".A". It is the LABEL asym_id, not the author
-                chain — the instance an author calls chain A is often lettered differently —
-                and any entry with more than one chain has several instances, so a guessed
-                ".A" silently returns a chain that is not the one that matched. Take it from
-                a polymer_instance search hit, or from rcsb_get_entries with fields=
-                "polymer_entities{rcsb_polymer_entity_container_identifiers{asym_ids}}" —
-                the entry's own container identifiers stop at entity and assembly ids, so
-                chains need that traversal.
-            fields: Optional GraphQL selection replacing the curated default
-                (e.g. "rcsb_polymer_instance_info.modeled_residue_count"); discover/verify paths
-                with rcsb_describe_data_object("polymer_entity_instances").
-        """
+    Default fields: the entry/entity/chain identifiers and modeled-residue count.
+    """
     return await _query_batch("polymer_entity_instances", instance_ids, fields)
 
 
-async def rcsb_get_nonpolymer_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_nonpolymer_entity_instances(
+    instance_ids: Annotated[
+        list[str], Field(description=get_nonpolymer_entity_instances.INSTANCE_IDS_DOC)
+    ],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_nonpolymer_entity_instances.FIELDS_EXAMPLE, "nonpolymer_entity_instances"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch non-polymer entity instances (individual bound ligands), e.g. ["4HHB.E"].
 
     Default fields: the entry/entity/chain identifiers, bound component id, and author seq id.
-
-    Args:
-        instance_ids: entry.asym_id, e.g. ["4HHB.E"]. Unknown IDs are returned under
-            "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_nonpolymer_entity_instance_container_identifiers.comp_id"); discover/verify paths
-            with rcsb_describe_data_object("nonpolymer_entity_instances").
     """
     return await _query_batch("nonpolymer_entity_instances", instance_ids, fields)
 
 
-async def rcsb_get_branched_entity_instances(instance_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_branched_entity_instances(
+    instance_ids: Annotated[
+        list[str], Field(description=get_branched_entity_instances.INSTANCE_IDS_DOC)
+    ],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_branched_entity_instances.FIELDS_EXAMPLE, "branched_entity_instances"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch branched entity instances (individual glycan chains), e.g. ["5FMB.C"].
 
     Default fields: the entry/entity/chain identifiers.
-
-    Args:
-        instance_ids: entry.asym_id (glycan chain), e.g. ["5FMB.C"]. Unknown IDs are
-            returned under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_branched_entity_instance_container_identifiers.asym_id"); discover/verify paths
-            with rcsb_describe_data_object("branched_entity_instances").
     """
     return await _query_batch("branched_entity_instances", instance_ids, fields)
 
 
-async def rcsb_get_assemblies(assembly_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_assemblies(
+    assembly_ids: Annotated[list[str], Field(description=get_assemblies.ASSEMBLY_IDS_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_assemblies.FIELDS_EXAMPLE, "assemblies"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch biological assemblies, e.g. ["4HHB-1"] (entry-assembly).
 
     Default fields: composition counts and oligomeric state.
 
     Assembly-based (complex) annotations can be fetched adding rcsb_assembly_annotation.* fields,
     and positional features rcsb_assembly_feature.*
-
-    Args:
-        assembly_ids: entry-assembly, e.g. ["4HHB-1"] — exactly what rcsb_search_request
-            returns with return_type="assembly". Unknown IDs are returned under
-            "not_found". Do not guess "-1". Assembly 1 essentially always exists, so the
-            guess succeeds silently, but an entry's assemblies differ in composition and the
-            first is not necessarily the one carrying what you searched for. Take it from an
-            assembly search hit, or from
-            rcsb_entry_container_identifiers.assembly_ids on rcsb_get_entries.
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_assembly_info.polymer_entity_instance_count"); discover/verify paths with
-            rcsb_describe_data_object("assemblies").
     """
     return await _query_batch("assemblies", assembly_ids, fields)
 
 
-async def rcsb_get_interfaces(interface_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_interfaces(
+    interface_ids: Annotated[list[str], Field(description=get_interfaces.INTERFACE_IDS_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_interfaces.FIELDS_EXAMPLE, "interfaces"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch assembly interfaces, e.g. ["1BMV-1.1"] (entry-assembly.interface).
 
     Default fields: buried area, character, composition, residue count.
-
-    Args:
-        interface_ids: entry-assembly.interface, e.g. ["1BMV-1.1"]. Unknown IDs are
-            returned under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_interface_info.interface_area"); discover/verify paths with
-            rcsb_describe_data_object("interfaces").
     """
     return await _query_batch("interfaces", interface_ids, fields)
 
 
-async def rcsb_get_chem_comps(comp_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_chem_comps(
+    comp_ids: Annotated[list[str], Field(description=get_chem_comps.COMP_IDS_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_chem_comps.FIELDS_EXAMPLE, "chem_comps"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch chemical components / ligands by their short codes, e.g. ["HEM", "ATP"].
 
     Default fields: name, formula, weight, type, SMILES, InChIKey.
-
-    Args:
-        comp_ids: chemical-component short codes, e.g. ["HEM", "ATP"]. Unknown IDs are
-            returned under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "chem_comp.name"); discover/verify paths with
-            rcsb_describe_data_object("chem_comps").
     """
     return await _query_batch("chem_comps", comp_ids, fields)
 
 
-async def rcsb_get_entry_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_entry_groups(
+    group_ids: Annotated[list[str], Field(description=get_entry_groups.GROUP_IDS_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_entry_groups.FIELDS_EXAMPLE, "entry_groups"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch entry groups (clusters of related entries) by group ID.
 
     Default fields: group name, description, member count, and member ids.
-
-    Args:
-        group_ids: entry-group ids, e.g. ["G_1002266"]. Unknown IDs are returned under
-            "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("entry_groups").
     """
     return await _query_batch("entry_groups", group_ids, fields)
 
 
-async def rcsb_get_polymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_polymer_entity_groups(
+    group_ids: Annotated[list[str], Field(description=get_polymer_entity_groups.GROUP_IDS_DOC)],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_polymer_entity_groups.FIELDS_EXAMPLE, "polymer_entity_groups"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch polymer entity groups (e.g. sequence clusters), e.g. ["85_70"].
 
     Default fields: group name, description, member count, and member ids.
-
-    Args:
-        group_ids: sequence-cluster group ids, e.g. ["85_70"]. Unknown IDs are returned
-            under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("polymer_entity_groups").
     """
     return await _query_batch("polymer_entity_groups", group_ids, fields)
 
 
-async def rcsb_get_nonpolymer_entity_groups(group_ids: list[str], fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_nonpolymer_entity_groups(
+    group_ids: Annotated[list[str], Field(description=get_nonpolymer_entity_groups.GROUP_IDS_DOC)],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_nonpolymer_entity_groups.FIELDS_EXAMPLE, "nonpolymer_entity_groups"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch non-polymer entity groups (clusters of related ligands) by group ID.
 
     Default fields: group name, description, member count, and member ids.
-
-    Args:
-        group_ids: non-polymer entity group ids, e.g. ["ATP"]. Unknown IDs are returned
-            under "not_found".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_group_info.group_name"); discover/verify paths with
-            rcsb_describe_data_object("nonpolymer_entity_groups").
     """
     return await _query_batch("nonpolymer_entity_groups", group_ids, fields)
 
 
-async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_uniprot(
+    uniprot_id: Annotated[str, Field(description=get_uniprot.UNIPROT_ID_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_uniprot.FIELDS_EXAMPLE, "uniprot"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch the UniProt record RCSB maps to an accession, e.g. "P69905".
 
     Default fields give a functional snapshot: accession(s), entry name, protein and gene
@@ -464,40 +457,39 @@ async def rcsb_get_uniprot(uniprot_id: str, fields: str | None = None) -> dict[s
     `rcsb_uniprot_annotation` (GO terms, InterPro, disease associations),
     `rcsb_uniprot_feature` (domains, sites, binding sites, sequence variants), and
     `rcsb_uniprot_external_reference`.
-
-    Args:
-        uniprot_id: a UniProt accession, e.g. "P69905".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_uniprot_protein.name"); discover/verify paths with
-            rcsb_describe_data_object("uniprot").
     """
     return await _query_single("uniprot", uniprot_id, fields)
 
 
-async def rcsb_get_pubmed(pubmed_id: int, fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_pubmed(
+    pubmed_id: Annotated[int, Field(description=get_pubmed.PUBMED_ID_DOC)],
+    fields: Annotated[
+        str | None, Field(description=_fields_doc(get_pubmed.FIELDS_EXAMPLE, "pubmed"))
+    ] = None,
+) -> dict[str, Any]:
     """Fetch the PubMed record for a citation by its integer ID, e.g. 6726807.
 
     Default fields: PubMed Central ID, DOI, abstract text.
-
-    Args:
-        pubmed_id: integer PubMed ID, e.g. 6726807.
-        fields: Optional GraphQL selection replacing the curated default
-            (e.g. rcsb_pubmed_doi); discover/verify paths with
-            rcsb_describe_data_object("pubmed").
     """
     return await _query_single("pubmed", pubmed_id, fields)
 
 
-async def rcsb_get_group_provenance(group_provenance_id: str, fields: str | None = None) -> dict[str, Any]:
+async def rcsb_get_group_provenance(
+    group_provenance_id: Annotated[
+        str, Field(description=get_group_provenance.GROUP_PROVENANCE_ID_DOC)
+    ],
+    fields: Annotated[
+        str | None,
+        Field(
+            description=_fields_doc(
+                get_group_provenance.FIELDS_EXAMPLE, "group_provenance"
+            )
+        ),
+    ] = None,
+) -> dict[str, Any]:
     """Fetch provenance/method metadata for a grouping, e.g. "provenance_sequence_identity".
 
     Default fields: the aggregation method/type and provenance id.
-
-    Args:
-        group_provenance_id: a provenance token, e.g. "provenance_sequence_identity".
-        fields: Optional GraphQL selection replacing the curated default (e.g.
-            "rcsb_group_aggregation_method.type"); discover/verify paths with
-            rcsb_describe_data_object("group_provenance").
     """
     return await _query_single("group_provenance", group_provenance_id, fields)
 

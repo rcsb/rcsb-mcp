@@ -227,4 +227,34 @@
     </expect>
   </probe>
 
+  <!--
+    ARGUMENT-DOCS-IN-SCHEMA CANARIES (added 2026-10-07).
+    Every tool's argument documentation moved from an `Args:` section of its description into
+    its input schema (see src/rcsb_mcp/descriptions/). The existing probes all target search
+    tools, so these cover the tools that change touched hardest: rcsb_seqcoord_annotations,
+    whose description is now a single sentence, the seqcoord alignments tool, and the two
+    describe tools, whose usage prose was condensed. Expectations are strict on purpose —
+    accepting "discover fields first" as an alternative would hide exactly the misrouting
+    these exist to catch.
+  -->
+  <probe id="seqcoord-annotations-entity" probes="one-sentence description: per-sequence annotations">
+    <prompt>Which annotations (domains, binding sites, secondary structure) map onto the sequence of PDB entity 4HHB_1?</prompt>
+    <expect tool="rcsb_seqcoord_annotations"/>
+  </probe>
+
+  <probe id="seqcoord-alignment-uniprot-to-entity" probes="residue mapping between reference systems">
+    <prompt>Map the residues of UniProt P69905 onto PDB polymer entity 4HHB_1.</prompt>
+    <expect tool="rcsb_seqcoord_alignments"/>
+  </probe>
+
+  <probe id="describe-data-find-field" probes="condensed usage prose: find which tool/field holds a value">
+    <prompt>Which Data API field holds the date a PDB entry was first released, and which tool fetches it?</prompt>
+    <expect tool="rcsb_describe_data_object"/>
+  </probe>
+
+  <probe id="describe-seqcoord-fields" probes="field discovery on the Sequence Coordinates service">
+    <prompt>What fields can I request when fetching annotations from the Sequence Coordinates service?</prompt>
+    <expect tool="rcsb_describe_seqcoord_object"/>
+  </probe>
+
 </probes>

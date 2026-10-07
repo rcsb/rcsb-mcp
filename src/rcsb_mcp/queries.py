@@ -1425,8 +1425,6 @@ def build_data_query(
 
 # Reference systems a query/target sequence can be expressed in.
 SEQUENCE_REFERENCES = {"NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"}
-# How a group of related sequences is defined.
-GROUP_REFERENCES = {"MATCHING_UNIPROT_ACCESSION", "SEQUENCE_IDENTITY"}
 # Annotation provenance/scope.
 ANNOTATION_REFERENCES = {"PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"}
 
@@ -1537,63 +1535,4 @@ def build_sc_annotations_query(
             "range": _clean_range(seq_range),
             "filters": filters,
         },
-    }
-
-
-def build_sc_group_alignments_query(
-    group: str,
-    group_id: str,
-    filter_terms: list[str] | None = None,
-    fields: str | None = None,
-) -> dict[str, Any]:
-    """Alignments among the members of a sequence group.
-
-    Example: group="MATCHING_UNIPROT_ACCESSION", group_id="P69905".
-    """
-    _require_enum(group, GROUP_REFERENCES, "group")
-    gid = str(group_id).strip()
-    if not gid:
-        raise ValueError("group_id must be a non-empty string")
-    selection = _normalize_fields(fields) or SC_ALIGNMENTS_FIELDS
-    query = (
-        "query GA($group: GroupReference!, $groupId: String!, $filter: [String!]) { "
-        f"group_alignments(group: $group, groupId: $groupId, filter: $filter) {{ {selection} }} "
-        "}"
-    )
-    return {
-        "query": query,
-        "variables": {"group": group, "groupId": gid, "filter": filter_terms},
-    }
-
-
-def build_sc_group_annotations_query(
-    group: str,
-    group_id: str,
-    sources: list[str],
-    summary: bool = False,
-    filters: list[dict[str, Any]] | None = None,
-    fields: str | None = None,
-) -> dict[str, Any]:
-    """Annotations across a sequence group (or a positional summary if summary=True).
-
-    Example: group="MATCHING_UNIPROT_ACCESSION", group_id="P69905",
-             sources=["UNIPROT"].
-    """
-    _require_enum(group, GROUP_REFERENCES, "group")
-    srcs = _check_sources(sources)
-    gid = str(group_id).strip()
-    if not gid:
-        raise ValueError("group_id must be a non-empty string")
-    root_field = "group_annotations_summary" if summary else "group_annotations"
-    selection = _normalize_fields(fields) or SC_ANNOTATIONS_FIELDS
-    query = (
-        "query GAn($group: GroupReference!, $groupId: String!, "
-        "$sources: [AnnotationReference]!, $filters: [AnnotationFilterInput!]) { "
-        f"{root_field}(group: $group, groupId: $groupId, sources: $sources, "
-        f"filters: $filters) {{ {selection} }} "
-        "}"
-    )
-    return {
-        "query": query,
-        "variables": {"group": group, "groupId": gid, "sources": srcs, "filters": filters},
     }

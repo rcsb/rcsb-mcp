@@ -617,19 +617,6 @@ def test_seqcoord_annotations():
     print("ok: seqcoord annotations")
 
 
-def test_seqcoord_groups():
-    a = queries.build_sc_group_alignments_query("MATCHING_UNIPROT_ACCESSION", "P69905")
-    assert "group_alignments(group: $group, groupId: $groupId, filter: $filter)" in a["query"]
-    # the summary flag swaps the root field name.
-    g = queries.build_sc_group_annotations_query("SEQUENCE_IDENTITY", "X", ["UNIPROT"])
-    assert "group_annotations(" in g["query"] and "summary" not in g["query"]
-    s = queries.build_sc_group_annotations_query(
-        "SEQUENCE_IDENTITY", "X", ["UNIPROT"], summary=True
-    )
-    assert "group_annotations_summary(" in s["query"]
-    print("ok: seqcoord groups")
-
-
 def test_seqcoord_validation():
     for bad in (
         lambda: queries.build_sc_alignments_query("P1", "BOGUS", "UNIPROT"),
@@ -637,8 +624,6 @@ def test_seqcoord_validation():
         lambda: queries.build_sc_annotations_query("X", "UNIPROT", []),  # no sources
         lambda: queries.build_sc_annotations_query("X", "UNIPROT", ["BOGUS"]),  # bad source
         lambda: queries.build_sc_alignments_query("P1", "UNIPROT", "UNIPROT", seq_range=["a"]),
-        lambda: queries.build_sc_group_alignments_query("BOGUS", "X"),
-        lambda: queries.build_sc_group_annotations_query("SEQUENCE_IDENTITY", "X", ["NOPE"]),
     ):
         try:
             bad()
@@ -714,6 +699,5 @@ if __name__ == "__main__":
     test_graphql_registry()
     test_seqcoord_alignments()
     test_seqcoord_annotations()
-    test_seqcoord_groups()
     test_seqcoord_validation()
     print("\nAll query-builder tests passed.")

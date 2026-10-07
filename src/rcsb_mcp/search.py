@@ -21,6 +21,19 @@ from rcsb_mcp.attribute_types import SearchAttribute, TextOperator
 from rcsb_mcp.client import _post_search, _search_editor
 from rcsb_mcp.tooling import READ_ONLY
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
+from rcsb_mcp.descriptions.search import (
+    list_pdb_search_attributes,
+    query_attribute,
+    query_chemical,
+    query_composer,
+    query_fulltext,
+    query_seqmotif,
+    query_sequence,
+    query_strucmotif,
+    query_structure,
+    search_request,
+    shared,
+)
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
 
 
@@ -67,31 +80,21 @@ Tolerance = Annotated[int, Field(ge=0, le=3)]
 # into the JSON schema as `description`, so putting it there billed every caller 134
 # tokens on every call to explain an internal decision. The class docstring stays short.
 class AttributeFilter(BaseModel):
-    """One structured attribute condition — a single `text`/`text_chem` terminal.
-
-    A list of these expresses a flat multi-attribute query (combined with one
-    AND/OR). Find a path/operators with rcsb_list_pdb_search_attributes.
-    """
+    # This class owns the validation contract only. Its model-facing text -- this docstring
+    # (the schema's $defs description) and every field description -- lives in
+    # descriptions/search/query_attribute.py, with the rest of what the model reads about the tool.
+    __doc__ = query_attribute.FILTER_DOC
 
     model_config = {"extra": "forbid"}
 
-    attribute: str = Field(
-        description="Dotted RCSB attribute path, e.g. 'rcsb_entry_info.resolution_combined'."
-    )
-    operator: TextOperator = Field(
-        description="Comparison operator, type-specific (see rcsb_list_pdb_search_attributes): strings use "
-        "exact_match/in or contains_words/contains_phrase; numbers/dates use greater/"
-        "greater_or_equal/less/less_or_equal/equals/range; any type supports exists."
-    )
+    attribute: str = Field(description=query_attribute.FILTER_ATTRIBUTE_DOC)
+    operator: TextOperator = Field(description=query_attribute.FILTER_OPERATOR_DOC)
     value: str | int | float | list | dict | None = Field(
-        default=None,
-        description="Comparison value; omit for 'exists'. A list for 'in'; a "
-        "{from,to,include_lower,include_upper} object for 'range'. A numeric string is "
-        "coerced to a number for numeric operators; dates take an ISO-8601 string.",
+        default=None, description=query_attribute.FILTER_VALUE_DOC
     )
-    negation: bool = Field(default=False, description="Invert the match (NOT).")
+    negation: bool = Field(default=False, description=query_attribute.FILTER_NEGATION_DOC)
     case_sensitive: bool = Field(
-        default=False, description="Match the value case-sensitively (default insensitive)."
+        default=False, description=query_attribute.FILTER_CASE_SENSITIVE_DOC
     )
 
 
@@ -388,7 +391,9 @@ def _compose(nodes: list[dict[str, Any]], logical_operator: str) -> dict[str, An
     return queries.group_node(nodes, logical_operator)
 
 
-async def rcsb_query_fulltext(query: str) -> dict[str, Any]:
+async def rcsb_query_fulltext(
+    query: Annotated[str, Field(description=query_fulltext.QUERY_DOC)],
+) -> dict[str, Any]:
     """Build a FREE-TEXT keyword query (e.g. "CRISPR Cas9", "hemoglobin").
 
     Best for broad or exploratory lookups. When a request resolves to a clear attribute
@@ -404,12 +409,6 @@ async def rcsb_query_fulltext(query: str) -> dict[str, Any]:
     many entries, a PubMed abstract (pubmed.rcsb_pubmed_abstract_text). Broader, synonym,
     or differently-worded terms for the same concept may produce different results.
 
-    Args:
-        query: Terms matched case-insensitively against all text annotations. Quote a
-            phrase to require adjacency (e.g. '"DNA polymerase"'); separate words narrow
-            the results; a trailing '*' is a prefix wildcard. AND/OR/NOT are NOT boolean
-            operators here — combine conditions with rcsb_query_composer instead.
-
     Returns:
         A query document — pass it to rcsb_search_request to run it, or to
         rcsb_query_composer to combine it with other queries first.
@@ -418,9 +417,13 @@ async def rcsb_query_fulltext(query: str) -> dict[str, Any]:
 
 
 async def rcsb_query_attribute(
-    attributes: list[AttributeFilter],
-    logical_operator: LogicalOperator = "and",
-    chemical_attributes: bool = False,
+    attributes: Annotated[list[AttributeFilter], Field(description=query_attribute.ATTRIBUTES_DOC)],
+    logical_operator: Annotated[
+        LogicalOperator, Field(description=query_attribute.LOGICAL_OPERATOR_DOC)
+    ] = "and",
+    chemical_attributes: Annotated[
+        bool, Field(description=query_attribute.CHEMICAL_ATTRIBUTES_DOC)
+    ] = False,
 ) -> dict[str, Any]:
     """Build a STRUCTURED query from attribute conditions — the precise alternative to
     keyword search, and preferred whenever a request resolves to clear attribute(s) and
@@ -445,40 +448,6 @@ async def rcsb_query_attribute(
             {"attribute": "rcsb_entry_info.resolution_combined", "operator": "less", "value": 2.0},
         ]
 
-    Args:
-        attributes: One or more conditions, each {attribute, operator, value, negation?,
-            case_sensitive?}. Operators are TYPE-SPECIFIC (strings use exact_match/in or
-            contains_words/contains_phrase; numbers and dates use greater/greater_or_equal/
-            less/less_or_equal/equals/range; any type supports exists). A numeric value may
-            be a number or a numeric string; a range value is a {from, to, include_lower,
-            include_upper} object whose bounds are EXCLUSIVE unless the include flags say
-            otherwise. Omit `value` for `exists`.
-            Some attributes accept only a FIXED SET of values — exptl.method is
-            "X-RAY DIFFRACTION" / "ELECTRON MICROSCOPY" / ..., not "cryo-EM". Don't guess
-            those either: rcsb_list_pdb_search_attributes returns them as `enum`. A value
-            outside the set is rejected here, so you can correct it, rather than matching
-            nothing and looking like an empty result.
-            Attributes that carry a `nested_group` are stored in nested documents, and an
-            object holds MANY: an entity has many binding affinities, many annotations. For
-            these the CALL BOUNDARY chooses the semantics. Conditions built in one
-            rcsb_query_attribute call, with nothing else in it, are matched against the SAME
-            record; conditions in separate calls are matched independently, each against any
-            record. Pick the one you mean:
-              same record  — "a Kd below 1 nM": type=Kd and value<1 describe ONE
-                measurement, so build them together and alone (303 entries; splitting them
-                across calls gives 481, and adding an X-ray filter to their call gives 456)
-              independently — "has InterPro IPR001128 AND some GO annotation": those are
-                necessarily two different annotation records, so build them in separate
-                calls (1,549 entities; together they describe one impossible record and
-                return 0)
-        logical_operator: Combine these conditions with "and" (default) or "or".
-            For several values of a SINGLE attribute use the attribute operator `in`.
-            For a query needing AND + OR — e.g. (high-resolution OR NMR) AND human —
-            build each group separately and join them with rcsb_query_composer.
-        chemical_attributes: Set True when the paths come from
-            rcsb_list_pdb_search_attributes(schema="chemical") (e.g. "chem_comp.formula_weight").
-            Selects the chemical-component catalog rather than the structure one.
-
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
         Note the per-hit `score` of a pure attribute filter is near-uniform and carries
@@ -491,22 +460,19 @@ async def rcsb_query_attribute(
 
 
 async def rcsb_query_sequence(
-    sequence: str,
-    sequence_type: SequenceType = "protein",
-    identity_cutoff: Annotated[float, Field(ge=0.0, le=1.0)] = 0.3,
-    evalue_cutoff: Annotated[float, Field(ge=0.0)] = 1.0,
+    sequence: Annotated[str, Field(description=query_sequence.SEQUENCE_DOC)],
+    sequence_type: Annotated[SequenceType, Field(description=shared.SEQUENCE_TYPE_DOC)] = "protein",
+    identity_cutoff: Annotated[
+        float, Field(ge=0.0, le=1.0, description=query_sequence.IDENTITY_CUTOFF_DOC)
+    ] = 0.3,
+    evalue_cutoff: Annotated[
+        float, Field(ge=0.0, description=query_sequence.EVALUE_CUTOFF_DOC)
+    ] = 1.0,
 ) -> dict[str, Any]:
     """Build a SEQUENCE-SIMILARITY query (MMseqs2, BLAST-like) from a raw sequence.
 
     Use when you have actual residues to match. For a short motif or pattern use
     rcsb_query_seqmotif; for a named protein use rcsb_query_fulltext or a resolver.
-
-    Args:
-        sequence: One-letter sequence; whitespace is ignored. FASTA headers must be removed.
-        sequence_type: "protein" (default), "dna", or "rna".
-        identity_cutoff: Minimum fractional identity 0-1 (default 0.3). Raise toward 0.9
-            for close homologs, lower for remote ones.
-        evalue_cutoff: Maximum E-value (default 1.0); lower is stricter.
 
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
@@ -515,31 +481,22 @@ async def rcsb_query_sequence(
 
 
 async def rcsb_query_chemical(
-    value: str,
-    query_type: ChemQueryType = "descriptor",
-    descriptor_type: DescriptorType = "SMILES",
-    match_type: ChemMatchType = "graph-relaxed",
-    match_subset: bool = False,
+    value: Annotated[str, Field(description=query_chemical.VALUE_DOC)],
+    query_type: Annotated[
+        ChemQueryType, Field(description=query_chemical.QUERY_TYPE_DOC)
+    ] = "descriptor",
+    descriptor_type: Annotated[
+        DescriptorType, Field(description=query_chemical.DESCRIPTOR_TYPE_DOC)
+    ] = "SMILES",
+    match_type: Annotated[
+        ChemMatchType, Field(description=query_chemical.MATCH_TYPE_DOC)
+    ] = "graph-relaxed",
+    match_subset: Annotated[bool, Field(description=query_chemical.MATCH_SUBSET_DOC)] = False,
 ) -> dict[str, Any]:
     """Build a CHEMICAL query from a SMILES/InChI descriptor or a molecular formula.
 
     Use for ligand and small-molecule questions where you have the chemistry itself. To
     find a ligand by NAME, use rcsb_query_fulltext or filter on a chemical attribute.
-
-    Args:
-        value: The descriptor (SMILES like "CC(=O)Oc1ccccc1C(=O)O", or an InChI string) or
-            the formula (e.g. "C9H8O4"). Case is preserved — element symbols and SMILES
-            are case-sensitive.
-        query_type: "descriptor" (default) or "formula".
-        descriptor_type: "SMILES" (default) or "InChI"; descriptor queries only.
-        match_type: How strictly to match the graph (descriptor queries only). Whole-
-            molecule: graph-exact / graph-strict / graph-relaxed (default) /
-            graph-relaxed-stereo, or fingerprint-similarity for "chemically similar".
-            Substructure — find larger molecules CONTAINING this fragment — use a
-            sub-struct-graph-* variant (e.g. "sub-struct-graph-relaxed").
-        match_subset: Formula queries only. True matches components that merely contain
-            the given atoms (and possibly others); False (default) requires the formula
-            to match exactly.
 
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
@@ -548,21 +505,15 @@ async def rcsb_query_chemical(
 
 
 async def rcsb_query_structure(
-    entry_id: str,
-    assembly_id: str | None = None,
-    asym_id: str | None = None,
+    entry_id: Annotated[str, Field(description=query_structure.ENTRY_ID_DOC)],
+    assembly_id: Annotated[str | None, Field(description=query_structure.ASSEMBLY_ID_DOC)] = None,
+    asym_id: Annotated[str | None, Field(description=query_structure.ASYM_ID_DOC)] = None,
 ) -> dict[str, Any]:
     """Build a 3D SHAPE-SIMILARITY query against an existing PDB structure.
 
     Whole-shape similarity — use it for "structures shaped like X" / "same fold as X".
     For a geometric arrangement of specific residues use rcsb_query_strucmotif; for
     sequence similarity use rcsb_query_sequence.
-
-    Args:
-        entry_id: Reference PDB entry, e.g. "4HHB".
-        assembly_id: Reference a whole assembly, e.g. "1". Defaults to assembly "1" when
-            neither this nor asym_id is given; mutually exclusive with asym_id.
-        asym_id: Reference a single chain instead, e.g. "A" (the mmCIF label id).
 
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
@@ -571,23 +522,17 @@ async def rcsb_query_structure(
 
 
 async def rcsb_query_seqmotif(
-    pattern: str,
-    pattern_type: SeqmotifPatternType = "prosite",
-    sequence_type: SequenceType = "protein",
+    pattern: Annotated[str, Field(description=query_seqmotif.PATTERN_DOC)],
+    pattern_type: Annotated[
+        SeqmotifPatternType, Field(description=query_seqmotif.PATTERN_TYPE_DOC)
+    ] = "prosite",
+    sequence_type: Annotated[SequenceType, Field(description=shared.SEQUENCE_TYPE_DOC)] = "protein",
 ) -> dict[str, Any]:
     """Build a SHORT SEQUENCE-MOTIF query — a pattern, not a full sequence.
 
     Use for active-site signatures, N-glycosylation sequons, zinc fingers, and similar
     short patterns. For a whole sequence use rcsb_query_sequence; for a 3D arrangement of
     residues use rcsb_query_strucmotif.
-
-    Args:
-        pattern: The motif, written in the grammar named by pattern_type.
-        pattern_type: "prosite" (default) for PROSITE syntax like
-            "C-x(2,4)-C-x(3)-[LIVMFYWC]"; "regex" for a regular expression like
-            "C..H[LIVF]"; "simple" for simple wildcards where X matches any residue
-            (e.g. "NXS").
-        sequence_type: "protein" (default), "dna", or "rna".
 
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
@@ -596,43 +541,37 @@ async def rcsb_query_seqmotif(
 
 
 async def rcsb_query_strucmotif(
-    entry_id: str,
-    residue_ids: list[dict[str, Any]],
-    backbone_distance_tolerance: Tolerance = 1,
-    side_chain_distance_tolerance: Tolerance = 1,
-    angle_tolerance: Tolerance = 1,
-    rmsd_cutoff: Annotated[float, Field(ge=0.0)] = 2.0,
-    atom_pairing_scheme: AtomPairingScheme = "SIDE_CHAIN",
-    motif_pruning_strategy: MotifPruningStrategy = "KRUSKAL",
-    exchanges: list[dict[str, Any]] | None = None,
+    entry_id: Annotated[str, Field(description=query_strucmotif.ENTRY_ID_DOC)],
+    residue_ids: Annotated[
+        list[dict[str, Any]], Field(description=query_strucmotif.RESIDUE_IDS_DOC)
+    ],
+    backbone_distance_tolerance: Annotated[
+        Tolerance, Field(description=query_strucmotif.BACKBONE_DISTANCE_TOLERANCE_DOC)
+    ] = 1,
+    side_chain_distance_tolerance: Annotated[
+        Tolerance, Field(description=query_strucmotif.SIDE_CHAIN_DISTANCE_TOLERANCE_DOC)
+    ] = 1,
+    angle_tolerance: Annotated[
+        Tolerance, Field(description=query_strucmotif.ANGLE_TOLERANCE_DOC)
+    ] = 1,
+    rmsd_cutoff: Annotated[
+        float, Field(ge=0.0, description=query_strucmotif.RMSD_CUTOFF_DOC)
+    ] = 2.0,
+    atom_pairing_scheme: Annotated[
+        AtomPairingScheme, Field(description=query_strucmotif.ATOM_PAIRING_SCHEME_DOC)
+    ] = "SIDE_CHAIN",
+    motif_pruning_strategy: Annotated[
+        MotifPruningStrategy, Field(description=query_strucmotif.MOTIF_PRUNING_STRATEGY_DOC)
+    ] = "KRUSKAL",
+    exchanges: Annotated[
+        list[dict[str, Any]] | None, Field(description=query_strucmotif.EXCHANGES_DOC)
+    ] = None,
 ) -> dict[str, Any]:
     """Build a 3D STRUCTURAL-MOTIF query — a geometric arrangement of specific residues.
 
     Geometry-based, and different from rcsb_query_structure (whole-shape similarity) and
     rcsb_query_seqmotif (sequence pattern). Use it for catalytic triads, binding sites,
     metal-coordination geometries, and similar.
-
-    Args:
-        entry_id: Reference PDB entry defining the motif, e.g. "2MNR".
-        residue_ids: 2-10 residues defining the motif, each
-            {"label_asym_id": <chain>, "label_seq_id": <int>, "struct_oper_id"?: <str>}.
-            IMPORTANT: these are the mmCIF *label* identifiers (the internal numbering),
-            which often DIFFER from the author residue numbers seen in papers and on the
-            PDB site. If you only have author numbering, resolve it first (e.g. via
-            rcsb_get_polymer_entity_instances) — author numbers give wrong/no hits.
-            Example (enolase catalytic residues):
-            [{"label_asym_id":"A","label_seq_id":162},
-             {"label_asym_id":"A","label_seq_id":193},
-             {"label_asym_id":"A","label_seq_id":219}]
-        backbone_distance_tolerance: Backbone distance tolerance in A, integer 0-3 (default 1).
-        side_chain_distance_tolerance: Side-chain distance tolerance in A, integer 0-3 (default 1).
-        angle_tolerance: Angle tolerance in multiples of 20 degrees, integer 0-3 (default 1).
-        rmsd_cutoff: Maximum RMSD of accepted hits (default 2.0).
-        atom_pairing_scheme: ALL, BACKBONE, SIDE_CHAIN (default), or PSEUDO_ATOMS.
-        motif_pruning_strategy: NONE or KRUSKAL (default).
-        exchanges: Optional per-position residue alternatives, each
-            {"residue_id": {...}, "allowed": [<3-letter codes>]}, to match variants of
-            the motif.
 
     Returns:
         A query document — pass it to rcsb_search_request, or to rcsb_query_composer.
@@ -647,8 +586,12 @@ async def rcsb_query_strucmotif(
 
 
 async def rcsb_query_composer(
-    queries: Annotated[list[QueryDocument], Field(min_length=2)],
-    logical_operator: LogicalOperator = "and",
+    queries: Annotated[
+        list[QueryDocument], Field(min_length=2, description=query_composer.QUERIES_DOC)
+    ],
+    logical_operator: Annotated[
+        LogicalOperator, Field(description=query_composer.LOGICAL_OPERATOR_DOC)
+    ] = "and",
 ) -> dict[str, Any]:
     """Combine query documents with one AND/OR — call repeatedly to nest.
 
@@ -667,11 +610,6 @@ async def rcsb_query_composer(
     share this call's operator are folded in rather than nested, so repeated composition
     stays flat and readable.
 
-    Args:
-        queries: Two or more query documents from any rcsb_query_* tool (including this
-            one). Pass each through exactly as returned.
-        logical_operator: "and" (default) or "or".
-
     Returns:
         A query document — pass it to rcsb_search_request, or back into this tool.
         A query mixing two services has no single meaningful relevance ranking, so hits
@@ -682,17 +620,19 @@ async def rcsb_query_composer(
 
 
 async def rcsb_search_request(
-    query: QueryDocument,
-    return_type: ReturnType | None = None,
-    limit: Limit = 10,
-    offset: Offset = 0,
-    all_hits: bool = False,
-    include_computed_models: bool = False,
-    facets: list[dict[str, Any]] | None = None,
-    sort_by: str | None = None,
-    sort_direction: SortDirection = "asc",
-    group_by: GroupBy | None = None,
-    group_by_ranking: GroupByRanking | None = None,
+    query: Annotated[QueryDocument, Field(description=search_request.QUERY_DOC)],
+    return_type: Annotated[ReturnType | None, Field(description=search_request.RETURN_TYPE_DOC)] = None,
+    limit: Annotated[Limit, Field(description=search_request.LIMIT_DOC)] = 10,
+    offset: Annotated[Offset, Field(description=search_request.OFFSET_DOC)] = 0,
+    all_hits: Annotated[bool, Field(description=search_request.ALL_HITS_DOC)] = False,
+    include_computed_models: Annotated[bool, Field(description=search_request.INCLUDE_COMPUTED_DOC)] = False,
+    facets: Annotated[list[dict[str, Any]] | None, Field(description=search_request.FACETS_DOC)] = None,
+    sort_by: Annotated[str | None, Field(description=search_request.SORT_BY_DOC)] = None,
+    sort_direction: Annotated[SortDirection, Field(description=search_request.SORT_DIRECTION_DOC)] = "asc",
+    group_by: Annotated[GroupBy | None, Field(description=search_request.GROUP_BY_DOC)] = None,
+    group_by_ranking: Annotated[
+        GroupByRanking | None, Field(description=search_request.GROUP_BY_RANKING_DOC)
+    ] = None,
 ) -> dict[str, Any]:
     """RUN a query built by the rcsb_query_* tools and return matching PDB identifiers.
 
@@ -705,72 +645,6 @@ async def rcsb_search_request(
     Results are IDENTIFIERS only. Batch them into rcsb_get_entries, or the rcsb_get_*
     tool matching `return_type`, to get metadata.
 
-    Args:
-        query: The query document returned by an rcsb_query_* tool, passed through
-            unchanged.
-        return_type: What kind of identifier to return:
-                Type               Description          Example    Data API tool
-                entry              whole structure      "4HHB"     -> rcsb_get_entries
-                polymer_entity     one molecule         "4HHB_1"   -> rcsb_get_polymer_entities
-                non_polymer_entity ligand entity        "4HHB_3"   -> rcsb_get_nonpolymer_entities
-                polymer_instance   one chain            "4HHB.A"   -> rcsb_get_polymer_entity_instances
-                assembly           biological assembly  "4HHB-1"   -> rcsb_get_assemblies
-                mol_definition     chemical component   "HEM"      -> rcsb_get_chem_comps
-            If conditions granularity is finer than entry (e.g. entity, instance, ...),
-            an entry matches when EACH condition holds on SOME subunit — not necessarily
-            the same one.
-            Omit it to use the default implied by the query:
-                Query                 Return type
-                rcsb_query_fulltext   -> entry
-                rcsb_query_attribute  -> entry
-                rcsb_query_sequence   -> polymer_entity
-                rcsb_query_seqmotif   -> polymer_entity
-                rcsb_query_structure  -> assembly (assembly_id in query) / polymer_instance (asym_id in query)
-                rcsb_query_strucmotif -> assembly
-                rcsb_query_chemical   -> mol_definition
-            Setting it CONVERTS the result — e.g. a ligand attribute filter
-            with return_type="entry" gives the structures containing that ligand.
-        limit: Max hits to return, 1-100 (default 10).
-        offset: Hits to skip, for paging; pass the response's next_offset back with the
-            same query to fetch the next page.
-        all_hits: Return the COMPLETE result set in one call, for an explicit "ALL ..."
-            request. Ignores limit, cannot be combined with offset (the Search API rejects
-            pagination here), and is refused above 10000 hits — narrow the query,
-            aggregate with `facets`, or page instead. Ignored when `facets` is set.
-        include_computed_models: Also search computed structure models (AlphaFold and
-            similar), not just experimental structures.
-        facets: Aggregation specs returning a BREAKDOWN instead of hits — use for "how
-            many by X (e.g., experimental method)", "distribution of Y (e.g., EC numbers)",
-            "which Z (e.g., organisms)" queries or to discover what your hits SHARE so
-            you can re-search on it and explore other potential candidates. A terms facet
-            on an attribute returns the values common to the result set, at any hit count.
-            Those counts are within your hits only — a value's archive-wide count is a
-            separate query, and it is what says whether the value is distinctive or generic.
-            Each is {name, aggregation_type, attribute} plus: `interval` for histogram/date_histogram,
-            `ranges` for range/date_range, and an optional nested `facets` list.
-            aggregation_type is one of terms, histogram, date_histogram, range,
-            date_range, cardinality.
-        sort_by: Attribute path to order hits by, replacing the default relevance order
-            (each hit's score is still returned). A pure attribute filter is a boolean
-            match whose hits otherwise come back in near-arbitrary order, so set this for
-            "best resolution first", "newest first", and similar. Only SORTABLE attributes
-            work: those listing exact_match (strings) or equals (numbers/dates) in
-            rcsb_list_pdb_search_attributes; full-text-only attributes (e.g. struct.title)
-            and return_type="mol_definition" are rejected.
-        sort_direction: "asc" (default) or "desc"; applies only when sort_by is set.
-        group_by: Collapse redundant polymer_entity hits into clusters and return one
-            representative each — requires return_type="polymer_entity". Sequence-identity
-            clustering at 30/50/70/90/95 percent ("seqid_30" ... "seqid_95"), or "uniprot"
-            to group by matching UniProt accession.
-        group_by_ranking: Which member represents each cluster: "resolution" (best first),
-            "released_date" (newest first), "entity_residue_count" (longest deposited
-            sequence first — expression tags and fusion partners count toward it),
-            "coverage" (most of the UniProt sequence covered — "uniprot" grouping only,
-            and preferred there, since it distinguishes distinct proteins from redundant
-            entries), or "score". Note "score" is search relevance: it measures neither
-            biological importance nor structure quality, so don't pick a cluster
-            representative by it unless relevance is genuinely what you want ranked.
-
     Returns:
         {total_count, returned, result_type, fetch_with, offset, has_more, next_offset,
         hits:[{id, score}], editor} — `result_type` is the kind of identifier that came
@@ -779,11 +653,8 @@ async def rcsb_search_request(
         With `all_hits` the paging fields are omitted; with `facets` returns
         {total_count, facets, editor} instead of hits.
 
-        A `notes` list appears ONLY when conditions were intersected more loosely than
-        they read — e.g. subunits conditions asked for as entries match when
-        any subunit satisfies a given condition. Read it before describing what the hits have in
-        common; some notes name a return_type that tightens the query, others say plainly
-        that nothing can.
+        A `notes` list appears only when the results need a caveat; read it before
+        describing the hits or treating them as complete.
     """
     node = _node(query)
     _validate_query_attributes(
@@ -839,22 +710,16 @@ class _AttributeListResult(BaseModel):
 
 
 async def rcsb_list_pdb_search_attributes(
-    query: str | None = None, schema: AttributeSchema = "structure"
+    query: Annotated[str | None, Field(description=list_pdb_search_attributes.QUERY_DOC)] = None,
+    schema: Annotated[
+        AttributeSchema, Field(description=list_pdb_search_attributes.SCHEMA_DOC)
+    ] = "structure",
 ) -> dict[str, Any]:
     """Discover the RCSB PDB Search schema: attribute paths, value types, and operators.
 
     Call this FIRST when a request resolves to a clear attribute and value but you don't know
     the exact path; pick the attribute here, build the condition with `rcsb_query_attribute`,
     then execute with `rcsb_search_request`.
-
-    Args:
-        query: Optional case-insensitive keyword to filter the catalog. Matched as a LITERAL
-            SUBSTRING against the attribute path and description, so pass ONE keyword
-            ("resolution", "comp_id"), not a phrase — a multi-word query only matches where
-            those exact words are adjacent in a description. Omit to return everything.
-        schema: Which catalog — "structure" (~683 attrs: entry/entity/assembly/instance) or
-            "chemical" (~61 attrs: chemical-component). Paths from the chemical catalog need
-            chemical_attributes=True on rcsb_query_attribute.
 
     Returns:
         {count, match_mode, attributes, note?}. `attributes` holds {attribute, type, operators,
@@ -863,7 +728,7 @@ async def rcsb_list_pdb_search_attributes(
         operators it supports (exact_match, greater, range, exists, ...), and a human-readable
         description. `enum` appears on the ~15% of attributes that accept only a FIXED SET of
         values (e.g. exptl.method); when it does, use one of those values verbatim — anything
-        else matches nothing. `nested_group` appears on the ~22% stored in NESTED DOCUMENTS —
+        else is rejected by rcsb_query_attribute. `nested_group` appears on the ~22% stored in NESTED DOCUMENTS —
         an entry has many citations, an entity many binding affinities — and its value is the
         container path. For these, grouping selects the semantics: conditions sharing a
         nested_group built in ONE rcsb_query_attribute call with nothing else in it must hold

@@ -21,6 +21,8 @@ src/rcsb_mcp/
   resolvers.py               rcsb_find_* free-text -> ontology-id resolvers (EBI/UniProt backends)
   seqcoord.py                rcsb_seqcoord_* tools + rcsb_describe_seqcoord_object
   report/                    rcsb_render_report: models, render, link packing, routes, store
+  descriptions/              the model-facing ARGUMENT text, one module per tool, mirroring the
+                             source modules (search/, data/, seqcoord/, resolvers/) — see below
   queries.py                 PURE request-body builders (no network) + the DATA_OBJECTS registry
   query_doc.py               the query document passed between builders and rcsb_search_request
   client.py                  endpoint URLs + HTTP (search POST, GraphQL POST)
@@ -69,6 +71,17 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
   docstrings are long: they are load-bearing, and
   [`tests/test_tool_descriptions.py`](tests/test_tool_descriptions.py) pins the phrases a
   trim must not silently delete.
+- **Argument docs go in the input schema, never in an `Args:` section.** Claude Code cuts every
+  tool description at 2,048 characters of whitespace-collapsed text, and `Args:` sections had
+  pushed five descriptions past it — in `rcsb_search_request`, 9 of its 14 guarded phrases never
+  reached the model there. Schema descriptions are not cut. So each argument is
+  `Annotated[..., Field(description=...)]`, its wording in `descriptions/<module>/<name>.py`
+  (tool `rcsb_<name>` in `<module>.py`), with text shared by several tools of a module in that
+  folder's `shared.py`. The docstring keeps what the tool is for, when to use it, and Returns.
+  `tests/test_tool_descriptions.py` checks what is *delivered* (the description up to the cut,
+  plus the schema), not merely what is present: every description fits, no `Args:` section
+  exists, every argument is described, and each `rcsb_get_*` `fields` text names the object its
+  tool queries.
 - **The `rcsb_search_assistant` prompt** (`@mcp.prompt()` in `server.py`, text in
   [`prompts/rcsb_search_assistant.md`](src/rcsb_mcp/prompts/rcsb_search_assistant.md)) carries
   the search requirements and HTML-report format. It is **opt-in** — the user invokes it from
@@ -83,7 +96,8 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
 
 ```bash
 # Unit tests, no network. Run after touching anything under src/.
-hatch test                       # 3.11, the Docker floor — this is the one that gates shipping
+hatch test                       # on the Docker image's Python — run this before shipping
+hatch test --all                 # every Python CI tests: the image's and the requires-python floor
 python -m pytest tests/ -q       # same suite on the dev interpreter
 python tests/test_queries.py     # individual modules still run standalone
 
@@ -101,9 +115,13 @@ python -m rcsb_mcp.server
 npx @modelcontextprotocol/inspector python -m rcsb_mcp.server
 ```
 
-**Test on 3.11 before shipping.** The dev venv is newer than the Docker image; a
-3.12-only construct passes locally and CrashLoopBackOffs the pod. `hatch test` is the
-3.11 run.
+**Test on the image's Python before shipping.** A dev interpreter newer than the Docker
+image lets code that only a newer Python accepts pass locally and CrashLoopBackOff the pod.
+The `hatch-test` matrix in `pyproject.toml` lists the image's Python first and the
+`requires-python` floor second, so plain `hatch test` runs the image's (the comment there
+covers the one exception), and `tests/test_python_support.py` keeps that list in step with
+the Dockerfile. A release cannot skip this: CI runs the suite on the same versions before it
+builds the image.
 
 The package is installed editable, so source edits take effect on the next process start.
 

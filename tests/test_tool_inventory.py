@@ -55,8 +55,6 @@ EXPECTED_TOOLS = {
     # sequence-coordinates (RCSB 1D-Coordinates API)
     "rcsb_seqcoord_alignments",
     "rcsb_seqcoord_annotations",
-    "rcsb_seqcoord_group_alignments",
-    "rcsb_seqcoord_group_annotations",
     "rcsb_describe_seqcoord_object",
     # report
     "rcsb_render_report",
@@ -73,8 +71,8 @@ def test_registered_tools_are_exactly_the_expected_set():
 
 def test_inventory_count_is_stable():
     """A blunt second signal: the count itself, so a swap (drop one, add one) still trips."""
-    assert len(EXPECTED_TOOLS) == 38
-    assert len(asyncio.run(server.mcp.list_tools())) == 38
+    assert len(EXPECTED_TOOLS) == 36
+    assert len(asyncio.run(server.mcp.list_tools())) == 36
 
 
 # --- the markdown docs cite tool names too, and nothing used to check them ----------

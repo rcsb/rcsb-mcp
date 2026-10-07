@@ -21,6 +21,12 @@ from rcsb_mcp.client import (
     SEQCOORD_GRAPHQL_URL,
     _graphiql_editor,
 )
+from rcsb_mcp.descriptions.seqcoord import (
+    describe_seqcoord_object,
+    seqcoord_alignments,
+    seqcoord_annotations,
+    shared,
+)
 from rcsb_mcp.graphql import (
     DATA_FIELDS_RESULT_CAP,
     _flatten_object_fields,
@@ -32,25 +38,26 @@ from rcsb_mcp.tooling import READ_ONLY
 
 
 SequenceRef = Literal["NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"]
-GroupRef = Literal["MATCHING_UNIPROT_ACCESSION", "SEQUENCE_IDENTITY"]
 AnnotationRef = Literal["PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"]
 
 
-# The five Sequence Coordinates root fields, for rcsb_describe_seqcoord_object.
-SEQCOORD_OBJECTS = {
-    "alignments", "annotations",
-    "group_alignments", "group_annotations", "group_annotations_summary",
-}
+# The Sequence Coordinates root fields the rcsb_seqcoord_* tools query, for
+# rcsb_describe_seqcoord_object.
+SEQCOORD_OBJECTS = {"alignments", "annotations"}
 # Derived from the set above (sorted for a deterministic enum), so the valid keys reach the tool
 # schema and a bad one is rejected at the boundary. See DataObjectKey.
 SeqcoordObjectKey = Literal[tuple(sorted(SEQCOORD_OBJECTS))]  # type: ignore[valid-type]
 
 
 async def rcsb_describe_seqcoord_object(
-    object_key: SeqcoordObjectKey,
-    into: str | None = None,
-    query: str | None = None,
-    max_depth: Annotated[int, Field(ge=1, le=6)] | None = None,
+    object_key: Annotated[
+        SeqcoordObjectKey, Field(description=describe_seqcoord_object.OBJECT_KEY_DOC)
+    ],
+    into: Annotated[str | None, Field(description=describe_seqcoord_object.INTO_DOC)] = None,
+    query: Annotated[str | None, Field(description=describe_seqcoord_object.QUERY_DOC)] = None,
+    max_depth: Annotated[
+        Annotated[int, Field(ge=1, le=6)] | None, Field(description=describe_seqcoord_object.MAX_DEPTH_DOC)
+    ] = None,
 ) -> dict[str, Any]:
     """Discover the fields available on a Sequence Coordinates object, from the live schema.
 
@@ -73,16 +80,6 @@ async def rcsb_describe_seqcoord_object(
     NEVER invent, guess, or infer a field path — an unverified path fails schema validation
     and wastes the call. `fields=` accepts dotted paths or GraphQL nested-brace syntax, the
     two may be mixed, and multiple paths are separated by spaces or commas.
-
-    Args:
-        object_key: A Sequence Coordinates root field. (alignments and group_alignments share
-            the SequenceAlignments type; the annotation roots share SequenceAnnotations.)
-        into: Optional dot-path of nested object field(s) to scope to, e.g.
-            "target_alignments" or "features.feature_positions".
-        query: Optional case-insensitive keyword, matched against each field's path (relative to
-            the scope) and its description.
-        max_depth: How many levels to walk (1-6). Omit it: the default follows what you are
-            doing — 1 when browsing, 3 when searching. The schema bottoms out at 3.
 
     Returns:
         {object_key, graphql_type, path, query, max_depth, field_count,
@@ -115,11 +112,13 @@ async def rcsb_describe_seqcoord_object(
 
 
 async def rcsb_seqcoord_alignments(
-    query_id: str,
-    from_ref: SequenceRef,
-    to_ref: SequenceRef,
-    seq_range: list[int] | None = None,
-    fields: str | None = None,
+    query_id: Annotated[str, Field(description=seqcoord_alignments.QUERY_ID_DOC)],
+    from_ref: Annotated[SequenceRef, Field(description=seqcoord_alignments.FROM_REF_DOC)],
+    to_ref: Annotated[SequenceRef, Field(description=seqcoord_alignments.TO_REF_DOC)],
+    seq_range: Annotated[
+        list[int] | None, Field(description=seqcoord_alignments.SEQ_RANGE_DOC)
+    ] = None,
+    fields: Annotated[str | None, Field(description=shared.FIELDS_DOC)] = None,
 ) -> dict[str, Any]:
     """Cross-reference a sequence across PDB, UniProt, and NCBI, with aligned ranges.
 
@@ -134,17 +133,6 @@ async def rcsb_seqcoord_alignments(
           query_id="4HHB_1", from_ref="PDB_ENTITY", to_ref="NCBI_PROTEIN"
         - "Which PDB entities correspond to UniProt P69905?"
           query_id="P69905", from_ref="UNIPROT", to_ref="PDB_ENTITY"
-
-    Args:
-        query_id: The sequence id, in the from_ref system's format — UNIPROT "P69905",
-            NCBI_PROTEIN "NP_000508", NCBI_GENOME "NC_000016", PDB_ENTITY "4HHB_1"
-            (entry_entityNumber), PDB_INSTANCE "4HHB.A" (entry.asym_id). PDB ids must be
-            ENTITY-level, never a bare entry: for a whole entry, first get its polymer
-            entity ids (4HHB -> 4HHB_1, 4HHB_2) and query each one.
-        from_ref: Reference system of query_id.
-        to_ref: Reference system to map onto.
-        seq_range: Optional [begin, end] (1-based) to restrict the query region.
-        fields: Optional GraphQL selection to override the default.
     """
     body = queries.build_sc_alignments_query(query_id, from_ref, to_ref, seq_range, fields)
     editor = _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body)
@@ -167,82 +155,22 @@ async def rcsb_seqcoord_alignments(
 
 
 async def rcsb_seqcoord_annotations(
-    query_id: str,
-    reference: SequenceRef,
-    sources: list[AnnotationRef],
-    seq_range: list[int] | None = None,
-    filters: list[dict[str, Any]] | None = None,
-    fields: str | None = None,
+    query_id: Annotated[str, Field(description=seqcoord_annotations.QUERY_ID_DOC)],
+    reference: Annotated[SequenceRef, Field(description=seqcoord_annotations.REFERENCE_DOC)],
+    sources: Annotated[list[AnnotationRef], Field(description=seqcoord_annotations.SOURCES_DOC)],
+    seq_range: Annotated[
+        list[int] | None, Field(description=seqcoord_annotations.SEQ_RANGE_DOC)
+    ] = None,
+    filters: Annotated[
+        list[dict[str, Any]] | None, Field(description=seqcoord_annotations.FILTERS_DOC)
+    ] = None,
+    fields: Annotated[str | None, Field(description=shared.FIELDS_DOC)] = None,
 ) -> dict[str, Any]:
-    """Fetch positional sequence annotations (features) for one sequence.
-
-    Args:
-        query_id: The sequence id, e.g. "4HHB_1" (PDB_ENTITY) or "P69905" (UNIPROT).
-        reference: Reference system query_id is given in.
-        sources: Annotation provenance — which source(s) to pull features from.
-        seq_range: Optional [begin, end] (1-based) to restrict the region.
-        filters: Optional list of {field, operation, source?, values} filter dicts,
-            where field is TARGET_ID or TYPE and operation is CONTAINS or EQUALS.
-        fields: Optional GraphQL selection to override the default.
-    """
+    """Fetch positional sequence annotations (features) for one sequence."""
     body = queries.build_sc_annotations_query(
         query_id, reference, sources, seq_range, filters, fields
     )
     data = await _graphql_field(body, "annotations", url=SEQCOORD_GRAPHQL_URL) or []
-    return {
-        "count": len(data),
-        "annotations": data,
-        "editor": _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body),
-    }
-
-
-async def rcsb_seqcoord_group_alignments(
-    group: GroupRef,
-    group_id: str,
-    filter_terms: list[str] | None = None,
-    fields: str | None = None,
-) -> dict[str, Any]:
-    """Fetch alignments among the members of a sequence group.
-
-    Args:
-        group: How the group is defined.
-        group_id: The group id, e.g. "P69905" (a UniProt accession) for
-            MATCHING_UNIPROT_ACCESSION.
-        filter_terms: Optional list of target ids to restrict the group members.
-        fields: Optional GraphQL selection to override the default.
-    """
-    body = queries.build_sc_group_alignments_query(group, group_id, filter_terms, fields)
-    editor = _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body)
-    data = await _graphql_field(body, "group_alignments", url=SEQCOORD_GRAPHQL_URL)
-    if data is None:
-        return {"group_id": group_id, "error": "no alignment found", "editor": editor}
-    return {**data, "editor": editor}
-
-
-async def rcsb_seqcoord_group_annotations(
-    group: GroupRef,
-    group_id: str,
-    sources: list[AnnotationRef],
-    summary: bool = False,
-    filters: list[dict[str, Any]] | None = None,
-    fields: str | None = None,
-) -> dict[str, Any]:
-    """Fetch annotations across the members of a sequence group.
-
-    Args:
-        group: How the group is defined.
-        group_id: The group id, e.g. "P69905" for MATCHING_UNIPROT_ACCESSION.
-        sources: Annotation provenance — which source(s) to pull features from.
-        summary: If true, return a positional summary aggregated across the group
-            (group_annotations_summary) instead of per-member annotations.
-        filters: Optional filter dicts (see rcsb_seqcoord_annotations).
-        fields: Optional GraphQL selection to override the default.
-    """
-    body = queries.build_sc_group_annotations_query(
-        group, group_id, sources, summary=summary, filters=filters, fields=fields
-    )
-    field = "group_annotations_summary" if summary else "group_annotations"
-    data = await _graphql_field(body, field, url=SEQCOORD_GRAPHQL_URL) or []
     return {
         "count": len(data),
         "annotations": data,
@@ -258,8 +186,6 @@ _SEQCOORD_TOOLS = (
     rcsb_describe_seqcoord_object,
     rcsb_seqcoord_alignments,
     rcsb_seqcoord_annotations,
-    rcsb_seqcoord_group_alignments,
-    rcsb_seqcoord_group_annotations,
 )
 
 
