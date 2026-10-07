@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import enrich, link
+from .app import tool_ui_meta
 from .models import ReportRequest
 from .render import TEMPLATE_VERSION, render_report
 from .store import REPORT_STORE
@@ -176,6 +177,11 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
 
     @mcp.tool(
         name="rcsb_render_report",
+        # Points the host at the ui:// app resource (SEP-1865) when the UI channel is
+        # enabled; None otherwise, so the tool listing is byte-identical to before.
+        # `visibility` is deliberately left at its default so the tool stays in the
+        # model's list: the short link is the deliverable wherever no app can render.
+        meta=tool_ui_meta(),
         annotations={
             "title": "Render a PDB search report",
             "readOnlyHint": True,

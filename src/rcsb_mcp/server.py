@@ -120,6 +120,9 @@ mcp = FastMCP(
 mcp._mcp_server.version = _server_version()
 
 from rcsb_mcp.data import register_data_tools
+from rcsb_mcp.report.app import UI_APP_ENABLED as REPORT_APP_ENABLED
+from rcsb_mcp.report.app import register_report_app
+from rcsb_mcp.ui_compat import declare_ui_extension
 from rcsb_mcp.report.routes import register_report_routes
 from rcsb_mcp.report.tools import register_report_tools
 from rcsb_mcp.resolvers import register_resolver_tools
@@ -149,6 +152,12 @@ async def _fetch_report_rows(query: str, root_field: str, ids: list[str]) -> lis
 
 register_report_tools(mcp, entry_fetcher=_fetch_report_rows)
 register_report_routes(mcp)
+# No-op unless RCSB_MCP_ENABLE_REPORT_APP is set; see report/app.py.
+register_report_app(mcp)
+if REPORT_APP_ENABLED:
+    # mcp 1.x has no `extensions` field on ServerCapabilities; declare it anyway.
+    # See ui_compat.py for why this is cheap-but-unproven rather than the fix.
+    declare_ui_extension(mcp)
 register_resolver_tools(mcp)
 register_search_tools(mcp)
 register_seqcoord_tools(mcp)
