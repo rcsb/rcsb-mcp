@@ -34,10 +34,13 @@ src/rcsb_mcp/
   chemical_search_attributes.py  CHEMICAL_SEARCH_ATTRIBUTES   — auto-generated (see scripts/)
   attribute_scopes.py        which object each attribute hangs off, + nested/repeating roots
                                                               — auto-generated (see scripts/)
+  feature_types.py           Sequence Coordinates FeaturesType vocabulary + type -> sources
+                                                              — auto-generated (see scripts/)
   prompts/rcsb_search_assistant.md   served as the `rcsb_search_assistant` MCP prompt (package data)
   prompts/rcsb_mcp_guide.md          NOT served; kept as a source to rescue prose from
-tests/                       33 network-free test modules; see "Dev workflow"
-scripts/                     generate_search_attributes.py, generate_attribute_scopes.py
+tests/                       35 network-free test modules; see "Dev workflow"
+scripts/                     generate_search_attributes.py, generate_attribute_scopes.py,
+                             generate_feature_types.py
 evals/                       end-to-end accuracy suite + tool_selection A/B probe harness
 ```
 
@@ -61,13 +64,20 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
   `max_depth=`) and `rcsb_describe_seqcoord_object` introspect the live schema for field
   discovery. There is no raw-GraphQL passthrough tool. Don't try to make defaults
   exhaustive — and don't invent `fields=` paths; discover them against the live schema first.
-- **Generated data is never hand-edited.** The three catalogs above come from the live
+- **Generated data is never hand-edited.** The three search catalogs above come from the live
   metadata schemas, plus one live `exists` count per attribute (~30 s): attributes no object
   holds a value for go to `UNPOPULATED_*` instead of the catalog, and depositor-reported
   numbers many entries leave empty go to `SPARSE_SEARCH_ATTRIBUTES`, their catalog records
   carrying a self-describing `often_empty` ("25% of entries with exptl_crystal_grow have no
-  value") that the attribute listing shows. Change the generator and
-  re-run it; both generators have a `--check` mode for CI-style verification.
+  value") that the attribute listing shows. `feature_types.py` takes its vocabulary from the
+  Sequence Coordinates schema (the union of several introspections, since a pod on an older
+  schema answers some calls; a split is reported) and each type's sources from the Data API:
+  FeaturesType is the allOf of seven Data API feature fields, each belonging to one source, so
+  a name traces back to its field. Any other untraced name stops the generator; the accepted
+  exceptions are listed in `KNOWN_UNTRACED` (PROTEIN_BINDING) and keep an empty source list.
+  Data API values Sequence Coordinates does not list yet are reported and left out, since the
+  two APIs release separately. Change the generator and re-run it; every generator has a
+  `--check` mode for CI-style verification.
 
 ## Guidance channels (there is only one guaranteed one)
 
@@ -112,6 +122,7 @@ python -m compileall -q src/rcsb_mcp
 # Regenerate the derived catalogs after a schema change
 python scripts/generate_search_attributes.py
 python scripts/generate_attribute_scopes.py --check
+python scripts/generate_feature_types.py
 
 # Run the server over stdio (entry point: rcsb_mcp.server:main, console script `rcsb-mcp`)
 python -m rcsb_mcp.server
@@ -174,6 +185,17 @@ After validating, add/adjust the default and re-run the suite.
   batch handling filters `None` and reports `not_found`.
 - **Sequence Coordinates: PDB ids must be entity/instance-level** (`4HHB_1`, not
   `4HHB`); only this API cross-references NCBI.
+- **Sequence Coordinates answers an unsatisfiable TYPE filter with nothing, not an error**,
+  so `rcsb_seqcoord_annotations` takes only a PDB entity/instance and optional
+  `feature_types`, and makes every other choice itself from `feature_types.py`: the reference
+  (from the id's form), the sources (ACTIVE_SITE is UniProt's alone; asked of PDB sources it
+  finds 0), and the filter SPELLING. The API returns `DISULFIDE_BRIDGE` but matches a filter
+  against the stored `"DISULFIDE BRIDGE"` (23 types, ~104 after the 2026-10-13 release:
+  `FEATURE_TYPE_FILTER_SPELLING`); sending the name finds 0. An answer over 45,000 compact
+  JSON characters (~16k tokens; FastMCP's indented text copy is ~1.24x, so ~20k) is refused,
+  never cut, with the types the sequence has: an entity's instance features come once per
+  copy (GroEL 1AON_1 ~165k tokens). An id that names no polymer sequence (an author chain id,
+  a ligand entity, a RefSeq id) also answers 0, so an empty answer is checked and explained.
 - **A wrong filter VALUE used to fail silently** (`"cryo-EM"` vs `ELECTRON MICROSCOPY`
   returns 0 hits, reading as "no such structures"). The catalogs carry `enum` for the ~16%
   of attributes with closed vocabularies and `rcsb_query_attribute` rejects a value outside

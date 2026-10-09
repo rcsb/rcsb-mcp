@@ -88,8 +88,11 @@ def test_model_visible_text_names_no_removed_tool(probes, tools):
     history out of the file.
 
     Attribute paths (`rcsb_entry_info.resolution_combined`) are excluded by the negative
-    lookahead, `rcsb_query_*`-style globs by the trailing-underscore check, and bare
-    attribute roots (a seeded listing's `"nested_group": "rcsb_binding_affinity"`) by name.
+    lookahead, `rcsb_query_*`-style globs by the trailing-underscore check, bare attribute
+    roots (a seeded listing's `"nested_group": "rcsb_binding_affinity"`) by name, and JSON KEYS
+    of a seeded tool result (`"rcsb_sample_sequence_length":306`) by the `":` that follows
+    them -- a field name, never a tool. A tool named as a VALUE (`"fetch_with":
+    "rcsb_get_entries"`) is still checked.
     """
     from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
     from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
@@ -101,7 +104,7 @@ def test_model_visible_text_names_no_removed_tool(probes, tools):
         visible += [t.text or "" for t in p.findall("turn")]
     strays = sorted({
         token for text in visible
-        for token in re.findall(r"\brcsb_[a-z0-9_]+\b(?!\.)", text)
+        for token in re.findall(r'\brcsb_[a-z0-9_]+\b(?!\.)(?!":)', text)
         if token not in tools and token not in roots and not token.endswith("_")
     })
     assert not strays, (

@@ -288,4 +288,40 @@
       <arg name="chemical_attributes" equals="true"/>
     </expect>
   </probe>
+
+  <!--
+    RESIDUE-FEATURE CANARIES (added 2026-10-09).
+    A session answered "catalytic dyad or triad?" from model knowledge although UniProt's residue
+    features are one call away: rcsb_seqcoord_annotations (TYPE=ACTIVE_SITE, mapped onto the
+    entity) or rcsb_get_uniprot (rcsb_uniprot_feature). Measured: Mpro His41/Cys145 (a dyad), HAV
+    3C His44/Asp84/Cys172, spike 26 glycosylation sites. Each probe seeds the entity lookup (the
+    real output, identical in every arm) and grades the NEXT call: a feature route passes; prose
+    from memory or an unrelated tool fails. Baseline for the decision between a ~10-token hint in
+    rcsb_seqcoord_annotations and a dedicated feature-type resolver; keep either only if it moves
+    these. The famous protein (Mpro) and a less famous one (HAV 3C) are both here because
+    knowledge-answering should differ between them. RESULT (three-arm A/B, 2026-10-09, Haiku
+    4.5, k=8): both active-site probes went 0/8 -> 8/8 with the redesigned tool (feature_types,
+    sources derived); a separate rcsb_find_feature_types resolver added nothing measurable
+    (end-to-end 21/21 vs 20/21, called in 4 of 21 runs) and was removed.
+  -->
+  <probe id="feature-active-site-famous" probes="residue features: active site of a famous enzyme">
+    <prompt>Is the catalytic site of the protease in PDB polymer entity 7CUT_1 a catalytic dyad or a triad?</prompt>
+    <turn role="assistant" tool="rcsb_get_polymer_entities" args='{"entity_ids": ["7CUT_1"]}'>{"count":1,"polymer_entities":[{"rcsb_id":"7CUT_1","rcsb_polymer_entity":{"pdbx_description":"3C protein","formula_weight":33.826,"pdbx_number_of_molecules":1},"entity_poly":{"type":"polypeptide(L)","rcsb_sample_sequence_length":306},"rcsb_entity_source_organism":[{"ncbi_scientific_name":"Severe acute respiratory syndrome coronavirus 2","ncbi_taxonomy_id":2697049}]}]}</turn>
+    <turn role="user">Which residues form it?</turn>
+    <expect tool-in="rcsb_seqcoord_annotations,rcsb_get_uniprot"/>
+  </probe>
+
+  <probe id="feature-active-site-less-famous" probes="residue features: active site of a less famous enzyme">
+    <prompt>Is the catalytic site of the protease in PDB polymer entity 2HAL_1 a catalytic dyad or a triad?</prompt>
+    <turn role="assistant" tool="rcsb_get_polymer_entities" args='{"entity_ids": ["2HAL_1"]}'>{"count":1,"polymer_entities":[{"rcsb_id":"2HAL_1","rcsb_polymer_entity":{"pdbx_description":"Hepatitis A Protease 3C","formula_weight":23.289,"pdbx_number_of_molecules":1},"entity_poly":{"type":"polypeptide(L)","rcsb_sample_sequence_length":212},"rcsb_entity_source_organism":[{"ncbi_scientific_name":"Hepatovirus A","ncbi_taxonomy_id":12092}]}]}</turn>
+    <turn role="user">Which residues form it?</turn>
+    <expect tool-in="rcsb_seqcoord_annotations,rcsb_get_uniprot"/>
+  </probe>
+
+  <probe id="feature-glycosylation-sites" probes="residue features: glycosylation sites of one protein">
+    <prompt>Which residues of the protein in PDB polymer entity 6VXX_1 are annotated as N-glycosylation sites?</prompt>
+    <turn role="assistant" tool="rcsb_get_polymer_entities" args='{"entity_ids": ["6VXX_1"]}'>{"count":1,"polymer_entities":[{"rcsb_id":"6VXX_1","rcsb_polymer_entity":{"pdbx_description":"Spike glycoprotein","formula_weight":141.533,"pdbx_number_of_molecules":3},"entity_poly":{"type":"polypeptide(L)","rcsb_sample_sequence_length":1281},"rcsb_entity_source_organism":[{"ncbi_scientific_name":"Severe acute respiratory syndrome coronavirus 2","ncbi_taxonomy_id":2697049}]}]}</turn>
+    <turn role="user">List them.</turn>
+    <expect tool-in="rcsb_seqcoord_annotations,rcsb_get_uniprot"/>
+  </probe>
 </probes>

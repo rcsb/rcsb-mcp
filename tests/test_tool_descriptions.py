@@ -250,7 +250,7 @@ REQUIRED_IN_TOOL = {
     "rcsb_find_organisms": [
         "disambiguates a species from its strains",      # not in instructions ('strain' absent)
     ],
-    # rcsb_seqcoord_*: the ref/source VALUES are Literals (SequenceRef/AnnotationRef), so the
+    # rcsb_seqcoord_*: the reference VALUES are a Literal (SequenceRef), so the
     # schema ships them and the prose was cut. These are what the schema cannot express — the
     # per-system id FORMATS and the entity-level rule.
     "rcsb_seqcoord_alignments": [

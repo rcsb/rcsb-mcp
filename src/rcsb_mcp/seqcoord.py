@@ -11,6 +11,8 @@ from server.
 
 from __future__ import annotations
 
+import json
+from collections import Counter, defaultdict
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
@@ -38,7 +40,6 @@ from rcsb_mcp.tooling import READ_ONLY
 
 
 SequenceRef = Literal["NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"]
-AnnotationRef = Literal["PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"]
 
 
 # The Sequence Coordinates root fields the rcsb_seqcoord_* tools query, for
@@ -154,28 +155,132 @@ async def rcsb_seqcoord_alignments(
     return {**data, "editor": editor}
 
 
+# The largest annotations answer returned whole. Annotation JSON runs ~2.8 characters per
+# cl100k token compact (measured 2026-10-09 on 8 sequences), and FastMCP's text copy of a result
+# is indented, ~1.24x the tokens; 45,000 compact characters keep either form near 20k tokens,
+# under the 25k Claude Code accepts from an MCP tool by default. Every source of 4HHB_1 is ~33k
+# tokens, of GroEL 1AON_1 ~165k: an entity's instance features come once per copy. Larger
+# answers are refused, never cut, with the types the sequence has (_too_large).
+_ANNOTATIONS_BUDGET = 45_000  # compact JSON characters
+_CHARS_PER_TOKEN = 2.8
+_INVENTORY_FIELDS = "source target_id features{ type }"
+_INSTANCES_SHOWN = 8
+
+
+def _kilotokens(chars: int) -> str:
+    return f"~{chars / _CHARS_PER_TOKEN / 1000:.1f}k tokens"
+
+
+async def _annotations(body: dict[str, Any], qid: str) -> list[dict[str, Any]]:
+    try:
+        return await _graphql_field(body, "annotations", url=SEQCOORD_GRAPHQL_URL) or []
+    except RuntimeError as exc:
+        if "timed out" not in str(exc):
+            raise
+        hint = ("" if "." in qid else
+                " If it keeps timing out, the entity may have very many copies (3J3Q_1 does): ask "
+                "for one of its instances (rcsb_get_polymer_entities lists them), without "
+                "feature_types to see what it has.")
+        raise RuntimeError(f"Sequence Coordinates timed out on {qid}; try again shortly.{hint}") from None
+
+
+def _has_inventory(data: list[dict[str, Any]]) -> bool:
+    return all("source" in a and "target_id" in a and "features" in a
+               and all("type" in f for f in a["features"] or []) for a in data)
+
+
+def _one_instance_fits(data: list[dict[str, Any]], overhead: int) -> bool:
+    """Whether one instance's answer would fit, judged from the entity's: the same UniProt and
+    entity features, one copy's instance features and a share of the interfaces."""
+    by_source: dict[str, int] = defaultdict(int)
+    per_instance: dict[str, int] = defaultdict(int)
+    for a in data:
+        size = len(json.dumps(a))
+        by_source[a["source"]] += size
+        if a["source"] == "PDB_INSTANCE":
+            per_instance[a["target_id"]] += size
+    if len(per_instance) < 2:
+        return False
+    estimate = (by_source["UNIPROT"] + by_source["PDB_ENTITY"] + max(per_instance.values())
+                + by_source["PDB_INTERFACE"] // len(per_instance) + overhead)
+    return estimate <= _ANNOTATIONS_BUDGET
+
+
+def _too_large(query_id: str, chars: int, data: list[dict[str, Any]], types: int,
+               instance_fits: bool) -> str:
+    """Why the answer was refused, and what this sequence has to ask for instead (`types`: how
+    many distinct feature types were asked for)."""
+    counts: dict[str, Counter] = defaultdict(Counter)
+    instances: set[str] = set()
+    for a in data:
+        for f in a.get("features") or []:
+            counts[f["type"]][a["source"]] += 1
+        if a["source"] == "PDB_INSTANCE":
+            instances.add(a["target_id"])
+    have = "; ".join(f"{t} ({', '.join(f'{s} {n}' for s, n in by.items())})"
+                     for t, by in sorted(counts.items()))
+    asks = []
+    if types != 1:
+        asks.append("fewer feature_types" if types else "some of its feature_types")
+    if instance_fits:
+        ordered = sorted(instances, key=lambda i: (len(i), i))
+        shown = ", ".join(ordered[:_INSTANCES_SHOWN])
+        more = f" and {len(ordered) - _INSTANCES_SHOWN} more" if len(ordered) > _INSTANCES_SHOWN else ""
+        asks.append(f"one instance ({shown}{more}) instead of the entity")
+    ask = " or ".join(asks) or "a smaller `fields` selection"
+    return (f"The annotations of {query_id} are {_kilotokens(chars)}, over this tool's "
+            f"{_kilotokens(_ANNOTATIONS_BUDGET)}. Ask for {ask}. Feature types it has (source, "
+            f"features): {have}.")
+
+
 async def rcsb_seqcoord_annotations(
     query_id: Annotated[str, Field(description=seqcoord_annotations.QUERY_ID_DOC)],
-    reference: Annotated[SequenceRef, Field(description=seqcoord_annotations.REFERENCE_DOC)],
-    sources: Annotated[list[AnnotationRef], Field(description=seqcoord_annotations.SOURCES_DOC)],
-    seq_range: Annotated[
-        list[int] | None, Field(description=seqcoord_annotations.SEQ_RANGE_DOC)
-    ] = None,
-    filters: Annotated[
-        list[dict[str, Any]] | None, Field(description=seqcoord_annotations.FILTERS_DOC)
+    feature_types: Annotated[
+        list[str] | None, Field(description=seqcoord_annotations.FEATURE_TYPES_DOC)
     ] = None,
     fields: Annotated[str | None, Field(description=shared.FIELDS_DOC)] = None,
 ) -> dict[str, Any]:
-    """Fetch positional sequence annotations (features) for one sequence."""
-    body = queries.build_sc_annotations_query(
-        query_id, reference, sources, seq_range, filters, fields
-    )
-    data = await _graphql_field(body, "annotations", url=SEQCOORD_GRAPHQL_URL) or []
-    return {
-        "count": len(data),
-        "annotations": data,
-        "editor": _graphiql_editor(SEQCOORD_GRAPHIQL_URL, body),
-    }
+    """Residue-level features of one PDB polymer entity (4HHB_1) or instance (4HHB.A),
+    positioned on its sequence.
+
+    The tool for questions about specific residues: which form an active site, bind a ligand or
+    metal, are modified, glycosylated or disulfide-bonded, lie in a domain, helix or membrane
+    segment, are unobserved or poorly fitted.
+
+    Without feature_types every feature is returned. An answer too large to return (an entity's
+    chain features come once per copy) fails with the feature types the sequence has and their
+    counts: ask again for the ones needed, or for one instance. With feature_types only those
+    come back, from the sources that have them.
+    """
+    body = queries.build_sc_annotations_query(query_id, feature_types, fields)
+    qid = body["variables"]["queryId"]
+    data = await _annotations(body, qid)
+    if not data:
+        # An unknown id answers with nothing, like a sequence without the asked types.
+        found = feature_types and await _annotations(
+            queries.build_sc_annotations_query(qid, None, "source"), qid)
+        if not found:
+            raise ValueError(
+                f"Sequence Coordinates has no annotations for {qid}: it matches no PDB polymer "
+                "sequence it indexes. Instance ids use the RCSB chain id (label_asym_id), which "
+                "can differ from the author's (6M0J: author chain E is B); entity ids number "
+                "polymer entities only.")
+    result: dict[str, Any] = {"count": len(data), "annotations": data,
+                              "editor": _graphiql_editor(SEQCOORD_GRAPHQL_URL, body)}
+    if not data:
+        result["note"] = (f"{qid} has none of these feature types. Call without feature_types "
+                          "to see the ones it has.")
+        return result
+    chars = len(json.dumps(result))
+    if chars > _ANNOTATIONS_BUDGET:
+        types = len(body["variables"]["filters"][0]["values"]) if body["variables"]["filters"] else 0
+        complete = _has_inventory(data)
+        fits = "." not in qid and complete and _one_instance_fits(data, chars - len(json.dumps(data)))
+        if not complete:  # a custom `fields` left out what the inventory needs
+            data = await _annotations(
+                queries.build_sc_annotations_query(qid, feature_types, _INVENTORY_FIELDS), qid)
+        raise ValueError(_too_large(qid, chars, data, types, fits))
+    return result
 
 
 # rcsb_seqcoord_* (+ rcsb_describe_seqcoord_object) are the Sequence Coordinates tools;

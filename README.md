@@ -143,7 +143,7 @@ entry, query each polymer entity.
 | Tool | What it does |
 |------|--------------|
 | `rcsb_seqcoord_alignments` | Cross-reference a sequence across PDB / UniProt / NCBI with aligned ranges (e.g. `4HHB_1` → NCBI proteins `NP_000508`, `NP_000549`). |
-| `rcsb_seqcoord_annotations` | Positional features for one sequence, from one or more annotation `sources` (`UNIPROT`, `PDB_ENTITY`, `PDB_INSTANCE`, `PDB_INTERFACE`). |
+| `rcsb_seqcoord_annotations` | Positional features of a PDB entity or instance (`7CUT_1`, `4HHB.A`) from UniProt, the entity, its instances and their interfaces, optionally only some `feature_types` (`ACTIVE_SITE`); the sources follow from the types. |
 | `rcsb_describe_seqcoord_object` | Introspect the live schema to discover fields available on a seqcoord object (for use with `fields=`). |
 
 ### Report
@@ -322,7 +322,7 @@ Restart Claude Desktop. The tools appear under the connectors (plug) icon.
 - "Which PDB entries does P69905 map to?" → `rcsb_get_uniprot`
 - "Which PDB entities align to UniProt P69905, and over what ranges?" → `rcsb_seqcoord_alignments`
 - "What NCBI proteins map to 4HHB?" → `rcsb_seqcoord_alignments` per entity (`4HHB_1`, `4HHB_2`), `to_ref=NCBI_PROTEIN`
-- "Show UniProt features mapped onto PDB entity 4HHB_1." → `rcsb_seqcoord_annotations`
+- "Which binding sites map onto PDB entity 4HHB_1?" → `rcsb_seqcoord_annotations` with `feature_types=["BINDING_SITE"]`
 - "Pull a field the compact defaults don't include." → `rcsb_describe_data_object` to find the path, then the matching `rcsb_get_*` tool with `fields=`
 
 ## Notes

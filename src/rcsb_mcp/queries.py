@@ -9,6 +9,10 @@ https://data.rcsb.org/graphql
 from __future__ import annotations
 
 import copy
+import difflib
+import math
+import re
+from collections import Counter, defaultdict
 
 from typing import Any, NamedTuple, get_args
 
@@ -22,6 +26,13 @@ from rcsb_mcp.attribute_scopes import (
 )
 from rcsb_mcp.attribute_types import AttributeScope, TextOperator
 from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
+from rcsb_mcp.feature_type_notes import FIELD_NOTES, SUPERSEDED, note_for
+from rcsb_mcp.feature_types import (
+    FEATURE_TYPE_FILTER_SPELLING,
+    FEATURE_TYPE_SOURCES,
+    FEATURE_TYPES,
+    FEATURE_TYPES_BY_FIELD,
+)
 from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
 
 # Valid return types accepted by the Search API.
@@ -1669,8 +1680,8 @@ def build_data_query(
 
 # Reference systems a query/target sequence can be expressed in.
 SEQUENCE_REFERENCES = {"NCBI_GENOME", "NCBI_PROTEIN", "PDB_ENTITY", "PDB_INSTANCE", "UNIPROT"}
-# Annotation provenance/scope.
-ANNOTATION_REFERENCES = {"PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE", "UNIPROT"}
+# Where positional features come from, in the order feature_types.py lists them.
+ANNOTATION_SOURCES = ("UNIPROT", "PDB_ENTITY", "PDB_INSTANCE", "PDB_INTERFACE")
 
 SC_ALIGNMENTS_FIELDS = (
     "query_sequence alignment_length "
@@ -1693,12 +1704,163 @@ def _require_enum(value: str, allowed: set[str], name: str) -> str:
     return value
 
 
-def _check_sources(sources: list[str]) -> list[str]:
-    if not sources:
-        raise ValueError("provide at least one annotation source")
-    for s in sources:
-        _require_enum(s, ANNOTATION_REFERENCES, "source")
-    return list(sources)
+# rcsb_seqcoord_annotations takes a PDB sequence and, optionally, feature types; the reference
+# comes from the id's form and the sources from the types. Left to agents, those choices gave
+# silent zeros (measured 2026-10-09): ACTIVE_SITE asked of PDB sources (it is UniProt's alone),
+# an unknown or wrongly cased type, and, for 23 types (~104 after the 2026-10-13 release), the
+# very name the API returns, because a TYPE filter matches the stored spelling instead
+# (FEATURE_TYPE_FILTER_SPELLING: DISULFIDE_BRIDGE finds 0 on 1CRN_1, "DISULFIDE BRIDGE" 3).
+_PDB_SEQUENCE_FORMS = (
+    ("PDB_INSTANCE", re.compile(r"([^\s.]+)(\.[A-Z0-9]+)")),    # 4HHB.A, AF_AFP69905F1.A
+    ("PDB_ENTITY", re.compile(r"([^\s.]+)(_\d+)")),              # 4HHB_1, AF_AFP69905F1_1
+)
+# The entries Sequence Coordinates indexes: a 4-character PDB id (an extended pdb_0000XXXX id
+# is answered only as XXXX) or a computed model.
+_PDB_ENTRY = re.compile(r"(?:PDB_0000)?([0-9][A-Z0-9]{3})|((?:AF|MA)_[A-Z0-9]+)")
+_UNIPROT_ACCESSION = re.compile(
+    r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?")
+_REFSEQ = re.compile(r"([A-Z]{2})_\d+(?:\.\d+)?")  # NP_000508, NC_000011.10
+
+
+def _pdb_sequence(query_id: str) -> tuple[str, str]:
+    """(id, reference) for a PDB entity or instance id, upper-cased: target ids are, RCSB chain
+    ids too, and the API matches them case-sensitively ("4hhb_1" returns nothing)."""
+    raw = str(query_id).strip()
+    qid = raw.upper()
+    for reference, form in _PDB_SEQUENCE_FORMS:
+        m = form.fullmatch(qid)
+        entry = _PDB_ENTRY.fullmatch(m.group(1)) if m else None
+        if entry:
+            return (entry.group(1) or entry.group(2)) + m.group(2), reference
+    refseq = _REFSEQ.fullmatch(qid)
+    if refseq or _UNIPROT_ACCESSION.fullmatch(qid):
+        source = ("NCBI_GENOME" if refseq.group(1) in ("NC", "NT", "NW", "AC") else "NCBI_PROTEIN"
+                  ) if refseq else "UNIPROT"
+        own = "" if refseq else ", or get UniProt's own features with rcsb_get_uniprot"
+        kind = "an NCBI RefSeq accession" if refseq else "a UniProt accession"
+        raise ValueError(
+            f"{raw!r} is {kind}; this tool annotates PDB sequences. Find its PDB entities "
+            f'with rcsb_seqcoord_alignments(query_id="{qid}", from_ref="{source}", '
+            f'to_ref="PDB_ENTITY"){own}.')
+    entry = _PDB_ENTRY.fullmatch(qid)
+    if entry:
+        e = entry.group(1) or entry.group(2)
+        raise ValueError(f"{raw!r} is an entry; give one of its polymer entities ({e}_1) or "
+                         f"instances ({e}.A).")
+    raise ValueError(f"query_id must be a PDB polymer entity (4HHB_1) or instance (4HHB.A); got {raw!r}.")
+
+
+_TYPE_SUGGESTIONS = 6
+_TYPE_OF_SPELLING = {v: t for t, v in sorted(FEATURE_TYPE_FILTER_SPELLING.items(), reverse=True)}
+_STOPWORDS = frozenset({"AND", "THE", "FOR", "WITH", "FROM", "INTO", "ITS", "PER", "ARE", "THAT"})
+_INFLECTIONS = ("S", "ES", "D", "ED", "ING", "LY", "AL", "IC")
+
+
+def _stem(word: str) -> str:
+    """A plural to its singular, so OUTLIERS finds OUTLIER and CLASHES CLASH."""
+    if word.endswith("IES") and len(word) > 4:
+        return word[:-3] + "Y"
+    if word.endswith(("SES", "XES", "ZES", "CHES", "SHES")):
+        return word[:-2]
+    if word.endswith("S") and not word.endswith("SS") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _search_words(text: str) -> list[str]:
+    return [_stem(w) for w in re.split(r"[^A-Z0-9]+", text.upper()) if len(w) >= 3 and w not in _STOPWORDS]
+
+
+def _type_text() -> dict[str, tuple[tuple[list[str], float], ...]]:
+    """What a search matches each servable type on, and how much a match counts: the words of
+    its name, of its note (feature_type_notes) and of the note of the field listing it."""
+    fields: dict[str, list[str]] = defaultdict(list)
+    for field, names in FEATURE_TYPES_BY_FIELD.items():
+        for t in names:
+            fields[t].append(FIELD_NOTES.get(field, ""))
+    return {t: ((_search_words(t), 1.0), (_search_words(note_for(t)), 0.7),
+                (_search_words(" ".join(fields[t])), 0.4))
+            for t in FEATURE_TYPES if FEATURE_TYPE_SOURCES[t]}  # no source: asking returns nothing
+
+
+_TYPE_TEXT = _type_text()
+# how many types each word describes (in any part), so a word shared by many counts for less
+_WORD_SPREAD = Counter(w for parts in _TYPE_TEXT.values() for w in {w for words, _ in parts for w in words})
+
+
+def _word_match(word: str, type_word: str) -> float:
+    """1 for the same word, 0.9 for an inflection of it (BOND/BONDED, LINK/LINKED), else 0."""
+    if word == type_word:
+        return 1.0
+    short, long_ = sorted((word, type_word), key=len)
+    return 0.9 if len(short) >= 4 and long_.startswith(short) and long_[len(short):] in _INFLECTIONS else 0.0
+
+
+def _near_match(word: str, name_word: str) -> float:
+    """A misspelling of a NAME word (HYDROPATY ~ HYDROPATHY), worth half a match."""
+    ratio = difflib.SequenceMatcher(None, word, name_word).ratio()
+    return 0.5 * ratio if ratio >= 0.85 else 0.0
+
+
+def find_feature_types(text: str) -> list[str]:
+    """Feature types matching a concept or a name, best first; only types some source serves.
+
+    An exact name comes first, a superseded one (feature_type_notes.SUPERSEDED) after every
+    current match. Then the types matching more of the query's words, then by
+    score: a match counts more in the name than in the note, more there than in the field's
+    note, and less the more types share the word (SITE, BOND, REGION), with a damped weight
+    so one rare word cannot outweigh the rest. A misspelling counts only for a query word that
+    matches nothing anywhere, and only against names (HYDROPATY -> HYDROPATHY; not
+    COFACTOR -> the FACTOR of OWAB's B-factor note)."""
+    raw = str(text).strip().upper()
+    norm = re.sub(r"[^A-Z0-9]+", "_", raw).strip("_")
+    # the name as given, else its normalized form ("covalent bond", "_3_R_..." without the "_")
+    exact_names = {raw} if raw in _TYPE_TEXT else {t for t in _TYPE_TEXT if norm in (t, t.strip("_"))}
+    words = _search_words(str(text))
+    near = {w: not any(_word_match(w, tw) for tw in _WORD_SPREAD) for w in words}
+    scored = []
+    for t, parts in _TYPE_TEXT.items():
+        exact = t in exact_names
+        coverage, score = 0, 0.0
+        for w in words:
+            best = max((_word_match(w, tw) * weight / (1 + math.log(_WORD_SPREAD[tw]))
+                        for type_words, weight in parts for tw in type_words), default=0.0)
+            if not best and near[w]:
+                best = max((_near_match(w, tw) / (1 + math.log(_WORD_SPREAD[tw])) for tw in parts[0][0]),
+                           default=0.0)
+            if best:
+                coverage, score = coverage + 1, score + best
+        if exact or score:
+            scored.append((not exact, t in SUPERSEDED, -coverage, -score, len(t), t))
+    return [t for *_, t in sorted(scored)]
+
+
+def _feature_type_hint(value: str) -> str:
+    """Feature types close to a name that is none, each with its sources."""
+    close = find_feature_types(value)[:_TYPE_SUGGESTIONS]
+    shown = "; ".join(f"{t} ({', '.join(FEATURE_TYPE_SOURCES[t])})" for t in close)
+    return (f" Did you mean: {shown}?" if shown else "") + (
+        " Call without feature_types to see the types this sequence has.")
+
+
+def _feature_type_query(feature_types: list[str]) -> tuple[list[str], list[str]]:
+    """(sources, TYPE filter values) for the requested feature types, or raise for a type that
+    can match nothing. Also takes a type in its filter spelling ("DISULFIDE BRIDGE")."""
+    sources: set[str] = set()
+    values: list[str] = []
+    for raw in feature_types:
+        t = str(raw)
+        name = t if t in FEATURE_TYPE_SOURCES else _TYPE_OF_SPELLING.get(t)
+        if name is None:
+            raise ValueError(f"{t!r} is not a feature type (names are case-sensitive)."
+                             + _feature_type_hint(t))
+        if not FEATURE_TYPE_SOURCES[name]:
+            raise ValueError(f"No source emits {name}, so asking for it returns nothing.")
+        sources.update(FEATURE_TYPE_SOURCES[name])
+        value = FEATURE_TYPE_FILTER_SPELLING.get(name, name)
+        if value not in values:
+            values.append(value)
+    return [s for s in ANNOTATION_SOURCES if s in sources], values
 
 
 def _clean_range(seq_range: Any) -> list[int] | None:
@@ -1747,36 +1909,29 @@ def build_sc_alignments_query(
 
 def build_sc_annotations_query(
     query_id: str,
-    reference: str,
-    sources: list[str],
-    seq_range: Any = None,
-    filters: list[dict[str, Any]] | None = None,
+    feature_types: list[str] | None = None,
     fields: str | None = None,
 ) -> dict[str, Any]:
-    """Positional annotations for `query_id` in a given reference system.
+    """Positional annotations of a PDB entity or instance: every source, or only the sources
+    that emit the requested feature types, filtered to them (see _feature_type_query).
 
-    Example: query_id="4HHB_1", reference="PDB_ENTITY", sources=["UNIPROT"].
+    Example: query_id="7CUT_1", feature_types=["ACTIVE_SITE"] -> UNIPROT, TYPE ACTIVE_SITE.
     """
-    _require_enum(reference, SEQUENCE_REFERENCES, "reference")
-    srcs = _check_sources(sources)
-    qid = str(query_id).strip()
-    if not qid:
-        raise ValueError("query_id must be a non-empty string")
+    qid, reference = _pdb_sequence(query_id)
+    if feature_types:
+        sources, values = _feature_type_query(feature_types)
+        filters = [{"field": "TYPE", "operation": "EQUALS", "values": values}]
+    else:
+        sources, filters = list(ANNOTATION_SOURCES), None
     selection = _normalize_fields(fields) or SC_ANNOTATIONS_FIELDS
     query = (
         "query An($queryId: String!, $reference: SequenceReference!, "
-        "$sources: [AnnotationReference]!, $range: [Int!], $filters: [AnnotationFilterInput!]) { "
+        "$sources: [AnnotationReference]!, $filters: [AnnotationFilterInput!]) { "
         "annotations(queryId: $queryId, reference: $reference, sources: $sources, "
-        f"range: $range, filters: $filters) {{ {selection} }} "
+        f"filters: $filters) {{ {selection} }} "
         "}"
     )
     return {
         "query": query,
-        "variables": {
-            "queryId": qid,
-            "reference": reference,
-            "sources": srcs,
-            "range": _clean_range(seq_range),
-            "filters": filters,
-        },
+        "variables": {"queryId": qid, "reference": reference, "sources": sources, "filters": filters},
     }

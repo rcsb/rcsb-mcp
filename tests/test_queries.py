@@ -609,11 +609,12 @@ def test_seqcoord_alignments():
 
 
 def test_seqcoord_annotations():
-    body = queries.build_sc_annotations_query("4HHB_1", "PDB_ENTITY", ["UNIPROT", "PDB_ENTITY"])
+    body = queries.build_sc_annotations_query("4HHB_1", ["ACTIVE_SITE"])
     assert "annotations(queryId: $queryId, reference: $reference, sources: $sources" in body["query"]
     v = body["variables"]
     assert v["queryId"] == "4HHB_1" and v["reference"] == "PDB_ENTITY"
-    assert v["sources"] == ["UNIPROT", "PDB_ENTITY"] and v["range"] is None
+    assert v["sources"] == ["UNIPROT"]
+    assert v["filters"] == [{"field": "TYPE", "operation": "EQUALS", "values": ["ACTIVE_SITE"]}]
     print("ok: seqcoord annotations")
 
 
@@ -621,8 +622,8 @@ def test_seqcoord_validation():
     for bad in (
         lambda: queries.build_sc_alignments_query("P1", "BOGUS", "UNIPROT"),
         lambda: queries.build_sc_alignments_query("", "UNIPROT", "PDB_ENTITY"),
-        lambda: queries.build_sc_annotations_query("X", "UNIPROT", []),  # no sources
-        lambda: queries.build_sc_annotations_query("X", "UNIPROT", ["BOGUS"]),  # bad source
+        lambda: queries.build_sc_annotations_query("P69905"),  # not a PDB sequence
+        lambda: queries.build_sc_annotations_query("4HHB_1", ["BOGUS"]),  # not a feature type
         lambda: queries.build_sc_alignments_query("P1", "UNIPROT", "UNIPROT", seq_range=["a"]),
     ):
         try:

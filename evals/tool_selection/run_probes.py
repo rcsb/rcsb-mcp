@@ -185,6 +185,10 @@ def call_anthropic(system, tools, messages, model, temperature):
         "tools": [{"name": t["name"], "description": t["description"], "input_schema": t["schema"]} for t in tools],
         "tool_choice": {"type": "auto"}, "messages": messages,
     }
+    # Every probe sends the same ~16k-token tool list: cache it (the model sees the same prompt;
+    # later calls read the prefix at a tenth of the price).
+    if body["tools"]:
+        body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
     r = _CLIENT.post("https://api.anthropic.com/v1/messages", json=body, headers={
         "x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01"})
     _raise_for_status(r)

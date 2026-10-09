@@ -2,21 +2,16 @@
 
 __all__ = [
     "QUERY_ID_DOC",
-    "REFERENCE_DOC",
-    "SOURCES_DOC",
-    "SEQ_RANGE_DOC",
-    "FILTERS_DOC",
+    "FEATURE_TYPES_DOC",
 ]
 
-QUERY_ID_DOC = 'The sequence id, e.g. "4HHB_1" (PDB_ENTITY) or "P69905" (UNIPROT).'
+QUERY_ID_DOC = (
+    'A PDB polymer entity ("4HHB_1") or instance ("4HHB.A", RCSB chain id), computed models '
+    "included. For a UniProt or NCBI id, find its PDB entities with rcsb_seqcoord_alignments first."
+)
 
-REFERENCE_DOC = "Reference system query_id is given in."
-
-SOURCES_DOC = "Annotation provenance — which source(s) to pull features from."
-
-SEQ_RANGE_DOC = "Optional [begin, end] (1-based) to restrict the region."
-
-FILTERS_DOC = (
-    "Optional list of {field, operation, source?, values} filter dicts, where field is "
-    "TARGET_ID or TYPE and operation is CONTAINS or EQUALS."
+FEATURE_TYPES_DOC = (
+    'Optional feature types to return, any of them (e.g. ["ACTIVE_SITE", "BINDING_SITE"]), named '
+    "as in the `type` of returned features. Omit for every annotation; an answer too large to "
+    "return is refused with the types the sequence has."
 )
