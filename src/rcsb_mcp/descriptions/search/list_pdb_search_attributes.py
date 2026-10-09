@@ -6,8 +6,8 @@ __all__ = [
 ]
 
 QUERY_DOC = (
-    "Optional keyword(s) to filter the catalog, matched as words of the attribute path "
-    "and description, best match first. Omit to return everything."
+    "Optional keyword(s) to filter the catalog, matched as words of the attribute path, "
+    "description and allowed values, best match first. Omit to return everything."
 )
 
 SCHEMA_DOC = (

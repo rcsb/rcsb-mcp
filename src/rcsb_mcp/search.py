@@ -809,9 +809,11 @@ async def rcsb_search_request(
 # position 15), "ec" matched 193, and natural phrasings missed outright -- "space group"
 # against `space_group_name_H_M`, "molecular weight", "r-free". Now the query and every
 # record are split into WORDS (paths on `.` and `_`, text on anything non-alphanumeric) and
-# ranked by how directly they match. On a 221-keyword panel (2026-10-08) the attribute an
-# expert would pick reached the top 5 for ~73% of keywords instead of ~48%. The Data API's
-# field search ranks on the same principle, path before description (graphql._match_rank).
+# ranked by how directly they match, allowed values included (_value_match). On a 221-keyword
+# panel (2026-10-09) the attribute an expert would pick reached the top 5 for ~78% of keywords
+# instead of ~48%, and 12 that found nothing (pfam, go, cath, glycan, antibody ...) now find it
+# through a value. The Data API's field search ranks on the same principle, path before
+# description (graphql._match_rank).
 # --------------------------------------------------------------------------- #
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -861,15 +863,17 @@ def _abbreviates(path_word: str, word: str, known: dict[str, int]) -> bool:
 
 
 def _search_index(catalog: list[SearchAttribute]) -> list[tuple]:
-    """Per record: (record, segments, words per segment, path words, all words, description)."""
+    """Per record: (record, segments, words per segment, path words, all words, description,
+    allowed values as (value, words))."""
     index = []
     for record in catalog:
         segments = record["attribute"].lower().split(".")
         segment_words = [_words(seg) for seg in segments]
         path_words = {w for ws in segment_words for w in ws}
         description = _words(record.get("description") or "")
+        values = [(v, _words(str(v))) for v in record.get("enum") or []]
         index.append((record, segments, segment_words, path_words, path_words | set(description),
-                      description))
+                      description, values))
     return index
 
 
@@ -880,7 +884,7 @@ _WORD_RECORDS: dict[str, dict[str, int]] = {}
 for _schema, _index in _SEARCH_INDEX.items():
     _counts: dict[str, int] = {}
     for _entry in _index:
-        for _w in _entry[4]:
+        for _w in _entry[4] | {w for _, ws in _entry[6] for w in ws}:
             _counts[_w] = _counts.get(_w, 0) + 1
     _WORD_RECORDS[_schema] = _counts
 
@@ -908,7 +912,7 @@ def _match_tier(
     MolProbity text) are not a match. An identifier-shaped query ("comp_id", "exptl.method")
     stops at tier 2: scattering its pieces across a description is never what was meant.
     """
-    record, segments, segment_words, path_words, vocabulary, description = entry
+    record, segments, segment_words, path_words, vocabulary, description, _ = entry
 
     def same(word: str, path_word: str) -> bool:
         return word == path_word or _abbreviates(path_word, word, known)
@@ -932,6 +936,33 @@ def _match_tier(
     return None
 
 
+def _value_match(words: list[str], entry: tuple) -> tuple[int, list[Any]] | None:
+    """A match through the record's ALLOWED VALUES, when path and description have none.
+
+    Concepts often live only there: "glycosylation" is no attribute's path or description,
+    but N-GLYCOSYLATION_SITE is a value of rcsb_polymer_instance_feature_summary.type, and
+    "covalent bond" one of rcsb_polymer_struct_conn.connect_type. Ranked AFTER every path and
+    description match -- 5 for the words as a phrase in one value, 6 for all of them in one
+    value -- so they widen a listing and never displace: ranked with the description tiers
+    instead, "metal" pushed rcsb_entry_info.inter_mol_metalic_bond_count from 1st to 8th
+    behind "metal coordination" values, for no gain anywhere else (2026-10-09, 221-keyword
+    panel: same top-5, top-1 120 -> 124). Returns (tier, the matching values in catalog order).
+    """
+    values = entry[6]
+    phrase = [v for v, vw in values if _run_of(words, vw)]
+    if phrase:
+        return 5, phrase
+    within = [v for v, vw in values if all(w in vw for w in words)]
+    return (6, within) if within else None
+
+
+def _shown_values(record: SearchAttribute, matched: list[Any]) -> SearchAttribute:
+    """The record with only the values that matched -- a 72-value vocabulary would otherwise
+    cost ~1,000 tokens to show the one value asked about -- and `enum_total`, so the caller
+    knows more exist. Validation still checks the full set."""
+    return {**record, "enum": matched, "enum_total": len(record["enum"])}
+
+
 def _rank_key(tier: int, entry: tuple) -> tuple:
     # Within a tier: RCSB's own curated rcsb_* paths, then shallower, then shorter paths.
     record, segments = entry[0], entry[1]
@@ -947,9 +978,15 @@ def _search_catalog(query: str, schema: str) -> tuple[list[SearchAttribute], boo
     index, known = _SEARCH_INDEX[schema], _WORD_RECORDS[schema]
     scored = []
     for entry in index:
-        tier = _match_tier(raw, words, entry, identifier, known) if words else None
+        if not words:
+            break
+        tier = _match_tier(raw, words, entry, identifier, known)
         if tier is not None:
             scored.append((_rank_key(tier, entry), entry[0]))
+            continue
+        by_value = _value_match(words, entry)
+        if by_value:
+            scored.append((_rank_key(by_value[0], entry), _shown_values(entry[0], by_value[1])))
     if scored:
         return [r for _, r in sorted(scored, key=lambda x: x[0])], False, None
 
@@ -962,10 +999,19 @@ def _search_catalog(query: str, schema: str) -> tuple[list[SearchAttribute], boo
         cut = _GENERIC_SHARE * len(index)
         specific = [w for w in words if known.get(w, 0) <= cut] or words
         for entry in index:
-            tiers = [t for t in (_match_tier(w, [w], entry, False, known) for w in specific)
-                     if t is not None]
+            tiers, values, by_path = [], [], False
+            for w in specific:
+                tier = _match_tier(w, [w], entry, False, known)
+                if tier is not None:
+                    tiers.append(tier)
+                    by_path = True
+                elif (by_value := _value_match([w], entry)):
+                    tiers.append(by_value[0])
+                    values += [v for v in by_value[1] if v not in values]
             if tiers:
-                scored.append(((-len(tiers), *_rank_key(min(tiers), entry)), entry[0]))
+                record = entry[0] if by_path else _shown_values(
+                    entry[0], [v for v in entry[0]["enum"] if v in values])
+                scored.append(((-len(tiers), *_rank_key(min(tiers), entry)), record))
         if scored:
             return ([r for _, r in sorted(scored, key=lambda x: x[0])], True,
                     f'{gone}No attribute matches every word of "{query.strip()}"; showing those '
@@ -1039,6 +1085,10 @@ async def rcsb_list_pdb_search_attributes(
                         "keyword narrows them.")
             note = f"{note} {cap_note}" if note else cap_note
             hits = hits[:cap]
+        if any("enum_total" in a for a in hits):
+            trimmed = ("Where an attribute matched only through its allowed values, just the "
+                       "matching ones are shown; `enum_total` counts them all.")
+            note = f"{note} {trimmed}" if note else trimmed
         return _AttributeListResult(
             count=len(hits), match_mode="partial" if partial else "exact", attributes=hits,
             note=note,

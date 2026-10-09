@@ -499,6 +499,39 @@ def test_list_attributes_function_words_and_abbreviations():
     print("ok: function words and abbreviations")
 
 
+def test_list_attributes_matches_allowed_values():
+    # A concept that lives only in an attribute's VALUES used to be unfindable: "glycosylation"
+    # is no path or description, but N-GLYCOSYLATION_SITE is a value of the feature type.
+    r = _list_attrs(query="glycosylation")
+    feature = next(a for a in r["attributes"]
+                   if a["attribute"] == "rcsb_polymer_instance_feature_summary.type")
+    # only the matching values are shown, with the size of the full set
+    assert "N-GLYCOSYLATION_SITE" in feature["enum"] and "BINDING_SITE" not in feature["enum"]
+    assert feature["enum_total"] > len(feature["enum"])
+    assert "enum_total" in r["note"]
+    # ...validation still uses the full set, so a value not shown is still accepted
+    search._check_value(search._check_attribute(feature["attribute"], "structure"),
+                        "exact_match", "BINDING_SITE", False)
+    # an identifier-shaped value works too
+    exact = _list_attrs(query="N-GLYCOSYLATION_SITE")["attributes"]
+    assert exact[0]["attribute"] == "rcsb_polymer_instance_feature_summary.type"
+    print("ok: allowed values are matched")
+
+
+def test_value_matches_rank_after_path_and_description_matches():
+    # "covalent" names inter_mol_covalent_bond_count in its path; connect_type only in a value
+    paths = [a["attribute"] for a in _list_attrs(query="covalent")["attributes"]]
+    assert paths[0] == "rcsb_entry_info.inter_mol_covalent_bond_count"
+    assert "rcsb_polymer_struct_conn.connect_type" in paths
+    # ranked with the description tiers, "metal" values pushed the bond count to 8th
+    assert _list_attrs(query="metal")["attributes"][0]["attribute"] == \
+        "rcsb_entry_info.inter_mol_metalic_bond_count"
+    # a record found through its path keeps its FULL value list and no enum_total
+    method = _list_attrs(query="exptl.method")["attributes"][0]
+    assert "enum_total" not in method and len(method["enum"]) > 5
+    print("ok: value matches rank last")
+
+
 def test_list_attributes_caps_a_keyword_query():
     r = _list_attrs(query="entity")
     assert r["count"] == len(r["attributes"]) == search.LIST_ATTRIBUTES_CAP
@@ -533,6 +566,8 @@ if __name__ == "__main__":
     test_list_attributes_short_keywords_match_words_only()
     test_list_attributes_partial_and_empty_say_so()
     test_list_attributes_function_words_and_abbreviations()
+    test_list_attributes_matches_allowed_values()
+    test_value_matches_rank_after_path_and_description_matches()
     test_list_attributes_caps_a_keyword_query()
     test_list_attributes_full_catalog()
     test_list_attributes_bad_schema()

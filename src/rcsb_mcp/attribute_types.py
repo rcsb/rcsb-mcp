@@ -102,3 +102,7 @@ class SearchAttribute(TypedDict):
     # (rcsb_search_request counts the ones it dropped afterwards). Self-describing on purpose,
     # so no tool description has to explain it.
     often_empty: NotRequired[str]
+    # Listing output only, never in a catalog: on a record rcsb_list_pdb_search_attributes found
+    # through its allowed values alone, `enum` is cut to the values that matched and this is
+    # the size of the full set, so the caller knows more exist.
+    enum_total: NotRequired[int]
