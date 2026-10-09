@@ -280,13 +280,85 @@ def test_nothing_is_said_about_nested_records_however_the_query_is_shaped():
     for why, node, return_type in shapes:
         assert intersection_notes(node, return_type) == [], why
 
-    # And the entity-scoped pair keeps its finding-1 note at entry level, which is about
+    # And an entity-scoped pair keeps its finding-1 note at entry level, which is about
     # DIFFERENT ENTITIES, not different annotation records — removing finding 2 must not
-    # have taken it with it.
+    # have taken it with it. Matched INDEPENDENTLY (beside an unrelated condition) is the
+    # shape where that is true. Bound in a group of their own the pair is held to one
+    # annotation record, so to one entity, and the note would be false: measured 2026-10-09
+    # (annotation type=Pfam + name~kinase, released Q1 2024), bound 165 entries = 165 behind
+    # matching entities; independent 574 vs 556, 18 reached only via different entities.
+    # (Until then this asserted the note on the bound shape — see _binds_one_record.)
     entity_scoped = _attr([_f("rcsb_polymer_entity_annotation.annotation_id", "IPR001128"),
-                           _f("rcsb_polymer_entity_annotation.type", "GO")])
+                           _f("rcsb_polymer_entity_annotation.type", "GO"),
+                           _f("exptl.method", "X-RAY DIFFRACTION")])
     notes = intersection_notes(entity_scoped, "entry")
     assert any('return_type="polymer_entity"' in n for n in notes), notes
     assert not any("record" in n for n in notes), (
         f"nothing may mention nested records any more: {notes}"
     )
+
+
+# --- a group the API binds to ONE nested record: one object, nothing to split ---------
+SYM = "rcsb_struct_symmetry"
+XRAY = _f("exptl.method", "X-RAY DIFFRACTION")
+
+
+def _sym(field, value):
+    return _f(f"{SYM}.{field}", value)
+
+
+def _with_xray(group):
+    """Compose like rcsb_query_composer: a group binding a record is kept, not spliced."""
+    return queries.group_node([group, _attr([XRAY])], "and")
+
+
+def _split_notes(node):
+    return [n for n in intersection_notes(node, "entry") if "DIFFERENT assembly" in n]
+
+
+def test_bound_annotation_conditions_cannot_split_across_entities():
+    """One level down, the same: Pfam + name~kinase bound in their own group reach 165
+    entries, all 165 behind an entity carrying one such record."""
+    bound = _attr([_f("rcsb_polymer_entity_annotation.type", "Pfam"),
+                   _f("rcsb_polymer_entity_annotation.name", "kinase", "contains_words")])
+    notes = intersection_notes(_with_xray(bound), "entry")
+    assert not any("DIFFERENT polymer_entity" in n for n in notes), notes
+
+
+def test_conditions_bound_to_one_record_cannot_split_across_objects():
+    """The 2026-10-09 session's step 8: oligomeric_state + kind built in ONE call. The API
+    holds both to the same symmetry record, a record belongs to one assembly, so "a
+    DIFFERENT assembly can satisfy each one" cannot happen. Measured with symbol=C4 in place
+    of kind: 0 entries bound, 26 matched independently."""
+    assert _split_notes(_with_xray(_attr([_sym("oligomeric_state", "Homo 2-mer"),
+                                          _sym("kind", "Global Symmetry")]))) == []
+
+
+def test_the_same_conditions_matched_independently_keep_the_note():
+    """Beside an unrelated condition in ONE group they are matched independently -- Homo
+    2-mer + C4: 26 entries but 1 assembly. That is exactly the split the note exists for."""
+    loose = _flat_and((f"{SYM}.oligomeric_state", "exact_match", "Homo 2-mer"),
+                      (f"{SYM}.symbol", "exact_match", "C4"),
+                      ("exptl.method", "exact_match", "X-RAY DIFFRACTION"))
+    assert _split_notes(loose)
+
+
+def test_a_same_field_pair_on_its_own_is_not_bound():
+    """Homo 2-mer AND Homo 4-mer in their own group: 2,153 entries bound or not -- one field
+    never binds a record, so different assemblies can still supply each value."""
+    assert _split_notes(_with_xray(_attr([_sym("oligomeric_state", "Homo 2-mer"),
+                                          _sym("oligomeric_state", "Homo 4-mer")])))
+
+
+def test_a_second_field_binds_the_same_field_pair_too():
+    """The same pair plus kind=Global Symmetry in one group: 0 entries -- the whole group is
+    bound to one record, which cannot be both a dimer and a tetramer."""
+    assert _split_notes(_with_xray(_attr([_sym("oligomeric_state", "Homo 2-mer"),
+                                          _sym("oligomeric_state", "Homo 4-mer"),
+                                          _sym("kind", "Global Symmetry")]))) == []
+
+
+def test_an_unmeasured_shape_keeps_the_note():
+    """A negated condition in the group has not been measured, so the note stays on."""
+    negated = {**_sym("kind", "Global Symmetry"), "negation": True}
+    assert _split_notes(_with_xray(_attr([_sym("oligomeric_state", "Homo 2-mer"), negated])))

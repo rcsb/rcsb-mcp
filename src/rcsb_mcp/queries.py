@@ -404,6 +404,43 @@ def _pins_a_nested_record(group: dict[str, Any]) -> bool:
     return False
 
 
+def _binds_one_record(group: dict[str, Any]) -> bool:
+    """Whether the Search API holds EVERY condition in this group to one nested record.
+
+    It does when the group's children are all conditions on the same nested-indexed record,
+    covering at least two different fields, with nothing else beside them. Then each match is
+    one record -- one symmetry record, one citation -- and a record belongs to exactly one
+    object, so the conditions cannot be met by different objects. Measured 2026-10-09 (each
+    group ANDed with exptl.method = X-RAY DIFFRACTION, return_type=entry):
+
+        and[oligomeric_state=Homo 2-mer, symbol=C4]                 0   bound
+        the same two beside the X-ray condition in ONE group       26   independent
+        and[oligomeric_state=Homo 2-mer, oligomeric_state=Homo 4-mer]
+                                                                2,153   NOT bound: one field
+        ... plus kind=Global Symmetry in the same group             0   bound again
+
+    A same-field pair on its own stays unbound (_pins_a_nested_record's docstring has the
+    same finding), so "two different fields" is part of the rule, not a simplification. A
+    negated condition or a sub-group answers False: unmeasured, so the note keeps speaking.
+    """
+    records: set[tuple[str, str]] = set()
+    fields: set[str] = set()
+    for child in group.get("nodes") or []:
+        if not isinstance(child, dict) or child.get("type") != "terminal":
+            return False
+        service = child.get("service")
+        params = child.get("parameters") or {}
+        attribute = params.get("attribute")
+        if service not in ("text", "text_chem") or not attribute or params.get("negation"):
+            return False
+        record = _nested_record_of(attribute, service)
+        if record is None:
+            return False
+        records.add((service, record))
+        fields.add(attribute)
+    return len(records) == 1 and len(fields) >= 2
+
+
 def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> dict[str, Any]:
     """Join nodes with one AND/OR, collapsing what does not need to nest.
 
@@ -892,6 +929,10 @@ def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
             notes.append(note)
 
     for group in _and_groups(node):
+        # Conditions the API binds to one nested record are met by one object, whatever
+        # return_type is: there is no split to report (see _binds_one_record).
+        if _binds_one_record(group):
+            continue
         terminals = _attribute_terminals(group)
         scoped = [(a, s, sc) for a, s, sc in map(_terminal_scope, terminals) if sc]
 
