@@ -20,6 +20,22 @@ this to refresh, or `--check` in CI to fail when a committed catalog drifts from
 live schema. (A leaf that no longer carries a searchable context is dropped — those
 paths 400 at the Search API — so a regenerate also prunes stale attributes.)
 
+It also asks the live Search API, once per attribute, how many objects hold a value
+(an `exists` count). That count drives two lists emitted next to each catalog:
+
+    UNPOPULATED_*  in the schema but empty everywhere in the index, so every condition on
+                   one matches nothing. Left OUT of the catalog (an agent never sees them)
+                   and rejected by name in rcsb_query_attribute, so the silent zero becomes
+                   an error instead.
+    SPARSE_*       depositor-reported numbers that many entries reporting their category
+                   leave empty (structure catalog only), each mapped to its category's most
+                   filled attribute -- the "this entry reports the category" anchor. A value
+                   filter on one drops those entries untested; rcsb_search_request counts the
+                   ones that report the category and lack the value, and says how many.
+
+Both depend on the archive, not only the schema, so `--check` also reports a catalog
+stale when RCSB populates an attribute or fills one in.
+
 Usage:
     python scripts/generate_search_attributes.py            # (re)write both catalogs
     python scripts/generate_search_attributes.py --check    # exit 1 if either is stale (no write)
@@ -27,9 +43,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import pathlib
+import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 _SRC = pathlib.Path(__file__).resolve().parents[1] / "src" / "rcsb_mcp"
 
@@ -42,6 +62,12 @@ CATALOGS = [
         "out": _SRC / "search_attributes.py",
         "var": "SEARCH_ATTRIBUTES",
         "label": "structure** (text)",
+        # How an attribute's coverage is counted: entries, computed models included, so an
+        # attribute only computed models fill is not mistaken for an empty one.
+        "service": "text",
+        "return_type": "entry",
+        "content_types": ["experimental", "computational"],
+        "sparse_var": "SPARSE_SEARCH_ATTRIBUTES",
     },
     {
         "name": "chemical",
@@ -49,6 +75,12 @@ CATALOGS = [
         "out": _SRC / "chemical_search_attributes.py",
         "var": "CHEMICAL_SEARCH_ATTRIBUTES",
         "label": "chemical** (text_chem)",
+        "service": "text_chem",
+        "return_type": "mol_definition",
+        "content_types": None,
+        # Chemical-component definitions come from the CCD, not from depositors, so there
+        # is no depositor-reported field to flag.
+        "sparse_var": None,
     },
 ]
 
@@ -62,6 +94,29 @@ _OP_RANK = {op: i for i, op in enumerate(CANONICAL_OP_ORDER)}
 
 # Numeric/temporal comparison operators (used when context is "default-match").
 _COMPARISON_OPS = ["equals", "greater", "less", "greater_or_equal", "less_or_equal", "range"]
+
+
+SEARCH_QUERY_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
+
+# An attribute is SPARSE when it is a depositor-reported number and fewer than this share
+# of the entries reporting anything in its category (its first path segment) give it a
+# value. Category-relative on purpose: pH is empty on 27% of X-ray entries, but relative to
+# all entries it would look "empty" just because NMR and EM entries never have a crystal.
+# Measured 2026-10-08, with the two exclusions below: 0.9 flags pH, Wilson B, Rmerge, mean
+# B, mosaicity and ~31 EM fields.
+SPARSE_FILL = 0.9
+# rcsb_* is computed by RCSB and pdbx_vrpt* by the validation pipeline: a gap there means
+# "does not apply", not "the depositor left it out". The threshold alone would flag them
+# (ligand molecular weight is filled on 15% of entries -- the ones with a ligand -- and EC
+# depth on 36%, the enzymes), so they are excluded by prefix.
+_COMPUTED_PREFIXES = ("rcsb_", "pdbx_vrpt")
+# A category nearly every experimental entry reports (exptl, struct) cannot tell "left out"
+# from "does not apply": exptl.crystals_number is empty on every NMR and EM entry, which
+# reads as 75% fill against exptl.method although ~94% of the crystal entries have it. Such
+# categories are not judged at all.
+UNIVERSAL_SHARE = 0.95
+# Counts every experimental entry; the denominator for UNIVERSAL_SHARE.
+_ENTRY_ID = "rcsb_entry_container_identifiers.entry_id"
 
 
 def fetch_schema(url: str) -> dict:
@@ -158,7 +213,7 @@ def build_catalog(schema: dict) -> list[dict]:
             "operators": _operators_of(leaf.get("rcsb_search_context", []), typ),
             "description": _description_of(leaf),
         }
-        # The coherence scope, on the 22% of attributes that have one. Emitted as the
+        # The coherence scope, on the ~19% of attributes that have one. Emitted as the
         # container PATH rather than a boolean because the path is the actionable part —
         # "group this with everything else carrying the same value" — and it is not
         # derivable from the attribute: 22 structure attributes have a group that is not
@@ -168,8 +223,8 @@ def build_catalog(schema: dict) -> list[dict]:
         # and the obvious guess is wrong for exactly those.
         if nested_group:
             record["nested_group"] = nested_group
-        # Allowed values, where the schema constrains them (~15% of attributes). Emitted
-        # LAST and only when present, so the 85% without one are byte-identical to before.
+        # Allowed values, where the schema constrains them (~16% of attributes). Emitted
+        # LAST and only when present, so the ~84% without one are byte-identical to before.
         # Kept whole and unsorted: this is the authoritative set the API matches against,
         # and a truncated or reordered list would be worse than none — the caller would
         # pick from what it was shown and never learn a value was omitted.
@@ -179,23 +234,117 @@ def build_catalog(schema: dict) -> list[dict]:
     return [out[k] for k in sorted(out)]
 
 
-def render_module(catalog: list[dict], spec: dict) -> str:
+def _exists_count(spec: dict, attribute: str, content_types: list[str] | None = None) -> int:
+    """How many objects of the catalog's kind hold a value for `attribute` (live)."""
+    options: dict = {"return_counts": True}
+    if content_types or spec["content_types"]:
+        options["results_content_type"] = content_types or spec["content_types"]
+    body = json.dumps({
+        "query": {"type": "terminal", "service": spec["service"],
+                  "parameters": {"attribute": attribute, "operator": "exists"}},
+        "return_type": spec["return_type"],
+        "request_options": options,
+    }).encode()
+    attempts = 5
+    for attempt in range(attempts):
+        req = urllib.request.Request(SEARCH_QUERY_URL, data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                if resp.status == 204:  # the API's "nothing matched"
+                    return 0
+                return int(json.loads(resp.read().decode())["total_count"])
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (429, 500, 502, 503, 504):
+                raise RuntimeError(f"exists probe for {attribute!r} failed: HTTP {exc.code}") from None
+        # A dropped connection surfaces from getresponse()/read() unwrapped by urllib.
+        except (urllib.error.URLError, http.client.HTTPException, ConnectionError, TimeoutError):
+            pass
+        if attempt < attempts - 1:
+            time.sleep(2 ** attempt)
+    # Fatal rather than "assume populated": a catalog generated from partial counts would be
+    # committed as if it were complete.
+    raise RuntimeError(f"exists probe for {attribute!r} kept failing; nothing was written")
+
+
+def probe_counts(catalog: list[dict], spec: dict) -> dict[str, int]:
+    """The live `exists` count of every attribute in a catalog (seconds, at 8 in flight)."""
+    attrs = [a["attribute"] for a in catalog]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(zip(attrs, pool.map(lambda a: _exists_count(spec, a), attrs)))
+
+
+def unpopulated(counts: dict[str, int]) -> list[str]:
+    """Attributes no object holds a value for."""
+    return sorted(a for a, n in counts.items() if n == 0)
+
+
+def sparse(catalog: list[dict], counts: dict[str, int], entries: int) -> dict[str, str]:
+    """Depositor-reported numbers left empty by many entries that report their category.
+
+    Maps each to its category's ANCHOR: the category's most filled attribute, i.e. "this
+    entry reports the category". The runtime gap count requires it, so an entry the
+    attribute cannot apply to (crystal pH on a cryo-EM entry) is not counted as a gap.
+    `entries` is the number of experimental entries (see UNIVERSAL_SHARE).
+    """
+    anchor: dict[str, str] = {}
+    for attr in sorted(counts):
+        cat = attr.split(".")[0]
+        if counts[attr] > counts.get(anchor.get(cat, ""), -1):
+            anchor[cat] = attr
+    flagged = {}
+    for record in catalog:
+        attr = record["attribute"]
+        if record["type"] not in ("number", "integer") or attr.startswith(_COMPUTED_PREFIXES):
+            continue
+        top = counts[anchor[attr.split(".")[0]]]
+        if top >= UNIVERSAL_SHARE * entries:
+            continue
+        if 0 < counts[attr] < SPARSE_FILL * top:
+            flagged[attr] = anchor[attr.split(".")[0]]
+    return dict(sorted(flagged.items()))
+
+
+def render_module(catalog: list[dict], spec: dict, empty: list[str], thin: dict[str, str]) -> str:
     body = json.dumps(catalog, indent=4, ensure_ascii=False)
-    return (
+    text = (
         f'"""Searchable RCSB **{spec["label"]} attributes.\n\n'
         "Auto-generated by scripts/generate_search_attributes.py from\n"
         f'{spec["schema_url"]}\n'
+        "and the live Search API's per-attribute counts.\n"
         "Do not edit by hand; re-run the generator to refresh.\n"
         '"""\n\n'
         "from rcsb_mcp.attribute_types import SearchAttribute\n\n"
-        f'{spec["var"]}: list[SearchAttribute] = {body}\n'
+        f'{spec["var"]}: list[SearchAttribute] = {body}\n\n'
+        "# In the schema but holding no value anywhere in the search index (a live `exists`\n"
+        "# count of 0), so every condition on one matches nothing. Left out of the catalog\n"
+        "# above; rcsb_query_attribute rejects them by name.\n"
+        f'UNPOPULATED_{spec["var"]}: list[str] = {json.dumps(empty, indent=4)}\n'
     )
+    if spec["sparse_var"]:
+        text += (
+            "\n# Depositor-reported numbers that more than 10% of the entries reporting their\n"
+            "# category leave empty, each mapped to its category's most filled attribute (the\n"
+            "# entry reports the category). A value filter on one drops those entries untested;\n"
+            "# rcsb_search_request counts the ones holding the anchor but not the value.\n"
+            f'{spec["sparse_var"]}: dict[str, str] = {json.dumps(thin, indent=4)}\n'
+        )
+    return text
 
 
-def generate(spec: dict) -> tuple[list[dict], str]:
-    """Fetch a schema and return (catalog, rendered module text) for one catalog spec."""
-    catalog = build_catalog(fetch_schema(spec["schema_url"]))
-    return catalog, render_module(catalog, spec)
+def generate(spec: dict) -> tuple[list[dict], str, list[str], dict[str, str]]:
+    """Fetch a schema, count every attribute live, and render one catalog module.
+
+    Returns (catalog, module text, unpopulated, sparse); the catalog excludes unpopulated.
+    """
+    full = build_catalog(fetch_schema(spec["schema_url"]))
+    counts = probe_counts(full, spec)
+    empty = unpopulated(counts)
+    catalog = [a for a in full if counts[a["attribute"]] > 0]
+    thin: dict[str, str] = {}
+    if spec["sparse_var"]:
+        thin = sparse(catalog, counts, _exists_count(spec, _ENTRY_ID, ["experimental"]))
+    return catalog, render_module(catalog, spec, empty, thin), empty, thin
 
 
 def main() -> int:
@@ -208,18 +357,19 @@ def main() -> int:
 
     stale = False
     for spec in CATALOGS:
-        catalog, module = generate(spec)
+        catalog, module, empty, thin = generate(spec)
         name = spec["out"].name
+        sizes = f"{len(catalog)} attrs, {len(empty)} unpopulated, {len(thin)} sparse"
         if args.check:
             current = spec["out"].read_text() if spec["out"].exists() else ""
             if current != module:
-                print(f"STALE: {name} differs from the live {spec['name']} schema ({len(catalog)} attrs)")
+                print(f"STALE: {name} differs from the live {spec['name']} schema/counts ({sizes})")
                 stale = True
             else:
-                print(f"OK: {name} up to date ({len(catalog)} attrs)")
+                print(f"OK: {name} up to date ({sizes})")
         else:
             spec["out"].write_text(module)
-            print(f"wrote {name} ({len(catalog)} {spec['name']} attributes)")
+            print(f"wrote {name} ({spec['name']}: {sizes})")
     return 1 if (args.check and stale) else 0
 
 

@@ -38,6 +38,26 @@ def test_invalid_path_raises_and_steers_to_the_authoritative_lookup():
     assert "do not guess" in msg
 
 
+def test_an_unpopulated_attribute_is_rejected_by_name():
+    """In the schema, empty in the index: a legal query that always returns 0 hits.
+
+    `ligand_is_bound` promises "covalent or metal-coordination" and matches nothing on any
+    return type, so a covalent-inhibitor question answered with it reported "none" for KRAS,
+    BTK and EGFR alike. It must fail as itself, not as a typo with a "did you mean".
+    """
+    from rcsb_mcp.chemical_search_attributes import UNPOPULATED_CHEMICAL_SEARCH_ATTRIBUTES
+    from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES, UNPOPULATED_SEARCH_ATTRIBUTES
+
+    assert "rcsb_ligand_neighbors.ligand_is_bound" in UNPOPULATED_SEARCH_ATTRIBUTES
+    for schema, paths in (("structure", UNPOPULATED_SEARCH_ATTRIBUTES),
+                          ("chemical", UNPOPULATED_CHEMICAL_SEARCH_ATTRIBUTES)):
+        for path in paths:
+            with pytest.raises(ValueError, match="holds no value anywhere in the search index"):
+                _check_attribute(path, schema)
+    # ...and none of them is offered in the first place
+    assert not {a["attribute"] for a in SEARCH_ATTRIBUTES} & set(UNPOPULATED_SEARCH_ATTRIBUTES)
+
+
 def test_schema_selection_matters():
     """A structure-only attribute must not validate under the chemical catalog."""
     with pytest.raises(ValueError):

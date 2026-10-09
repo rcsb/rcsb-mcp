@@ -257,4 +257,35 @@
     <expect tool="rcsb_describe_seqcoord_object"/>
   </probe>
 
+  <!--
+    CHEMICAL-ATTRIBUTES CANARIES (added 2026-10-08).
+    Chemical-component paths (rcsb_chem_comp_container_identifiers.comp_id, chem_comp.*) are in
+    BOTH catalogs. As structure attributes they match a component only as a non-polymer ligand;
+    with chemical_attributes=True, also inside polymers. Phosphoserine: 38 entries vs 2,328;
+    selenomethionine: 20 vs 10,296. These probes seed the comp_id listing (the real one, identical
+    in every arm) and grade the flag the model sets when it builds the query for a residue that
+    occurs inside proteins. RESULT 2026-10-09 (Haiku 4.5, k=8): a sentence stating the rule in the
+    chemical_attributes description moved neither probe (0/8 -> 0/8), so it was reverted and the
+    rule is reported at run time instead, with both counts (queries.component_probes). Kept as the
+    instrument for any future attempt to steer the flag up front; expect 0/8 until then.
+    A model reaching for rcsb_polymer_entity_container_identifiers.chem_comp_monomers would also be
+    right but is graded wrong here; that path is not in the seeded listing.
+  -->
+  <probe id="chem-attributes-modified-residue" probes="chemical_attributes: a component inside a polymer needs True">
+    <prompt>Find PDB entries that contain phosphoserine (chemical component SEP).</prompt>
+    <turn role="assistant" tool="rcsb_list_pdb_search_attributes" args='{"query": "comp_id"}'>{"count":8,"match_mode":"exact","attributes":[{"attribute":"rcsb_binding_affinity.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Ligand identifier.","nested_group":"rcsb_binding_affinity"},{"attribute":"rcsb_nonpolymer_entity_annotation.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer(ligand) chemical component identifier for the entity.","nested_group":"rcsb_nonpolymer_entity_annotation"},{"attribute":"rcsb_nonpolymer_instance_annotation.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer (ligand) chemical component identifier.","nested_group":"rcsb_nonpolymer_instance_annotation"},{"attribute":"rcsb_chem_comp_container_identifiers.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier."},{"attribute":"rcsb_nonpolymer_entity_instance_container_identifiers.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Component identifier for non-polymer entity instance."},{"attribute":"rcsb_ligand_neighbors.ligand_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier for the ligand interaction."},{"attribute":"rcsb_target_neighbors.target_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier for the target of interaction."},{"attribute":"rcsb_nonpolymer_entity_container_identifiers.nonpolymer_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer(ligand) chemical component identifier for the entity in this container."}]}</turn>
+    <turn role="user">Build the query for that.</turn>
+    <expect tool="rcsb_query_attribute">
+      <arg name="chemical_attributes" equals="true"/>
+    </expect>
+  </probe>
+
+  <probe id="chem-attributes-selenomethionine" probes="chemical_attributes: a component inside a polymer needs True">
+    <prompt>Which PDB structures contain selenomethionine (component MSE)?</prompt>
+    <turn role="assistant" tool="rcsb_list_pdb_search_attributes" args='{"query": "comp_id"}'>{"count":8,"match_mode":"exact","attributes":[{"attribute":"rcsb_binding_affinity.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Ligand identifier.","nested_group":"rcsb_binding_affinity"},{"attribute":"rcsb_nonpolymer_entity_annotation.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer(ligand) chemical component identifier for the entity.","nested_group":"rcsb_nonpolymer_entity_annotation"},{"attribute":"rcsb_nonpolymer_instance_annotation.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer (ligand) chemical component identifier.","nested_group":"rcsb_nonpolymer_instance_annotation"},{"attribute":"rcsb_chem_comp_container_identifiers.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier."},{"attribute":"rcsb_nonpolymer_entity_instance_container_identifiers.comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Component identifier for non-polymer entity instance."},{"attribute":"rcsb_ligand_neighbors.ligand_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier for the ligand interaction."},{"attribute":"rcsb_target_neighbors.target_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"The chemical component identifier for the target of interaction."},{"attribute":"rcsb_nonpolymer_entity_container_identifiers.nonpolymer_comp_id","type":"string","operators":["in","exact_match","exists"],"description":"Non-polymer(ligand) chemical component identifier for the entity in this container."}]}</turn>
+    <turn role="user">Build the query for that.</turn>
+    <expect tool="rcsb_query_attribute">
+      <arg name="chemical_attributes" equals="true"/>
+    </expect>
+  </probe>
 </probes>

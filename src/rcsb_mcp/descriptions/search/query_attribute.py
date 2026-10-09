@@ -44,6 +44,11 @@ For several values of a SINGLE attribute use the attribute operator `in`.
 For a query needing AND + OR — e.g. (high-resolution OR NMR) AND human — build each group \
 separately and join them with rcsb_query_composer."""
 
+# The structure-vs-chemical difference (a component path as a structure attribute matches only
+# non-polymer ligands) is NOT stated here: a sentence saying so was A/B-tested on 2026-10-09
+# and never once made Haiku 4.5 set the flag (0/8 -> 0/8 on two seeded probes), while costing
+# 15 tokens on every turn. rcsb_search_request reports it instead, when it happens, with both
+# counts (queries.component_probes).
 CHEMICAL_ATTRIBUTES_DOC = (
     'Set True when the paths come from rcsb_list_pdb_search_attributes(schema="chemical") '
     '(e.g. "chem_comp.formula_weight"). Selects the chemical-component catalog rather than '

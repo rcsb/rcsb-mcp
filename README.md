@@ -47,7 +47,7 @@ filter).
 
 | Tool | What it does |
 |------|--------------|
-| `rcsb_list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~683) or `schema="chemical"` (~61: `chem_comp.*`, `drugbank_info.*`, ...). Records also carry `enum` (closed value sets) and `nested_group` (attributes stored in nested objects — see below). |
+| `rcsb_list_pdb_search_attributes` | Discover searchable attribute paths, types, and operators. `schema="structure"` (default, ~636) or `schema="chemical"` (~58: `chem_comp.*`, `drugbank_info.*`, ...). Records also carry `enum` (closed value sets) and `nested_group` (attributes stored in nested objects — see below). |
 | `rcsb_find_go_terms` | Resolve a free-text molecular function / biological process / cellular component to Gene Ontology ids (via EBI QuickGO), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_lineage.id`. |
 | `rcsb_find_interpro_domains` | Resolve a free-text protein domain / family / fold to InterPro and Pfam ids (via EBI Search), annotated with PDB entry counts — then search by `rcsb_polymer_entity_annotation.annotation_id`. |
 | `rcsb_find_enzyme_classes` | Resolve a free-text enzyme / reaction to Enzyme Commission (EC) numbers (via EBI Search/IntEnz), annotated with PDB entry counts — then search by `rcsb_polymer_entity.rcsb_ec_lineage.id` (hierarchical). |

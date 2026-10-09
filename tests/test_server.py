@@ -440,23 +440,67 @@ def test_list_attributes_exact_match():
     print("ok: list attributes exact match")
 
 
-def test_list_attributes_multiword_explains_itself():
-    # The motivating bug: a multi-word query matches nothing, and the bare [] used to be
-    # indistinguishable from "the PDB has no such attribute" (and reached the model as ZERO
-    # content blocks). It must now say the query SHAPE is the likely cause.
+def test_list_attributes_multiword_matches_words_not_a_substring():
+    # The motivating bug: "nonpolymer comp_id" used to match NOTHING, because the filter was
+    # a literal substring and those words are never adjacent. Words match wherever they are.
     r = _list_attrs(query="nonpolymer comp_id")
-    assert r["count"] == 0 and r["attributes"] == [] and r["match_mode"] == "none"
-    note = r["note"]
-    assert "single keyword" in note and "substring" in note
-    assert "nonpolymer comp_id" in note, "should quote the query back"
-    assert 'schema="chemical"' in note, "structure searches should mention the other catalog"
-    # single-word misses get the other wording, and no phrase advice
-    r1 = _list_attrs(query="zzz_no_such_attribute")
-    assert r1["match_mode"] == "none" and "single keyword" not in r1["note"]
+    assert r["match_mode"] == "exact" and "note" not in r
+    assert r["attributes"][0]["attribute"] == \
+        "rcsb_nonpolymer_entity_container_identifiers.nonpolymer_comp_id"
+    # underscore vs space: the catalog's paths use one, people the other
+    space = _list_attrs(query="space group")
+    assert space["attributes"][0]["attribute"] == "symmetry.space_group_name_H_M"
+    print("ok: list attributes multi-word matches words")
+
+
+def test_list_attributes_short_keywords_match_words_only():
+    # "pH" used to match alpha, phase and pharmacology: 27 attributes, the right one 15th.
+    r = _list_attrs(query="pH")
+    assert [a["attribute"] for a in r["attributes"]] == ["exptl_crystal_grow.pH"]
+    print("ok: short keywords match whole words")
+
+
+def test_list_attributes_partial_and_empty_say_so():
+    # Some words match, not all: shown, ranked by how many matched, and labelled as such.
+    r = _list_attrs(query="covalent zzzqqq")
+    assert r["match_mode"] == "partial" and r["count"] > 0
+    assert "every word" in r["note"] and "covalent zzzqqq" in r["note"]
+    # Nothing matches: a note that sends the caller somewhere, not a bare [] that reads as
+    # "the PDB has no such attribute" (and once reached the model as ZERO content blocks).
+    none = _list_attrs(query="zzzqqq_xxyy")
+    assert none["count"] == 0 and none["attributes"] == [] and none["match_mode"] == "none"
+    assert "zzzqqq_xxyy" in none["note"], "should quote the query back"
+    assert 'schema="chemical"' in none["note"], "structure searches should mention the other catalog"
     # ...and the chemical catalog does not advertise itself
-    r2 = _list_attrs(query="nonpolymer comp_id", schema="chemical")
-    assert r2["match_mode"] == "none" and "chemical" not in r2["note"]
-    print("ok: list attributes multi-word explains itself")
+    chem = _list_attrs(query="zzzqqq_xxyy", schema="chemical")
+    assert chem["match_mode"] == "none" and "chemical" not in chem["note"]
+    # An identifier with no exact match is still looked up word by word: "crystal_ph" used
+    # to get a note claiming none of its words matched anything.
+    ph = _list_attrs(query="crystal_ph")
+    assert ph["match_mode"] == "partial" and ph["attributes"][0]["attribute"] == "exptl_crystal_grow.pH"
+    # A path dropped for holding no value says so, and offers its neighbours.
+    gone = _list_attrs(query="rcsb_ligand_neighbors.ligand_is_bound")
+    assert "holds no value anywhere in the search index" in gone["note"]
+    assert gone["attributes"][0]["attribute"].startswith("rcsb_ligand_neighbors.")
+    print("ok: partial and empty listings explain themselves")
+
+
+def test_list_attributes_function_words_and_abbreviations():
+    # "temp" in a path answers "temperature" (it was 6th, behind four EM paths)...
+    top = [a["attribute"] for a in _list_attrs(query="temperature")["attributes"][:3]]
+    assert "diffrn.ambient_temp" in top
+    # ...but only for a word the catalog spells out: entity_poly does not answer "polymerase"
+    assert _list_attrs(query="polymerase")["match_mode"] == "none"
+    # "of" is not evidence: words scattered through one long description are not a match
+    assert _list_attrs(query="number of chains")["match_mode"] != "exact"
+    print("ok: function words and abbreviations")
+
+
+def test_list_attributes_caps_a_keyword_query():
+    r = _list_attrs(query="entity")
+    assert r["count"] == len(r["attributes"]) == search.LIST_ATTRIBUTES_CAP
+    assert "best of" in r["note"] and "more specific keyword" in r["note"]
+    print("ok: keyword listings are capped")
 
 
 def test_list_attributes_full_catalog():
@@ -482,7 +526,11 @@ def test_list_attributes_bad_schema():
 if __name__ == "__main__":
     test_attribute_catalogs_conform()
     test_list_attributes_exact_match()
-    test_list_attributes_multiword_explains_itself()
+    test_list_attributes_multiword_matches_words_not_a_substring()
+    test_list_attributes_short_keywords_match_words_only()
+    test_list_attributes_partial_and_empty_say_so()
+    test_list_attributes_function_words_and_abbreviations()
+    test_list_attributes_caps_a_keyword_query()
     test_list_attributes_full_catalog()
     test_list_attributes_bad_schema()
     test_flatten_depth_and_traversal()
@@ -508,7 +556,7 @@ if __name__ == "__main__":
 def test_nested_group_names_a_real_container_and_matches_the_scope_map():
     """`nested_group` is generated by a SECOND, independent walk of the search schema —
     scripts/generate_search_attributes.py — while queries._nested_record_of derives the same
-    fact from scripts/generate_attribute_scopes.py. They must agree on all 732 attributes, or
+    fact from scripts/generate_attribute_scopes.py. They must agree on every attribute, or
     the note and the catalog are telling agents different things about the same query.
 
     The value is the container PATH, deliberately, not a boolean: 22 structure attributes and

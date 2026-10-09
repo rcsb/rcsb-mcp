@@ -60,7 +60,7 @@ class SearchAttribute(TypedDict):
     type: AttributeValueType
     operators: list[TextOperator]
     description: str
-    # The nested container this attribute belongs to, on the 22% that have one. An object
+    # The nested container this attribute belongs to, on the ~19% that have one. An object
     # holds MANY of these records, and GROUPING SELECTS THE SEMANTICS -- per the Search API
     # team, the boolean syntax is deliberately overloaded for nested fields so that callers
     # can choose. Conditions sharing a `nested_group`, alone together in one group, must hold
@@ -87,7 +87,7 @@ class SearchAttribute(TypedDict):
     # acts on and is not derivable: 22 structure attributes group under something that is
     # not their first path segment.
     nested_group: NotRequired[str]
-    # The complete set of allowed values, on the ~15% of attributes that constrain them.
+    # The complete set of allowed values, on the ~16% of attributes that constrain them.
     # This is the only part of a filter nothing used to check, and the only one whose
     # failure is SILENT: a wrong path or operator is rejected, but a wrong VALUE builds a
     # query the API happily answers with zero hits — which reads as "no such structures

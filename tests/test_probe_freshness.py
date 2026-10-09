@@ -88,8 +88,13 @@ def test_model_visible_text_names_no_removed_tool(probes, tools):
     history out of the file.
 
     Attribute paths (`rcsb_entry_info.resolution_combined`) are excluded by the negative
-    lookahead, and `rcsb_query_*`-style globs by the trailing-underscore check.
+    lookahead, `rcsb_query_*`-style globs by the trailing-underscore check, and bare
+    attribute roots (a seeded listing's `"nested_group": "rcsb_binding_affinity"`) by name.
     """
+    from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
+    from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
+
+    roots = {a["attribute"].split(".")[0] for a in SEARCH_ATTRIBUTES + CHEMICAL_SEARCH_ATTRIBUTES}
     visible = []
     for p in probes:
         visible.append(p.findtext("prompt") or "")
@@ -97,7 +102,7 @@ def test_model_visible_text_names_no_removed_tool(probes, tools):
     strays = sorted({
         token for text in visible
         for token in re.findall(r"\brcsb_[a-z0-9_]+\b(?!\.)", text)
-        if token not in tools and not token.endswith("_")
+        if token not in tools and token not in roots and not token.endswith("_")
     })
     assert not strays, (
         f"probe text shown to the model names tools that are not registered: {strays}. "

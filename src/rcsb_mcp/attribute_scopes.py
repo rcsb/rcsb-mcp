@@ -12,20 +12,20 @@ chemical one.
 
 from rcsb_mcp.attribute_types import AttributeScope
 
-# structure: 150 roots covering 683 attributes.
+# structure: 142 roots covering 636 attributes.
 SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "audit_author": "entry",
     "cell": "entry",
-    "chem_comp": "mol_definition",
+    "chem_comp": "non_polymer_entity",
     "citation": "entry",
     "database_2": "entry",
     "diffrn": "entry",
     "diffrn_detector": "entry",
     "diffrn_radiation": "entry",
     "diffrn_source": "entry",
-    "drugbank_container_identifiers": "mol_definition",
-    "drugbank_info": "mol_definition",
-    "drugbank_target": "mol_definition",
+    "drugbank_container_identifiers": "non_polymer_entity",
+    "drugbank_info": "non_polymer_entity",
+    "drugbank_target": "non_polymer_entity",
     "em_2d_crystal_entity": "entry",
     "em_3d_crystal_entity": "entry",
     "em_3d_fitting": "entry",
@@ -56,7 +56,7 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "ihm_entry_collection_mapping": "entry",
     "pdbx_SG_project": "entry",
     "pdbx_audit_support": "entry",
-    "pdbx_chem_comp_pcm": "mol_definition",
+    "pdbx_chem_comp_pcm": "non_polymer_entity",
     "pdbx_database_PDB_obs_spr": "entry",
     "pdbx_database_related": "entry",
     "pdbx_database_status": "entry",
@@ -72,10 +72,9 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "pdbx_nmr_sample_details": "entry",
     "pdbx_nmr_software": "entry",
     "pdbx_nmr_spectrometer": "entry",
-    "pdbx_reference_molecule": "mol_definition",
-    "pdbx_reference_molecule_family": "mol_definition",
-    "pdbx_reference_molecule_related_structures": "mol_definition",
-    "pdbx_reference_molecule_synonyms": "mol_definition",
+    "pdbx_reference_molecule": "non_polymer_entity",
+    "pdbx_reference_molecule_family": "non_polymer_entity",
+    "pdbx_reference_molecule_synonyms": "non_polymer_entity",
     "pdbx_reflns_twin": "entry",
     "pdbx_serial_crystallography_measurement": "entry",
     "pdbx_serial_crystallography_sample_delivery": "entry",
@@ -94,22 +93,16 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "rcsb_assembly_info": "assembly",
     "rcsb_binding_affinity": "entry",
     "rcsb_branched_entity": "branched_entity",
-    "rcsb_branched_entity_annotation": "branched_entity",
     "rcsb_branched_entity_container_identifiers": "branched_entity",
-    "rcsb_branched_entity_feature_summary": "branched_entity",
-    "rcsb_branched_entity_instance_container_identifiers": "branched_instance",
-    "rcsb_branched_entity_keywords": "branched_entity",
     "rcsb_branched_entity_name_com": "branched_entity",
     "rcsb_branched_entity_name_sys": "branched_entity",
-    "rcsb_branched_instance_annotation": "branched_instance",
-    "rcsb_branched_instance_feature_summary": "branched_instance",
-    "rcsb_chem_comp_annotation": "mol_definition",
-    "rcsb_chem_comp_container_identifiers": "mol_definition",
-    "rcsb_chem_comp_descriptor": "mol_definition",
-    "rcsb_chem_comp_info": "mol_definition",
-    "rcsb_chem_comp_related": "mol_definition",
-    "rcsb_chem_comp_synonyms": "mol_definition",
-    "rcsb_chem_comp_target": "mol_definition",
+    "rcsb_chem_comp_annotation": "non_polymer_entity",
+    "rcsb_chem_comp_container_identifiers": "non_polymer_entity",
+    "rcsb_chem_comp_descriptor": "non_polymer_entity",
+    "rcsb_chem_comp_info": "non_polymer_entity",
+    "rcsb_chem_comp_related": "non_polymer_entity",
+    "rcsb_chem_comp_synonyms": "non_polymer_entity",
+    "rcsb_chem_comp_target": "non_polymer_entity",
     "rcsb_comp_model_provenance": "entry",
     "rcsb_entity_host_organism": "polymer_entity",
     "rcsb_entity_source_organism": "polymer_entity",
@@ -117,7 +110,6 @@ SEARCH_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "rcsb_entry_group_membership": "entry",
     "rcsb_entry_info": "entry",
     "rcsb_external_references": "entry",
-    "rcsb_genomic_lineage": "polymer_entity",
     "rcsb_id": "entry",
     "rcsb_ihm_dataset_list": "entry",
     "rcsb_ihm_dataset_source_db_reference": "entry",
@@ -175,7 +167,6 @@ SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS: dict[str, list[AttributeScope]] = {
         "branched_entity",
         "branched_instance",
         "entry",
-        "mol_definition",
         "non_polymer_entity",
         "non_polymer_instance",
         "polymer_entity",
@@ -193,7 +184,6 @@ SEARCH_ATTRIBUTE_AMBIGUOUS_ROOTS: dict[str, list[AttributeScope]] = {
 SEARCH_ATTRIBUTE_ENTRY_CONSTANT: list[str] = [
     "rcsb_assembly_container_identifiers.entry_id",
     "rcsb_branched_entity_container_identifiers.entry_id",
-    "rcsb_branched_entity_instance_container_identifiers.entry_id",
     "rcsb_comp_model_provenance.entry_id",
     "rcsb_entry_container_identifiers.entry_id",
     "rcsb_nonpolymer_entity_instance_container_identifiers.entry_id",
@@ -201,7 +191,7 @@ SEARCH_ATTRIBUTE_ENTRY_CONSTANT: list[str] = [
     "rcsb_polymer_entity_instance_container_identifiers.entry_id"
 ]
 
-# Roots holding MANY records per object (105 of 150).
+# Roots holding MANY records per object (99 of 142).
 # Two conditions on one of these can land on DIFFERENT records of the SAME object, so
 # scope equality does not mean the conditions co-occur — software.name and
 # software.classification are both entry-scoped, yet 18 of 25 sampled hits for
@@ -255,7 +245,6 @@ SEARCH_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "pdbx_nmr_sample_details",
     "pdbx_nmr_software",
     "pdbx_nmr_spectrometer",
-    "pdbx_reference_molecule_related_structures",
     "pdbx_reference_molecule_synonyms",
     "pdbx_reflns_twin",
     "pdbx_serial_crystallography_measurement",
@@ -270,11 +259,7 @@ SEARCH_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "pdbx_vrpt_summary_geometry",
     "rcsb_assembly_annotation",
     "rcsb_binding_affinity",
-    "rcsb_branched_entity_annotation",
-    "rcsb_branched_entity_feature_summary",
     "rcsb_branched_entity_name_sys",
-    "rcsb_branched_instance_annotation",
-    "rcsb_branched_instance_feature_summary",
     "rcsb_chem_comp_annotation",
     "rcsb_chem_comp_related",
     "rcsb_chem_comp_synonyms",
@@ -283,7 +268,6 @@ SEARCH_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "rcsb_entity_source_organism",
     "rcsb_entry_group_membership",
     "rcsb_external_references",
-    "rcsb_genomic_lineage",
     "rcsb_ihm_dataset_list",
     "rcsb_ihm_dataset_source_db_reference",
     "rcsb_ligand_neighbors",
@@ -314,7 +298,7 @@ SEARCH_ATTRIBUTE_REPEATING_ROOTS: list[str] = [
     "software"
 ]
 
-# The PATHS the Search API nested-indexes (41): it tracks the record, so
+# The PATHS the Search API nested-indexes (35): it tracks the record, so
 # conditions kept together in their OWN group are required to hold on one record.
 # That makes these fixable at the query level; the rest of the repeating roots are not.
 # Paths, not roots: the flag sits on the coherent sub-object, which for 6 roots is a
@@ -328,13 +312,7 @@ SEARCH_ATTRIBUTE_NESTED_ROOTS: list[str] = [
     "pdbx_initial_refinement_model",
     "rcsb_assembly_annotation",
     "rcsb_binding_affinity",
-    "rcsb_branched_entity_annotation",
-    "rcsb_branched_entity_annotation.annotation_lineage",
     "rcsb_branched_entity_container_identifiers.reference_identifiers",
-    "rcsb_branched_entity_feature_summary",
-    "rcsb_branched_instance_annotation",
-    "rcsb_branched_instance_annotation.annotation_lineage",
-    "rcsb_branched_instance_feature_summary",
     "rcsb_chem_comp_annotation",
     "rcsb_chem_comp_related",
     "rcsb_entry_group_membership",
@@ -364,7 +342,7 @@ SEARCH_ATTRIBUTE_NESTED_ROOTS: list[str] = [
     "rcsb_uniprot_container_identifiers.reference_sequence_identifiers"
 ]
 
-# chemical: 17 roots covering 61 attributes.
+# chemical: 17 roots covering 58 attributes.
 CHEMICAL_ATTRIBUTE_SCOPES: dict[str, AttributeScope] = {
     "chem_comp": "mol_definition",
     "drugbank_container_identifiers": "mol_definition",

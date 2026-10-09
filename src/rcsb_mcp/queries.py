@@ -8,6 +8,8 @@ https://data.rcsb.org/graphql
 """
 from __future__ import annotations
 
+import copy
+
 from typing import Any, NamedTuple, get_args
 
 from rcsb_mcp.attribute_scopes import (
@@ -416,7 +418,7 @@ def group_node(nodes: list[dict[str, Any]], logical_operator: str = "and") -> di
     never spliced: that nesting is the whole point of the composer.
 
     BUT associativity is not the whole story, and a group that pins two conditions to one
-    NESTED-INDEXED record is never spliced. For the 41 paths the Search API nested-indexes,
+    NESTED-INDEXED record is never spliced. For the ~35 paths the Search API nested-indexes,
     a group is also the record-coherence scope: conditions inside it must hold on the SAME
     sub-record, and flattening them only requires each to hold SOMEWHERE in the object.
     That turns a restriction into a relaxation, so the count can go UP -- which no correct
@@ -864,12 +866,14 @@ def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
     costs nothing otherwise — the silence is as load-bearing as the text, because a note on
     every query trains the reader to skip it.
 
-    Two findings:
+    Three findings:
 
     1. two comparable conditions finer than return_type -- FIXABLE by return_type
     2. return_type="assembly" with anything finer -- NOT fixable at all
+    3. return_type="mol_definition" with a non-chemical condition -- fixable only by
+       asking the chemical index instead
 
-    Both are about which OBJECT satisfies a condition. Nothing here reports on which nested
+    All are about which OBJECT satisfies a condition. Nothing here reports on which nested
     RECORD does: that reads as a defect but is a deliberate feature, where the query shape
     selects same-record or independent matching, and the tree carries no intent to judge it
     against. It is documented on rcsb_query_attribute and as `nested_group` in the attribute
@@ -928,7 +932,206 @@ def intersection_notes(node: dict[str, Any], return_type: str) -> list[str]:
                 )
                 break
 
+    # 3. Chemical definitions. Only the chemical index (text_chem, rcsb_query_chemical) judges
+    #    a component itself; any other condition is answered at ENTRY level and every
+    #    component of a matching entry comes back. Measured 2026-10-08:
+    #        comp_id=HEM as a structure attribute   6,485 entries -> 2,033 definitions,
+    #                                               ALA, GLY, SO4 among them
+    #        the same via text_chem                 1 definition, HEM
+    #        entry_id=4HHB                          21: 19 amino acids, HEM, PO4
+    #        full text "protoporphyrin"             2,087, standard residues included
+    #    That reading is sometimes the point ("which ligands occur in Thermus structures"),
+    #    so the note states what was answered rather than calling it wrong.
+    if return_type == "mol_definition":
+        for terminal in _terminals(node):
+            service = terminal.get("service")
+            if service in _CHEMICAL_SERVICES:
+                continue
+            attr = (terminal.get("parameters") or {}).get("attribute")
+            what = f"`{attr}`" if attr else f"the {service.replace('_', '-')} condition"
+            add(
+                f'With return_type="mol_definition", {what} is answered at ENTRY level: every '
+                f'chemical component of a matching entry is returned, standard residues, ions '
+                f'and solvents included, not only components that match it. To test a property '
+                f'of the component itself, use a chemical-catalog attribute with '
+                f'chemical_attributes=True.'
+            )
+            break
+
     return notes
+
+
+# The services that index chemical definitions themselves; see intersection_notes, finding 3.
+_CHEMICAL_SERVICES = frozenset({"text_chem", "chemical"})
+
+
+# --------------------------------------------------------------------------------------
+# Filters that do not mean what they read as
+#
+# Two more notes in the same spirit as the ones above: each fires only on the filters it
+# is about, so the queries it does not apply to pay nothing.
+# --------------------------------------------------------------------------------------
+
+# Attributes that count an object's polymer chains or name their mix. A short peptide bound
+# in a site is deposited as its own polymer chain, so it counts as a subunit: Mpro with a
+# peptide inhibitor in each site (7WQ8-1) is "Hetero 4-mer", A2B2, C2 -- never "Homo 2-mer".
+# Measured 2026-10-08: "Homo 2-mer" misses ~88% of 14-3-3 dimers bound to a phosphopeptide
+# and ~96% of estrogen-receptor dimers carrying a coactivator peptide. "Usually", because a
+# few hundred protein+peptide assemblies do read "Monomer" (2HAL) against ~9,000 "Hetero 2-mer".
+COMPOSITION_ATTRIBUTES = frozenset({
+    "rcsb_struct_symmetry.oligomeric_state",
+    # the same labels, as a lineage ("Global Symmetry.Cyclic.C2.Hetero 4-mer")
+    "rcsb_struct_symmetry_lineage.name",
+    "rcsb_struct_symmetry_lineage.id",
+    "rcsb_assembly_info.polymer_composition",
+    "rcsb_entry_info.polymer_composition",
+    "rcsb_assembly_info.polymer_entity_count",
+    "rcsb_assembly_info.polymer_entity_count_protein",
+    "rcsb_assembly_info.polymer_entity_instance_count",
+    "rcsb_assembly_info.polymer_entity_instance_count_protein",
+    "rcsb_entry_info.polymer_entity_count",
+    "rcsb_entry_info.polymer_entity_count_protein",
+    "rcsb_entry_info.deposited_polymer_entity_instance_count",
+    "pdbx_struct_assembly.oligomeric_details",
+})
+
+COMPOSITION_NOTE = (
+    "Oligomeric states and chain counts usually count a bound peptide deposited as its own "
+    'chain: a homodimer with a peptide in each site reads "Hetero 4-mer" (C2), not "Homo '
+    '2-mer". If peptides should not count, accept the hetero state too and check chain '
+    "lengths on the hits."
+)
+
+
+def _value_filters(node: dict[str, Any]):
+    """Yield every positive value condition on a structure attribute (not exists, not negated)."""
+    for terminal in _terminals(node):
+        params = terminal.get("parameters") or {}
+        if (terminal.get("service") == "text" and params.get("attribute")
+                and params.get("operator") != "exists" and not params.get("negation")):
+            yield terminal
+
+
+def composition_note(node: dict[str, Any]) -> str | None:
+    """Flag a filter on oligomeric state or chain counts: bound peptides count as chains."""
+    if any(t["parameters"]["attribute"] in COMPOSITION_ATTRIBUTES for t in _value_filters(node)):
+        return COMPOSITION_NOTE
+    return None
+
+
+# Each probe is one extra count request, so a query filtering on many sparse attributes
+# still costs at most this many.
+MAX_MISSING_VALUE_PROBES = 2
+
+
+def missing_value_probes(
+    node: dict[str, Any], anchors: dict[str, str]
+) -> list[tuple[str, dict[str, Any]]]:
+    """For each attribute in `anchors` that the query filters by value, the same query asking
+    who REPORTS the attribute's category but LACKS the value.
+
+    A value filter keeps only objects holding a value, so every object that matches the rest
+    of the query but never reported this one is dropped untested -- crystal pH is empty on
+    27% of X-ray entries. Swapping the filter for "has no value" counts those, and requiring
+    the category's anchor (`anchors[attribute]`, its most filled attribute) keeps out objects
+    the attribute cannot apply to: on every NMR and nearly every EM entry pH is not missing,
+    it was never there to report.
+
+    Every value filter on the attribute is swapped at once: a band built as pH >= 7 AND
+    pH <= 8 swapped one bound at a time would pair "no value" with the other bound and count
+    nothing. Only filters that AND with everything else qualify -- under an OR the swap would
+    change what the rest of the query means -- and the query must hold some other condition,
+    or the count is just the archive's gap and says nothing about this query.
+    """
+    found: dict[str, list[tuple[int, ...]]] = {}
+    others = False
+
+    def walk(n: dict[str, Any], path: tuple[int, ...], anded: bool) -> None:
+        nonlocal others
+        if n.get("type") == "group":
+            anded = anded and n.get("logical_operator") == "and"
+            for i, child in enumerate(n.get("nodes") or []):
+                walk(child, (*path, i), anded)
+            return
+        params = n.get("parameters") or {}
+        attribute = params.get("attribute")
+        if (anded and n.get("service") == "text" and attribute in anchors
+                and params.get("operator") != "exists" and not params.get("negation")):
+            found.setdefault(attribute, []).append(path)
+        else:
+            others = True
+
+    walk(node, (), True)
+    probes: list[tuple[str, dict[str, Any]]] = []
+    for attribute, paths in found.items():
+        # The rest of the query: anything that is not a value filter on this attribute.
+        if not (others or len(found) > 1):
+            continue
+        probe = copy.deepcopy(node)
+        absent = group_node([_text_node(attribute, "exists", negation=True),
+                             _text_node(anchors[attribute], "exists")], "and")
+        for k, path in enumerate(paths):
+            parent = probe
+            for i in path[:-1]:
+                parent = parent["nodes"][i]
+            # The first becomes the swap; any other filter on the same attribute just repeats
+            # the anchor, which leaves the AND unchanged and every group non-empty.
+            parent["nodes"][path[-1]] = absent if k == 0 else _text_node(anchors[attribute], "exists")
+        probes.append((attribute, probe))
+    return probes[:MAX_MISSING_VALUE_PROBES]
+
+
+def missing_value_note(attribute: str, anchor: str, count: int) -> str:
+    # Worded so the count needs no singular/plural agreement.
+    return (
+        f"Hits matching every other condition that report `{anchor}` but no `{attribute}` "
+        f"value: {count:,}. This filter excluded them untested; to list them, replace it "
+        f"with `{attribute}` exists (negation true) AND `{anchor}` exists."
+    )
+
+
+# Each probe is one extra count, run alongside the search.
+MAX_COMPONENT_PROBES = 2
+
+
+def component_probes(
+    node: dict[str, Any], shared_paths: frozenset[str]
+) -> list[tuple[str, dict[str, Any]]]:
+    """For each structure condition on a chemical-component path, the same query asked of
+    the chemical index instead.
+
+    `shared_paths` are the paths both catalogs carry (chem_comp.*, rcsb_chem_comp_*,
+    drugbank_* ...). As a structure attribute such a path matches a component only where it
+    is a non-polymer ligand; in the chemical index it matches the component wherever it
+    occurs, residues inside polymers and glycans included. Phosphoserine: 38 entries as a
+    structure attribute, 2,328 through the chemical index. Widening one condition can only
+    keep or raise the count, under AND and OR alike, so a larger count means the structure
+    reading dropped hits. Negated conditions are skipped: there the widening runs backwards.
+    """
+    probes: list[tuple[str, dict[str, Any]]] = []
+    for i, terminal in enumerate(_terminals(node)):
+        params = terminal.get("parameters") or {}
+        attribute = params.get("attribute")
+        if (terminal.get("service") != "text" or attribute not in shared_paths
+                or params.get("negation") or params.get("operator") == "exists"):
+            continue
+        probe = copy.deepcopy(node)
+        for j, t in enumerate(_terminals(probe)):
+            if j == i:
+                t["service"] = "text_chem"
+                break
+        probes.append((attribute, probe))
+    return probes[:MAX_COMPONENT_PROBES]
+
+
+def component_note(attribute: str, total: int, wider: int) -> str:
+    return (
+        f"`{attribute}` was searched as a structure attribute, which matches a component only "
+        f"where it is a non-polymer ligand: {total:,} hits. In the chemical index, which also "
+        f"matches it inside polymers and glycans (modified residues, peptide inhibitors), the "
+        f"same query has {wider:,}. For those, build that condition in its own "
+        f"rcsb_query_attribute call with chemical_attributes=True and compose it with the rest."
+    )
 
 
 def scoring_strategy_for(node: dict[str, Any]) -> str | None:

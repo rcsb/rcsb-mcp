@@ -11,7 +11,9 @@ module imports nothing back from server.
 
 from __future__ import annotations
 
+import asyncio
 import difflib
+import re
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
@@ -20,7 +22,11 @@ from rcsb_mcp import queries, query_doc
 from rcsb_mcp.attribute_types import SearchAttribute, TextOperator
 from rcsb_mcp.client import _post_search, _search_editor
 from rcsb_mcp.tooling import READ_ONLY
-from rcsb_mcp.search_attributes import SEARCH_ATTRIBUTES
+from rcsb_mcp.search_attributes import (
+    SEARCH_ATTRIBUTES,
+    SPARSE_SEARCH_ATTRIBUTES,
+    UNPOPULATED_SEARCH_ATTRIBUTES,
+)
 from rcsb_mcp.descriptions.search import (
     list_pdb_search_attributes,
     query_attribute,
@@ -34,7 +40,10 @@ from rcsb_mcp.descriptions.search import (
     search_request,
     shared,
 )
-from rcsb_mcp.chemical_search_attributes import CHEMICAL_SEARCH_ATTRIBUTES
+from rcsb_mcp.chemical_search_attributes import (
+    CHEMICAL_SEARCH_ATTRIBUTES,
+    UNPOPULATED_CHEMICAL_SEARCH_ATTRIBUTES,
+)
 
 
 ReturnType = Literal[
@@ -129,6 +138,36 @@ _ATTR_INDEX: dict[str, dict[str, SearchAttribute]] = {
     schema: {a["attribute"]: a for a in catalog} for schema, catalog in ATTRIBUTE_CATALOGS.items()
 }
 
+# In the schema but holding no value anywhere in the search index, so a condition on one is
+# a legal query that returns zero hits -- read as "no such structures". The generator leaves
+# them out of the catalogs; naming them here turns that silent zero into an error. Measured
+# 2026-10-08: rcsb_ligand_neighbors.ligand_is_bound, whose description promises "covalent or
+# metal-coordination", matches 0 objects on every return type (the Data API holds null for it
+# even on sotorasib bound to KRAS, 6OIM).
+_UNPOPULATED: dict[str, frozenset[str]] = {
+    "structure": frozenset(UNPOPULATED_SEARCH_ATTRIBUTES),
+    "chemical": frozenset(UNPOPULATED_CHEMICAL_SEARCH_ATTRIBUTES),
+}
+
+# The sparse attributes rcsb_search_request counts the gaps of, each with its category anchor
+# (queries.missing_value_probes). Not those in nested documents: there a condition belongs to
+# one record, and swapping it for "has no value" would test a different record than the rest
+# of its group.
+_MISSING_VALUE_CHECKED: dict[str, str] = {
+    a: anchor for a, anchor in SPARSE_SEARCH_ATTRIBUTES.items()
+    if not _ATTR_INDEX["structure"][a].get("nested_group")
+}
+# Paths both catalogs carry, i.e. chemical-component attributes a caller can search either as a
+# structure attribute (non-polymer ligands only) or in the chemical index (anywhere). rcsb_id is
+# not one: in the structure catalog it is the entry id. See queries.component_probes.
+_SHARED_COMPONENT_PATHS = frozenset(
+    set(_ATTR_INDEX["structure"]) & set(_ATTR_INDEX["chemical"]) - {"rcsb_id"}
+)
+# How long a finished search waits for its side counts (gaps, chemical-index widening) before
+# answering without them. They run alongside the search (~0.3 s each), so this only bounds a
+# slow count.
+_MISSING_VALUE_BUDGET = 5.0
+
 # `score` is the API's reserved default relevance sort — a real sort_by value, not a catalog
 # attribute; exempt it (and any future reserved token) from attribute-path validation. (The
 # `in`-on-numeric gap the catalog once had is now corrected in the catalog DATA itself — the
@@ -141,9 +180,15 @@ def _check_attribute(path: str, schema: str) -> SearchAttribute:
     record = _ATTR_INDEX[schema].get(path)
     if record is not None:
         return record
+    schema_arg = ', schema="chemical"' if schema == "chemical" else ""
+    if path in _UNPOPULATED[schema]:
+        raise ValueError(
+            f"'{path}' is in the RCSB {schema} schema but holds no value anywhere in the search "
+            "index, so filtering, sorting or faceting on it matches nothing. Pick a populated "
+            f'attribute with rcsb_list_pdb_search_attributes(query="<keyword>"{schema_arg}).'
+        )
     close = difflib.get_close_matches(path, _ATTR_INDEX[schema], n=3, cutoff=0.6)
     hint = f" Did you mean: {', '.join(close)}?" if close else ""
-    schema_arg = ', schema="chemical"' if schema == "chemical" else ""
     raise ValueError(
         f"'{path}' is not a searchable {schema} attribute. Find the exact path with "
         f'rcsb_list_pdb_search_attributes(query="<keyword>"{schema_arg}) — do not guess it.{hint}'
@@ -293,6 +338,54 @@ def _format(
     return result
 
 
+def _count_body(node: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+    """A request counting `node`'s hits at `body`'s return_type and content (no ids)."""
+    return {
+        "query": node,
+        "return_type": body["return_type"],
+        "request_options": {
+            "return_counts": True,
+            "results_content_type": body["request_options"].get(
+                "results_content_type", ["experimental"]
+            ),
+        },
+    }
+
+
+async def _missing_value_notes(node: dict[str, Any], body: dict[str, Any]) -> list[str]:
+    """Say how many hits a filter on a sparse attribute dropped untested (one count each).
+
+    Best effort: a failed count drops its note and never fails the search it annotates.
+    """
+    probes = queries.missing_value_probes(node, _MISSING_VALUE_CHECKED)
+
+    async def count(probe: dict[str, Any]) -> int:
+        try:
+            return (await _post_search(_count_body(probe, body))).get("total_count", 0)
+        except Exception:  # noqa: BLE001 -- a note is never worth failing the search over
+            return 0
+
+    counts = await asyncio.gather(*(count(p) for _, p in probes))
+    return [queries.missing_value_note(a, _MISSING_VALUE_CHECKED[a], n)
+            for (a, _), n in zip(probes, counts) if n]
+
+
+async def _count_or_none(node: dict[str, Any], body: dict[str, Any]) -> int | None:
+    try:
+        return (await _post_search(_count_body(node, body))).get("total_count", 0)
+    except Exception:  # noqa: BLE001 -- a note is never worth failing the search over
+        return None
+
+
+async def _side_counts(node: dict[str, Any], body: dict[str, Any]):
+    """Everything counted alongside the search: missing-value notes, and the chemical-index
+    count of each structure condition on a component path (queries.component_probes)."""
+    probes = queries.component_probes(node, _SHARED_COMPONENT_PATHS)
+    missing, *wider = await asyncio.gather(
+        _missing_value_notes(node, body), *(_count_or_none(p, body) for _, p in probes))
+    return missing, [(a, n) for (a, _), n in zip(probes, wider) if n is not None]
+
+
 async def _guard_all_hits(body: dict[str, Any], offset: int = 0) -> None:
     """Validate an all_hits search before issuing it.
 
@@ -307,17 +400,7 @@ async def _guard_all_hits(body: dict[str, Any], offset: int = 0) -> None:
             "all_hits returns the complete result set and can't be combined with offset "
             "paging (the Search API rejects it). Drop offset, or page with all_hits=False."
         )
-    count_body = {
-        "query": body["query"],
-        "return_type": body["return_type"],
-        "request_options": {
-            "return_counts": True,
-            "results_content_type": body["request_options"].get(
-                "results_content_type", ["experimental"]
-            ),
-        },
-    }
-    total = (await _post_search(count_body)).get("total_count", 0)
+    total = (await _post_search(_count_body(body["query"], body))).get("total_count", 0)
     if total > ALL_HITS_MAX:
         raise ValueError(
             f"all_hits would return {total} hits, above the {ALL_HITS_MAX} cap. "
@@ -675,12 +758,36 @@ async def rcsb_search_request(
     )
     if all_hits and not facets:
         await _guard_all_hits(body, offset)
-    raw = await _post_search(body)
+    # The gap counts run alongside the search itself. Not for facets or groups, whose
+    # totals count something other than the hits the note would talk about.
+    counting = (None if facets or group_by
+                else asyncio.ensure_future(_side_counts(node, body)))
+    try:
+        raw = await _post_search(body)
+    except BaseException:
+        if counting:
+            counting.cancel()
+        raise
+    missing: list[str] = []
+    wider: list[tuple[str, int]] = []
+    if counting:
+        try:
+            missing, wider = await asyncio.wait_for(counting, _MISSING_VALUE_BUDGET)
+        except asyncio.TimeoutError:
+            pass
     result = (_format_facets(raw, body) if facets
               else _format(raw, body, None if all_hits else offset))
     # Where this query was intersected more loosely than it reads. Absent on the queries
     # that are fine, which is most of them -- see queries.intersection_notes.
     notes = queries.intersection_notes(node, body["return_type"])
+    # Filters that read one way and match another (queries.composition_note), component paths
+    # searched as structure attributes when the chemical index finds more
+    # (queries.component_probes), and value filters on attributes many entries leave empty
+    # (_missing_value_notes).
+    composition = queries.composition_note(node)
+    total = result.get("total_count", 0)
+    component = [queries.component_note(a, total, n) for a, n in wider if n > total]
+    notes = [*notes, *([composition] if composition else []), *component, *missing]
     # Thin answers from a wording-dependent query. Separate concern from the above: that one
     # is about a query being looser than it reads, this one about it being narrower.
     if not facets:
@@ -694,6 +801,178 @@ async def rcsb_search_request(
 
 
 
+# --------------------------------------------------------------------------- #
+# Catalog search for rcsb_list_pdb_search_attributes
+#
+# It used to be a literal substring over path + description, unranked and uncapped. Short
+# keywords drowned: "pH" matched alpha, phase and pharmacology (27 hits, the one wanted at
+# position 15), "ec" matched 193, and natural phrasings missed outright -- "space group"
+# against `space_group_name_H_M`, "molecular weight", "r-free". Now the query and every
+# record are split into WORDS (paths on `.` and `_`, text on anything non-alphanumeric) and
+# ranked by how directly they match. On a 221-keyword panel (2026-10-08) the attribute an
+# expert would pick reached the top 5 for ~73% of keywords instead of ~48%. The Data API's
+# field search ranks on the same principle, path before description (graphql._match_rank).
+# --------------------------------------------------------------------------- #
+_WORD = re.compile(r"[a-z0-9]+")
+
+# A keyword query is capped; past this the list stops being something a reader scans. A
+# some-words match is a guess, so it gets fewer slots.
+LIST_ATTRIBUTES_CAP = 25
+LIST_PARTIAL_CAP = 10
+
+# Function words carry no meaning but match half the catalog's descriptions, so "number of
+# chains" landed on a MolProbity text that happens to contain all three. Dropped on BOTH
+# sides, so a phrase or path stays contiguous ("ligand_is_bound" -> ligand, bound). Single
+# letters stay: they are cell axes (cell.length_a).
+_STOPWORDS = frozenset({
+    "an", "and", "are", "as", "at", "by", "for", "from", "in", "is", "of", "on", "or",
+    "per", "than", "the", "to", "with",
+})
+
+# When no record has every word, a word found in more than this share of the catalog ("id",
+# "name", "number") says nothing about which record is meant: "chain id" ranked rcsb_id and
+# 40 other *.id records above asym_id. Such words are ignored in that fallback.
+_GENERIC_SHARE = 0.05
+
+
+def _stem(word: str) -> str:
+    """Plurals only: -ies -> -y, -es after a sibilant, else a trailing -s (not -ss)."""
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("es") and word[:-2].endswith(("s", "x", "z", "ch", "sh")):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _words(text: str) -> list[str]:
+    return [_stem(w) for w in _WORD.findall(text.lower()) if w not in _STOPWORDS]
+
+
+def _abbreviates(path_word: str, word: str, known: dict[str, int]) -> bool:
+    """A path word that clearly abbreviates a query word ("temp" for temperature).
+
+    At least 4 characters and at most 60% of the word, and only for a word the catalog itself
+    spells out somewhere (`known`): "temperature" is, so `diffrn.ambient_temp` answers it;
+    "polymerase" is not, so `entity_poly` does not.
+    """
+    return 4 <= len(path_word) <= 0.6 * len(word) and word.startswith(path_word) and word in known
+
+
+def _search_index(catalog: list[SearchAttribute]) -> list[tuple]:
+    """Per record: (record, segments, words per segment, path words, all words, description)."""
+    index = []
+    for record in catalog:
+        segments = record["attribute"].lower().split(".")
+        segment_words = [_words(seg) for seg in segments]
+        path_words = {w for ws in segment_words for w in ws}
+        description = _words(record.get("description") or "")
+        index.append((record, segments, segment_words, path_words, path_words | set(description),
+                      description))
+    return index
+
+
+_SEARCH_INDEX = {schema: _search_index(catalog) for schema, catalog in ATTRIBUTE_CATALOGS.items()}
+
+# How many records each word appears in, for _GENERIC_SHARE.
+_WORD_RECORDS: dict[str, dict[str, int]] = {}
+for _schema, _index in _SEARCH_INDEX.items():
+    _counts: dict[str, int] = {}
+    for _entry in _index:
+        for _w in _entry[4]:
+            _counts[_w] = _counts.get(_w, 0) + 1
+    _WORD_RECORDS[_schema] = _counts
+
+
+def _run_of(needle: list[str], hay: list[str], same=lambda a, b: a == b) -> bool:
+    """`needle` appears in `hay` as a contiguous run."""
+    n = len(needle)
+    return any(all(same(q, h) for q, h in zip(needle, hay[i:i + n]))
+               for i in range(len(hay) - n + 1))
+
+
+def _match_tier(
+    raw: str, words: list[str], entry: tuple, identifier: bool, known: dict[str, int]
+) -> int | None:
+    """How directly a record matches; lower is better, None is no match.
+
+    0 the query is a whole path segment, or a dotted fragment of the path
+    1 its words run contiguously inside one path segment ("space group" -> space_group_name)
+    2 its words run contiguously in the description (a phrase)
+    3 every word appears somewhere in path or description, in any order
+    4 every word of 4+ characters is a word prefix ("oligomer" -> oligomeric)
+
+    A path word may abbreviate a query word (tiers 1 and 3). Tiers 3 and 4 need at least one
+    word in the PATH: words scattered through a long description ("number of chains" in a
+    MolProbity text) are not a match. An identifier-shaped query ("comp_id", "exptl.method")
+    stops at tier 2: scattering its pieces across a description is never what was meant.
+    """
+    record, segments, segment_words, path_words, vocabulary, description = entry
+
+    def same(word: str, path_word: str) -> bool:
+        return word == path_word or _abbreviates(path_word, word, known)
+
+    if "_".join(_WORD.findall(raw)) in segments or ("." in raw and raw in record["attribute"].lower()):
+        return 0
+    if any(_run_of(words, sw, same) for sw in segment_words):
+        return 1
+    if _run_of(words, description):
+        return 2
+    if identifier:
+        return None
+    in_path = any(same(w, p) for w in words for p in path_words)
+    if in_path and all(w in vocabulary or any(same(w, p) for p in path_words) for w in words):
+        return 3
+    prefix_in_path = any(len(w) >= 4 and p.startswith(w) for w in words for p in path_words)
+    if ((in_path or prefix_in_path)
+            and all(w in vocabulary if len(w) < 4 else any(v.startswith(w) for v in vocabulary)
+                    for w in words)):
+        return 4
+    return None
+
+
+def _rank_key(tier: int, entry: tuple) -> tuple:
+    # Within a tier: RCSB's own curated rcsb_* paths, then shallower, then shorter paths.
+    record, segments = entry[0], entry[1]
+    return (tier, 0 if segments[0].startswith("rcsb_") else 1, len(segments),
+            len(record["attribute"]), record["attribute"])
+
+
+def _search_catalog(query: str, schema: str) -> tuple[list[SearchAttribute], bool, str | None]:
+    """Rank the catalog against `query`. Returns (records best first, partial?, note)."""
+    raw = query.strip().lower()
+    words = _words(raw)
+    identifier = ("_" in raw or "." in raw) and " " not in raw
+    index, known = _SEARCH_INDEX[schema], _WORD_RECORDS[schema]
+    scored = []
+    for entry in index:
+        tier = _match_tier(raw, words, entry, identifier, known) if words else None
+        if tier is not None:
+            scored.append((_rank_key(tier, entry), entry[0]))
+    if scored:
+        return [r for _, r in sorted(scored, key=lambda x: x[0])], False, None
+
+    # A path the generator dropped for holding no value: say so, then offer its neighbours.
+    gone = (f'"{query.strip()}" holds no value anywhere in the search index, so it is not '
+            "offered. " if raw in {p.lower() for p in _UNPOPULATED[schema]} else "")
+
+    # Nothing has every word: rank by how many of the specific ones each record has.
+    if len(words) > 1:
+        cut = _GENERIC_SHARE * len(index)
+        specific = [w for w in words if known.get(w, 0) <= cut] or words
+        for entry in index:
+            tiers = [t for t in (_match_tier(w, [w], entry, False, known) for w in specific)
+                     if t is not None]
+            if tiers:
+                scored.append(((-len(tiers), *_rank_key(min(tiers), entry)), entry[0]))
+        if scored:
+            return ([r for _, r in sorted(scored, key=lambda x: x[0])], True,
+                    f'{gone}No attribute matches every word of "{query.strip()}"; showing those '
+                    "matching the most specific of them first.")
+    return [], False, gone or None
+
+
 class _AttributeListResult(BaseModel):
     """Envelope for rcsb_list_pdb_search_attributes.
 
@@ -704,7 +983,7 @@ class _AttributeListResult(BaseModel):
     """
 
     count: int
-    match_mode: Literal["exact", "none", "all"]
+    match_mode: Literal["exact", "partial", "none", "all"]
     attributes: list[SearchAttribute]
     note: str | None = None
 
@@ -726,17 +1005,18 @@ async def rcsb_list_pdb_search_attributes(
         description, enum?, nested_group?} records — the RCSB/PDB attribute path (e.g.
         "rcsb_entry_info.resolution_combined"), its value type (string/number/integer/date), the
         operators it supports (exact_match, greater, range, exists, ...), and a human-readable
-        description. `enum` appears on the ~15% of attributes that accept only a FIXED SET of
+        description. `enum` appears on the ~16% of attributes that accept only a FIXED SET of
         values (e.g. exptl.method); when it does, use one of those values verbatim — anything
-        else is rejected by rcsb_query_attribute. `nested_group` appears on the ~22% stored in NESTED DOCUMENTS —
+        else is rejected by rcsb_query_attribute. `nested_group` appears on the ~19% stored in NESTED DOCUMENTS —
         an entry has many citations, an entity many binding affinities — and its value is the
         container path. For these, grouping selects the semantics: conditions sharing a
         nested_group built in ONE rcsb_query_attribute call with nothing else in it must hold
         on the SAME record; in separate calls each is matched independently. Group the ones
         that describe one record, leave the rest apart. The value is NOT the attribute's first
         path segment for all of them, so read it rather than deriving it.
-        `match_mode` is "exact" (the query matched), "none" (nothing matched — read
-        `note`, the query shape is the usual cause), or "all" (query omitted, whole catalog).
+        `match_mode` is "exact" (every word matched, best match first), "partial" (only some
+        did — read `note`), "none" (nothing matched — read `note`), or "all" (query omitted,
+        whole catalog).
     """
     try:
         catalog = ATTRIBUTE_CATALOGS[schema]
@@ -751,26 +1031,23 @@ async def rcsb_list_pdb_search_attributes(
         ).model_dump(exclude_none=True)
 
     raw = query.strip()
-    q = raw.lower()
-    hits = [
-        a for a in catalog
-        if q in a["attribute"].lower() or q in (a.get("description") or "").lower()
-    ]
+    hits, partial, note = _search_catalog(raw, schema)
     if hits:
+        cap = LIST_PARTIAL_CAP if partial else LIST_ATTRIBUTES_CAP
+        if len(hits) > cap:
+            cap_note = (f"Showing the {cap} best of {len(hits)} matches; a more specific "
+                        "keyword narrows them.")
+            note = f"{note} {cap_note}" if note else cap_note
+            hits = hits[:cap]
         return _AttributeListResult(
-            count=len(hits), match_mode="exact", attributes=hits,
+            count=len(hits), match_mode="partial" if partial else "exact", attributes=hits,
+            note=note,
         ).model_dump(exclude_none=True)
 
-    # Nothing matched. Say WHY rather than asserting the attribute doesn't exist — a multi-word
-    # query is the common cause and is recoverable, but a bare empty result reads as "the PDB
-    # has no such attribute" and sends the model off to guess a path or fall back to full text.
-    if len(raw.split()) > 1:
-        note = (f'No attribute path or description contains the exact phrase "{raw}". This '
-                "filter is a literal substring match, so retry with a single keyword from it "
-                '(e.g. "comp_id" rather than "nonpolymer comp_id").')
-    else:
-        note = (f'No attribute path or description contains "{raw}". Retry with a shorter or '
-                "more general keyword, or omit `query` to browse the catalog.")
+    # Nothing matched. Say so in a way that sends the caller somewhere, rather than letting a
+    # bare empty list read as "the PDB has no such attribute".
+    note = (f'{note or ""}No attribute path or description contains "{raw}" or any word of it. '
+            "Retry with a more general keyword or a synonym, or omit `query` to browse the catalog.")
     if schema == "structure":
         note += ' If the property describes a chemical component itself, try schema="chemical".'
     return _AttributeListResult(

@@ -66,6 +66,23 @@ def test_taking_the_advice_retires_the_note():
     assert not any("DIFFERENT polymer_entity can satisfy" in n for n in notes), notes
 
 
+def test_two_ligand_conditions_asked_for_as_entries():
+    """Chemical-component paths in structure search are judged per non-polymer entity, so
+    two of them at entry level can be met by two DIFFERENT ligands. Measured 2026-10-08,
+    AND(comp_id=HEM, nonpolymer_comp_id=ATP): 5 entries, 0 non-polymer entities."""
+    node = _flat_and(("rcsb_chem_comp_container_identifiers.comp_id", "exact_match", "HEM"),
+                     ("rcsb_nonpolymer_entity_container_identifiers.nonpolymer_comp_id",
+                      "exact_match", "ATP"))
+    notes = intersection_notes(node, "entry")
+    assert any('DIFFERENT non_polymer_entity' in n and 'return_type="non_polymer_entity"' in n
+               for n in notes), notes
+    assert intersection_notes(node, "non_polymer_entity") == []
+    # ...while the same paths in the chemical index describe one definition: nothing to split
+    chem = _attr([_f("rcsb_chem_comp_container_identifiers.comp_id", "HEM"),
+                  _f("chem_comp.type", "non-polymer")], chemical=True)
+    assert intersection_notes(chem, "mol_definition") == []
+
+
 def test_conditions_on_different_KINDS_of_object_stay_silent():
     """"A human protein and an ATP ligand" is two different objects BY DEFINITION.
 
@@ -110,9 +127,56 @@ def test_an_entry_scoped_condition_at_assembly_is_silent():
 
 
 @pytest.mark.parametrize("return_type", ["entry", "polymer_entity", "polymer_instance"])
-def test_only_assemblies_get_the_projection_note(return_type):
+def test_entity_and_instance_return_types_get_no_projection_note(return_type):
+    """Only assembly and mol_definition project an entry-level answer onto their objects."""
     notes = intersection_notes(_attr([_f(ORG, "Homo sapiens")]), return_type)
     assert not any("ENTRY level" in n for n in notes)
+
+
+# --- 3. return_type="mol_definition" with a non-chemical condition ----------------
+CHEM_COMP_ID = "rcsb_chem_comp_container_identifiers.comp_id"
+
+
+def test_a_structure_condition_at_mol_definition_is_flagged():
+    """Measured 2026-10-08: comp_id=HEM as a STRUCTURE attribute at mol_definition returns
+    2,033 definitions -- every component of the 6,485 HEM entries, ALA and SO4 included.
+    The same condition through the chemical index returns 1: HEM."""
+    [note] = intersection_notes(_attr([_f(CHEM_COMP_ID, "HEM")]), "mol_definition")
+    assert f"`{CHEM_COMP_ID}`" in note and "ENTRY level" in note
+    assert "chemical_attributes=True" in note, "it must name the way to ask the component itself"
+
+
+def test_any_non_chemical_service_is_flagged_by_name():
+    """Full text, sequence and structure searches are entry-level answers too ("protoporphyrin"
+    full text at mol_definition: 2,087 definitions, standard residues included)."""
+    full_text = {"type": "terminal", "service": "full_text", "parameters": {"value": "heme"}}
+    [note] = intersection_notes(full_text, "mol_definition")
+    assert "the full-text condition" in note
+
+
+def test_one_mol_definition_note_however_many_structure_conditions():
+    node = _attr([_f(ORG, "Homo sapiens"), _f("exptl.method", "X-RAY DIFFRACTION")])
+    assert len([n for n in intersection_notes(node, "mol_definition") if "mol_definition" in n]) == 1
+
+
+def test_a_mixed_query_names_its_structure_condition():
+    """Chemical condition AND structure condition: the chemical one is judged per definition,
+    the structure one per entry -- the note names the latter."""
+    node = {"type": "group", "logical_operator": "and", "nodes": [
+        queries._text_node("chem_comp.formula_weight", "greater", 500, service="text_chem"),
+        queries._text_node(ORG, "exact_match", "Thermus thermophilus HB8")]}
+    [note] = [n for n in intersection_notes(node, "mol_definition") if "mol_definition" in n]
+    assert f"`{ORG}`" in note and "chem_comp.formula_weight" not in note
+
+
+def test_the_chemical_index_at_mol_definition_is_silent():
+    """text_chem and rcsb_query_chemical judge the definition itself: nothing is projected."""
+    chem = _attr([_f(CHEM_COMP_ID, "HEM"), _f("chem_comp.type", "non-polymer")], chemical=True)
+    assert intersection_notes(chem, "mol_definition") == []
+    smiles = queries.chemical_node("c1ccccc1", "descriptor", descriptor_type="SMILES")
+    assert intersection_notes(smiles, "mol_definition") == []
+    # ...and a structure condition asked for as entries is not this finding
+    assert intersection_notes(_attr([_f(CHEM_COMP_ID, "HEM")]), "entry") == []
 
 
 # --- shape ---------------------------------------------------------------------

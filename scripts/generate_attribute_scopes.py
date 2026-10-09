@@ -84,7 +84,17 @@ SCOPE_OF_ROOT_FIELD = {
     "polymer_entity_instances": "polymer_instance",
     "nonpolymer_entity_instances": "non_polymer_instance",
     "branched_entity_instances": "branched_instance",
-    "chem_comps": "mol_definition",
+    # NOT mol_definition, in this (structure) map. The structure search index has no
+    # chemical-definition object: a component's attributes are indexed on the NON-POLYMER
+    # ENTITY that carries it, and only there -- a component that occurs only inside a
+    # polymer is not reached at all (SEP: 38 entries here, 2,328 via text_chem). Measured
+    # 2026-10-08, AND(rcsb_chem_comp_container_identifiers.comp_id=HEM, comp_id=ATP):
+    #     return_type=entry 5, return_type=non_polymer_entity 0
+    # -- each condition is judged on ONE non-polymer entity, never across the entry. Every
+    # one of the 15 roots this places (chem_comp, rcsb_chem_comp_*, drugbank_*,
+    # pdbx_chem_comp_pcm, pdbx_reference_molecule*) splits the same way. The chemical map
+    # below keeps mol_definition: there the definition IS the indexed object.
+    "chem_comps": "non_polymer_entity",
 }
 
 # How deep each scope sits in the containment hierarchy. Used only to collapse a root

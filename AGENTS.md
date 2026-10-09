@@ -29,13 +29,14 @@ src/rcsb_mcp/
   graphql.py                 GraphQL execution, schema introspection/flatten, error enrichment
   tooling.py                 shared tool-registration helpers
   attribute_types.py         SearchAttribute / operator / scope types shared by the catalogs
-  search_attributes.py       SEARCH_ATTRIBUTES catalog        — auto-generated (see scripts/)
+  search_attributes.py       SEARCH_ATTRIBUTES catalog (+ UNPOPULATED_/SPARSE_ lists)
+                                                              — auto-generated (see scripts/)
   chemical_search_attributes.py  CHEMICAL_SEARCH_ATTRIBUTES   — auto-generated (see scripts/)
   attribute_scopes.py        which object each attribute hangs off, + nested/repeating roots
                                                               — auto-generated (see scripts/)
   prompts/rcsb_search_assistant.md   served as the `rcsb_search_assistant` MCP prompt (package data)
   prompts/rcsb_mcp_guide.md          NOT served; kept as a source to rescue prose from
-tests/                       31 network-free test modules; see "Dev workflow"
+tests/                       33 network-free test modules; see "Dev workflow"
 scripts/                     generate_search_attributes.py, generate_attribute_scopes.py
 evals/                       end-to-end accuracy suite + tool_selection A/B probe harness
 ```
@@ -61,8 +62,10 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
   discovery. There is no raw-GraphQL passthrough tool. Don't try to make defaults
   exhaustive — and don't invent `fields=` paths; discover them against the live schema first.
 - **Generated data is never hand-edited.** The three catalogs above come from the live
-  metadata schemas. Change the generator and re-run it; `scripts/generate_attribute_scopes.py`
-  has a `--check` mode for CI-style verification.
+  metadata schemas, plus one live `exists` count per attribute (~30 s): attributes no object
+  holds a value for go to `UNPOPULATED_*` instead of the catalog, and depositor-reported
+  numbers many entries leave empty go to `SPARSE_SEARCH_ATTRIBUTES`. Change the generator and
+  re-run it; both generators have a `--check` mode for CI-style verification.
 
 ## Guidance channels (there is only one guaranteed one)
 
@@ -152,7 +155,7 @@ After validating, add/adjust the default and re-run the suite.
   self-correcting hint: where that field actually lives + the discovery tool. Keep that
   enrichment OUT of model-facing prose — telling the model wrong guesses get auto-corrected
   would undercut the "discover fields first, don't invent them" rule.
-- **Nested attributes: query shape selects the semantics, deliberately.** For the ~22% of
+- **Nested attributes: query shape selects the semantics, deliberately.** For the ~19% of
   attributes carrying a `nested_group`, conditions in ONE group (with nothing else in it)
   must hold on the SAME record; conditions in separate groups are matched independently.
   Both are valid and mean different things, so this is **not** something to normalise away —
@@ -170,9 +173,26 @@ After validating, add/adjust the default and re-run the suite.
 - **Sequence Coordinates: PDB ids must be entity/instance-level** (`4HHB_1`, not
   `4HHB`); only this API cross-references NCBI.
 - **A wrong filter VALUE used to fail silently** (`"cryo-EM"` vs `ELECTRON MICROSCOPY`
-  returns 0 hits, reading as "no such structures"). The catalogs carry `enum` for the ~15%
+  returns 0 hits, reading as "no such structures"). The catalogs carry `enum` for the ~16%
   of attributes with closed vocabularies and `rcsb_query_attribute` rejects a value outside
   it. Keep that validation local — the API's own error is less legible.
+- **So did an EMPTY attribute, and a sparse one still costs recall.** ~50 schema attributes
+  hold no value in the search index (`rcsb_ligand_neighbors.ligand_is_bound` among them);
+  the generator drops them and `rcsb_query_attribute` rejects them by name. A value filter on
+  a `SPARSE_SEARCH_ATTRIBUTES` one (crystal pH: empty on 27% of X-ray entries) drops those
+  entries untested, so when it ANDs with other conditions `rcsb_search_request` counts the
+  ones that report the category's anchor but lack the value — at most two extra count
+  requests, run alongside the search, only for those queries. The anchor is what keeps a
+  cryo-EM entry from counting as "missing" a crystal pH it could never have.
+- **Chemical-component paths exist in BOTH catalogs and mean different things.** As
+  structure attributes they match a component only as a non-polymer ligand; with
+  `chemical_attributes=True`, also inside polymers and glycans. Phosphoserine: 38 entries
+  vs 2,328. `rcsb_search_request` reports it when it happens: it re-counts the query with that
+  condition in the chemical index and adds a note with both counts if that finds more. Stating
+  the rule in the `chemical_attributes` description was A/B-tested instead and moved nothing
+  (Haiku 4.5, 0/8 -> 0/8 on the two `chem-attributes-*` probes), so don't add it back without a
+  new measurement. (The one exception is the bare rcsb_id path: in the structure catalog it is
+  the entry id.)
 - **Claude Desktop caches MCP processes.** After code changes, fully quit & relaunch
   (⌘Q) — it does not hot-reload, and stale/duplicate processes have caused confusion.
 - **The markdown docs drift, and only the cheap half is guarded.**
