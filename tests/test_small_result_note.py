@@ -136,6 +136,15 @@ def test_it_offers_all_recovery_routes_and_hedges():
     assert "rcsb_query_fulltext" in note and "synonyms" in note
 
 
+def test_the_wording_route_names_the_variants_that_change_a_full_text_search():
+    """R8 of the FMK review: "fluoromethyl ketone" finds 6 entries, "fluoromethylketone" 11 and
+    "FMK" 30 (2026-10-09). Both branches name the kinds of wording worth another search."""
+    for count in (0, 11):
+        note = small_result_note(FULLTEXT, count)
+        for kind in ("synonyms", "abbreviations", "joined-up", "acronym"):
+            assert kind in note, (count, kind)
+
+
 def test_it_does_not_name_a_fixed_set_of_annotation_types():
     """An earlier draft listed UniProt/InterPro/Pfam/GO/EC, which reads as exhaustive.
 

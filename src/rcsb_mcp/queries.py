@@ -876,6 +876,20 @@ def _terminal_scope(terminal: dict[str, Any]) -> tuple[str, str, AttributeScope 
 # the real rate. Raise this number, not the message, if it turns out to be chatty.
 _SMALL_RESULT_MAX = 20
 
+# The kinds of wording worth another search. Full-text matching is on words, and it splits on
+# hyphens but not inside a word, so a joined-up form, an acronym or another script is a
+# DIFFERENT word. Entry counts, 2026-10-09:
+#     "fluoromethyl ketone" 6 = "fluoromethyl-ketone" 6 ; "fluoromethylketone" 11 ; "FMK" 30
+#     "nitro reductase" 270 ; "nitroreductase" 2,275   |  "beta-lactamase" 18,912 ; "betalactamase" 47
+#     "β-lactamase" 738   |   "photosystem II" 1,896 ; "photosystem 2" 1,968
+# A hyphenated form matched exactly like the spaced one in all 19 pairs measured, so on its own
+# it finds nothing new; "hyphenated" stays in the list by choice (2026-10-09), as the cue for
+# the joined/split forms around it. Trying them is the agent's work; the note only says which
+# kinds to try.
+_WORDING_VARIANTS = (
+    "synonyms, abbreviations, joined-up, hyphenated or acronym forms"
+)
+
 
 def small_result_note(node: dict[str, Any], total_count: int) -> str | None:
     """Flag a thin answer from a query whose recall depends on the depositor's wording."""
@@ -891,17 +905,17 @@ def small_result_note(node: dict[str, Any], total_count: int) -> str | None:
         return (
             "total_count is 0. This query matched on WORDING, so an empty result can mean "
             "the archive words the concept differently rather than that it holds nothing. "
-            "Re-run rcsb_query_fulltext with other names, synonyms or abbreviations for "
-            "the same thing, or resolve the concept with an rcsb_find_* tool and search "
+            f"You may re-run rcsb_query_fulltext with other wordings of the same thing: "
+            f"{_WORDING_VARIANTS}. Or resolve the concept with an rcsb_find_* tool and search "
             "that annotation instead."
         )
     return (
         f"total_count is {total_count}. That is often simply the answer — but this query "
         f"matched on WORDING, so a thin result can also mean the archive words the concept "
-        f"differently. Three ways to tell: fetch these hits with rcsb_get_* and re-search "
-        f"on any value they share; re-run rcsb_query_fulltext with other names, synonyms "
-        f"or abbreviations for the same thing; or resolve the concept with an rcsb_find_* "
-        f"tool and compare that answer with this one."
+        f"differently. You may try: fetch these hits with rcsb_get_* and re-search "
+        f"on any value they share; re-run rcsb_query_fulltext with other wordings of the "
+        f"same thing ({_WORDING_VARIANTS}); or resolve the concept with an rcsb_find_* tool "
+        f"and compare that answer with this one."
     )
 
 
