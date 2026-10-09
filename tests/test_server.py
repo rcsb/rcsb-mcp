@@ -402,10 +402,11 @@ def test_attribute_catalogs_conform():
         paths = [e["attribute"] for e in catalog]
         assert len(paths) == len(set(paths)), f"{name}: duplicate attribute paths"
         for e in catalog:
-            # `enum` and `nested_group` are the optional keys — carried only where the
-            # schema publishes a closed vocabulary, and where the attribute sits inside an
-            # rcsb_nested_indexing container. Everything else is always present.
-            assert set(e) - {"enum", "nested_group"} == \
+            # `enum`, `nested_group` and `often_empty` are the optional keys — carried only
+            # where the schema publishes a closed vocabulary, where the attribute sits inside
+            # an rcsb_nested_indexing container, and on the sparse depositor numbers.
+            # Everything else is always present.
+            assert set(e) - {"enum", "nested_group", "often_empty"} == \
                 {"attribute", "type", "operators", "description"}, \
                 f"{name}: unexpected keys on {e.get('attribute')!r}"
             assert e["type"] in types, f"{name}: bad type on {e['attribute']!r}: {e['type']!r}"
@@ -457,6 +458,8 @@ def test_list_attributes_short_keywords_match_words_only():
     # "pH" used to match alpha, phase and pharmacology: 27 attributes, the right one 15th.
     r = _list_attrs(query="pH")
     assert [a["attribute"] for a in r["attributes"]] == ["exptl_crystal_grow.pH"]
+    # ...and the record says, where the attribute is picked, that many crystals lack it
+    assert r["attributes"][0]["often_empty"].endswith("of entries with exptl_crystal_grow have no value")
     print("ok: short keywords match whole words")
 
 

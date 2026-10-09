@@ -52,8 +52,9 @@ TextOperator = Literal[
 class SearchAttribute(TypedDict):
     """One searchable RCSB attribute, as published by the Search API metadata schema.
 
-    `attribute` is unique within a catalog. Every key except `enum` is always present;
-    the catalogs carry no other optional fields and no empty values.
+    `attribute` is unique within a catalog. `attribute`, `type`, `operators` and
+    `description` are always present; `nested_group`, `enum` and `often_empty` only where
+    they apply. No field is ever empty.
     """
 
     attribute: str
@@ -94,3 +95,10 @@ class SearchAttribute(TypedDict):
     # exist" rather than "you spelled it wrong". Measured: exptl.method="cryo-EM" returns
     # 0, where "ELECTRON MICROSCOPY" returns 35,660.
     enum: NotRequired[list[Any]]
+    # On the depositor-reported numbers many entries leave empty (SPARSE_SEARCH_ATTRIBUTES):
+    # how many of the entries that report the attribute's category hold no value, e.g. "25% of
+    # entries with exptl_crystal_grow have no value". Shown where the caller picks the
+    # attribute, before it builds a value filter that would drop those entries untested
+    # (rcsb_search_request counts the ones it dropped afterwards). Self-describing on purpose,
+    # so no tool description has to explain it.
+    often_empty: NotRequired[str]

@@ -31,7 +31,9 @@ It also asks the live Search API, once per attribute, how many objects hold a va
                    leave empty (structure catalog only), each mapped to its category's most
                    filled attribute -- the "this entry reports the category" anchor. A value
                    filter on one drops those entries untested; rcsb_search_request counts the
-                   ones that report the category and lack the value, and says how many.
+                   ones that report the category and lack the value, and says how many. Their
+                   catalog records also carry `often_empty`, so the caller sees it when it
+                   picks the attribute, before building the filter.
 
 Both depend on the archive, not only the schema, so `--check` also reports a catalog
 stale when RCSB populates an attribute or fills one in.
@@ -305,6 +307,21 @@ def sparse(catalog: list[dict], counts: dict[str, int], entries: int) -> dict[st
     return dict(sorted(flagged.items()))
 
 
+# Rounded so a weekly regeneration does not rewrite the catalog for a 1% drift; --check still
+# reports a change of a full step.
+_EMPTY_STEP = 5
+
+
+def often_empty(attribute: str, anchor: str, counts: dict[str, int]) -> str:
+    """The `often_empty` text for a sparse attribute: its gap among entries reporting the
+    category, which the anchor's count stands for."""
+    empty = 1 - counts[attribute] / counts[anchor]
+    # Rounding a rare field up to "100%" would read as "never filled" -- those were dropped as
+    # unpopulated, so anything this sparse is still searchable and says so.
+    share = "over 95" if empty > 0.95 else _EMPTY_STEP * round(empty * 100 / _EMPTY_STEP)
+    return f"{share}% of entries with {attribute.split('.')[0]} have no value"
+
+
 def render_module(catalog: list[dict], spec: dict, empty: list[str], thin: dict[str, str]) -> str:
     body = json.dumps(catalog, indent=4, ensure_ascii=False)
     text = (
@@ -344,6 +361,9 @@ def generate(spec: dict) -> tuple[list[dict], str, list[str], dict[str, str]]:
     thin: dict[str, str] = {}
     if spec["sparse_var"]:
         thin = sparse(catalog, counts, _exists_count(spec, _ENTRY_ID, ["experimental"]))
+        for record in catalog:  # appended LAST, like enum, so other records stay byte-identical
+            if record["attribute"] in thin:
+                record["often_empty"] = often_empty(record["attribute"], thin[record["attribute"]], counts)
     return catalog, render_module(catalog, spec, empty, thin), empty, thin
 
 

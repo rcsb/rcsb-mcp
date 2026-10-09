@@ -383,7 +383,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The mean hydrostatic pressure in kilopascals at which the intensities were measured."
+        "description": "The mean hydrostatic pressure in kilopascals at which the intensities were measured.",
+        "often_empty": "over 95% of entries with diffrn have no value"
     },
     {
         "attribute": "diffrn.ambient_temp",
@@ -803,7 +804,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Length used to sample the reciprocal lattice lines in the c-direction."
+        "description": "Length used to sample the reciprocal lattice lines in the c-direction.",
+        "often_empty": "55% of entries with em_2d_crystal_entity have no value"
     },
     {
         "attribute": "em_2d_crystal_entity.length_a",
@@ -998,7 +1000,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The overall B (temperature factor) value for the 3d-em volume."
+        "description": "The overall B (temperature factor) value for the 3d-em volume.",
+        "often_empty": "80% of entries with em_3d_fitting have no value"
     },
     {
         "attribute": "em_3d_fitting.ref_protocol",
@@ -1064,7 +1067,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The actual pixel size of the projection set of images in Angstroms."
+        "description": "The actual pixel size of the projection set of images in Angstroms.",
+        "often_empty": "over 95% of entries with em_3d_reconstruction have no value"
     },
     {
         "attribute": "em_3d_reconstruction.algorithm",
@@ -1099,7 +1103,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The nominal pixel size of the projection set of images in Angstroms."
+        "description": "The nominal pixel size of the projection set of images in Angstroms.",
+        "often_empty": "over 95% of entries with em_3d_reconstruction have no value"
     },
     {
         "attribute": "em_3d_reconstruction.num_class_averages",
@@ -1114,7 +1119,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The number of classes used in the final 3d reconstruction"
+        "description": "The number of classes used in the final 3d reconstruction",
+        "often_empty": "90% of entries with em_3d_reconstruction have no value"
     },
     {
         "attribute": "em_3d_reconstruction.num_particles",
@@ -1387,7 +1393,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Overall phase error in degrees"
+        "description": "Overall phase error in degrees",
+        "often_empty": "35% of entries with em_diffraction_stats have no value"
     },
     {
         "attribute": "em_diffraction_stats.overall_phase_residual",
@@ -1402,7 +1409,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Overall phase residual in degrees"
+        "description": "Overall phase residual in degrees",
+        "often_empty": "50% of entries with em_diffraction_stats have no value"
     },
     {
         "attribute": "em_diffraction_stats.r_merge",
@@ -1432,7 +1440,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Rsym value (percent)"
+        "description": "Rsym value (percent)",
+        "often_empty": "35% of entries with em_diffraction_stats have no value"
     },
     {
         "attribute": "em_embedding.details",
@@ -1574,7 +1583,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The average exposure time for each image."
+        "description": "The average exposure time for each image.",
+        "often_empty": "80% of entries with em_image_recording have no value"
     },
     {
         "attribute": "em_image_recording.avg_electron_dose_per_image",
@@ -1632,7 +1642,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The number of diffraction images collected."
+        "description": "The number of diffraction images collected.",
+        "often_empty": "over 95% of entries with em_image_recording have no value"
     },
     {
         "attribute": "em_image_recording.num_grids_imaged",
@@ -1647,7 +1658,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Number of grids in the microscopy session"
+        "description": "Number of grids in the microscopy session",
+        "often_empty": "80% of entries with em_image_recording have no value"
     },
     {
         "attribute": "em_image_recording.num_real_images",
@@ -1662,7 +1674,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The number of micrograph images collected."
+        "description": "The number of micrograph images collected.",
+        "often_empty": "75% of entries with em_image_recording have no value"
     },
     {
         "attribute": "em_imaging.accelerating_voltage",
@@ -1709,7 +1722,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The open diameter of the c2 condenser lens, in microns."
+        "description": "The open diameter of the c2 condenser lens, in microns.",
+        "often_empty": "85% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.calibrated_defocus_max",
@@ -1724,7 +1738,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum calibrated defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus."
+        "description": "The maximum calibrated defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.calibrated_defocus_min",
@@ -1739,7 +1754,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum calibrated defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus."
+        "description": "The minimum calibrated defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.calibrated_magnification",
@@ -1754,7 +1770,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The magnification value obtained for a known standard just prior to, during or just after the imaging experiment."
+        "description": "The magnification value obtained for a known standard just prior to, during or just after the imaging experiment.",
+        "often_empty": "95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.cryogen",
@@ -1798,7 +1815,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The camera length (in millimeters). The camera length is the product of the objective focal length and the combined magnification of the intermediate and projector lenses when the microscope is operated in the diffraction mode."
+        "description": "The camera length (in millimeters). The camera length is the product of the objective focal length and the combined magnification of the intermediate and projector lenses when the microscope is operated in the diffraction mode.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.illumination_mode",
@@ -1938,7 +1956,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The spherical aberration coefficient (Cs) in millimeters, of the objective lens."
+        "description": "The spherical aberration coefficient (Cs) in millimeters, of the objective lens.",
+        "often_empty": "70% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.nominal_defocus_max",
@@ -1953,7 +1972,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus."
+        "description": "The maximum defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus.",
+        "often_empty": "20% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.nominal_defocus_min",
@@ -1968,7 +1988,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus."
+        "description": "The minimum defocus value of the objective lens (in nanometres) used to obtain the recorded images. Negative values refer to overfocus.",
+        "often_empty": "20% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.nominal_magnification",
@@ -1983,7 +2004,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The magnification indicated by the microscope readout."
+        "description": "The magnification indicated by the microscope readout.",
+        "often_empty": "75% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.recording_temperature_maximum",
@@ -1998,7 +2020,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The specimen temperature maximum (kelvin) for the duration of imaging."
+        "description": "The specimen temperature maximum (kelvin) for the duration of imaging.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.recording_temperature_minimum",
@@ -2013,7 +2036,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The specimen temperature minimum (kelvin) for the duration of imaging."
+        "description": "The specimen temperature minimum (kelvin) for the duration of imaging.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.residual_tilt",
@@ -2028,7 +2052,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Residual tilt of the electron beam (in miliradians)"
+        "description": "Residual tilt of the electron beam (in miliradians)",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.specimen_holder_model",
@@ -2081,7 +2106,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The mean specimen stage temperature (in kelvin) during imaging in the microscope."
+        "description": "The mean specimen stage temperature (in kelvin) during imaging in the microscope.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.tilt_angle_max",
@@ -2096,7 +2122,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The maximum angle at which the specimen was tilted to obtain recorded images."
+        "description": "The maximum angle at which the specimen was tilted to obtain recorded images.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_imaging.tilt_angle_min",
@@ -2111,7 +2138,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The minimum angle at which the specimen was tilted to obtain recorded images."
+        "description": "The minimum angle at which the specimen was tilted to obtain recorded images.",
+        "often_empty": "over 95% of entries with em_imaging have no value"
     },
     {
         "attribute": "em_particle_selection.num_particles_selected",
@@ -2193,7 +2221,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The concentration (in milligrams per milliliter, mg/ml) of the complex in the sample."
+        "description": "The concentration (in milligrams per milliliter, mg/ml) of the complex in the sample.",
+        "often_empty": "65% of entries with em_specimen have no value"
     },
     {
         "attribute": "em_specimen.shadowing_applied",
@@ -2285,7 +2314,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The temperature (in kelvin) of the sample just prior to vitrification."
+        "description": "The temperature (in kelvin) of the sample just prior to vitrification.",
+        "often_empty": "65% of entries with em_vitrification have no value"
     },
     {
         "attribute": "em_vitrification.cryogen_name",
@@ -2321,7 +2351,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Relative humidity (%) of air surrounding the specimen just prior to vitrification."
+        "description": "Relative humidity (%) of air surrounding the specimen just prior to vitrification.",
+        "often_empty": "60% of entries with em_vitrification have no value"
     },
     {
         "attribute": "em_vitrification.instrument",
@@ -2380,7 +2411,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The vitrification temperature (in kelvin), e.g., temperature of the plunge instrument cryogen bath."
+        "description": "The vitrification temperature (in kelvin), e.g., temperature of the plunge instrument cryogen bath.",
+        "often_empty": "over 95% of entries with em_vitrification have no value"
     },
     {
         "attribute": "entity_poly.rcsb_entity_polymer_type",
@@ -2831,7 +2863,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Density values measured using standard chemical and physical methods. The units are megagrams per cubic metre (grams per cubic centimetre)."
+        "description": "Density values measured using standard chemical and physical methods. The units are megagrams per cubic metre (grams per cubic centimetre).",
+        "often_empty": "over 95% of entries with exptl_crystal have no value"
     },
     {
         "attribute": "exptl_crystal.density_percent_sol",
@@ -2861,7 +2894,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Isotropic approximation of the distribution of mis-orientation angles specified in degrees of all the mosaic domain blocks in the crystal, represented as a standard deviation. Here, a mosaic block is a set of contiguous unit cells assumed to be perfectly aligned. Lower mosaicity indicates better ordered crystals. See for example: Nave, C. (1998). Acta Cryst. D54, 848-853. Note that many software packages estimate the mosaic rotation distribution differently and may combine several physical properties of the experiment into a single mosaic term. This term will help fit the modeled spots to the observed spots without necessarily being directly related to the physics of the crystal itself."
+        "description": "Isotropic approximation of the distribution of mis-orientation angles specified in degrees of all the mosaic domain blocks in the crystal, represented as a standard deviation. Here, a mosaic block is a set of contiguous unit cells assumed to be perfectly aligned. Lower mosaicity indicates better ordered crystals. See for example: Nave, C. (1998). Acta Cryst. D54, 848-853. Note that many software packages estimate the mosaic rotation distribution differently and may combine several physical properties of the experiment into a single mosaic term. This term will help fit the modeled spots to the observed spots without necessarily being directly related to the physics of the crystal itself.",
+        "often_empty": "over 95% of entries with exptl_crystal have no value"
     },
     {
         "attribute": "exptl_crystal.pdbx_mosaicity_esd",
@@ -2876,7 +2910,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The uncertainty in the mosaicity estimate for the crystal."
+        "description": "The uncertainty in the mosaicity estimate for the crystal.",
+        "often_empty": "over 95% of entries with exptl_crystal have no value"
     },
     {
         "attribute": "exptl_crystal_grow.method",
@@ -2901,7 +2936,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The pH at which the crystal was grown. If more than one pH was employed during the crystallization process, the final pH should be noted here and the protocol involving multiple pH values should be described in _exptl_crystal_grow.details."
+        "description": "The pH at which the crystal was grown. If more than one pH was employed during the crystallization process, the final pH should be noted here and the protocol involving multiple pH values should be described in _exptl_crystal_grow.details.",
+        "often_empty": "25% of entries with exptl_crystal_grow have no value"
     },
     {
         "attribute": "exptl_crystal_grow.pdbx_details",
@@ -9001,7 +9037,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The mean isotropic displacement parameter (B value) for the coordinate set."
+        "description": "The mean isotropic displacement parameter (B value) for the coordinate set.",
+        "often_empty": "25% of entries with refine have no value"
     },
     {
         "attribute": "refine.details",
@@ -9056,7 +9093,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "Residual factor R for all reflections that satisfy the resolution limits established by _refine.ls_d_res_high and _refine.ls_d_res_low. sum|F~obs~ - F~calc~| R = --------------------- sum|F~obs~| F~obs~ = the observed structure-factor amplitudes F~calc~ = the calculated structure-factor amplitudes sum is taken over the specified reflections"
+        "description": "Residual factor R for all reflections that satisfy the resolution limits established by _refine.ls_d_res_high and _refine.ls_d_res_low. sum|F~obs~ - F~calc~| R = --------------------- sum|F~obs~| F~obs~ = the observed structure-factor amplitudes F~calc~ = the calculated structure-factor amplitudes sum is taken over the specified reflections",
+        "often_empty": "85% of entries with refine have no value"
     },
     {
         "attribute": "refine.ls_R_factor_obs",
@@ -9096,7 +9134,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The value of the overall isotropic displacement parameter estimated from the slope of the Wilson plot."
+        "description": "The value of the overall isotropic displacement parameter estimated from the slope of the Wilson plot.",
+        "often_empty": "55% of entries with reflns have no value"
     },
     {
         "attribute": "reflns.R_free_details",
@@ -9156,7 +9195,8 @@ SEARCH_ATTRIBUTES: list[SearchAttribute] = [
             "range",
             "exists"
         ],
-        "description": "The R value for merging intensities satisfying the observed criteria in this data set."
+        "description": "The R value for merging intensities satisfying the observed criteria in this data set.",
+        "often_empty": "30% of entries with reflns have no value"
     },
     {
         "attribute": "reflns.pdbx_redundancy",

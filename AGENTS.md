@@ -64,7 +64,9 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
 - **Generated data is never hand-edited.** The three catalogs above come from the live
   metadata schemas, plus one live `exists` count per attribute (~30 s): attributes no object
   holds a value for go to `UNPOPULATED_*` instead of the catalog, and depositor-reported
-  numbers many entries leave empty go to `SPARSE_SEARCH_ATTRIBUTES`. Change the generator and
+  numbers many entries leave empty go to `SPARSE_SEARCH_ATTRIBUTES`, their catalog records
+  carrying a self-describing `often_empty` ("25% of entries with exptl_crystal_grow have no
+  value") that the attribute listing shows. Change the generator and
   re-run it; both generators have a `--check` mode for CI-style verification.
 
 ## Guidance channels (there is only one guaranteed one)

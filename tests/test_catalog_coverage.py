@@ -78,6 +78,20 @@ def test_an_empty_attribute_is_unpopulated_not_sparse():
     assert gen.sparse(catalog, counts, ENTRIES) == {}
 
 
+def test_often_empty_states_the_gap_among_entries_reporting_the_category():
+    counts = {"exptl_crystal_grow.pH": 151, "exptl_crystal_grow.pdbx_details": 200}
+    assert gen.often_empty("exptl_crystal_grow.pH", "exptl_crystal_grow.pdbx_details", counts) \
+        == "25% of entries with exptl_crystal_grow have no value"
+
+
+def test_often_empty_never_says_100_percent():
+    """A field this rare is still populated -- the unpopulated ones were dropped -- so it must
+    not read as "never filled"."""
+    counts = {"em_imaging.detector_distance": 3, "em_imaging.illumination_mode": 1000}
+    text = gen.often_empty("em_imaging.detector_distance", "em_imaging.illumination_mode", counts)
+    assert text == "over 95% of entries with em_imaging have no value"
+
+
 # --------------------------------------------------------------------------- #
 # the vendored lists
 # --------------------------------------------------------------------------- #
@@ -103,6 +117,12 @@ def test_sparse_attributes_are_offered_depositor_numbers_with_an_anchor():
         assert not path.startswith(gen._COMPUTED_PREFIXES)
         assert anchor in by_path and anchor.split(".")[0] == path.split(".")[0], (path, anchor)
     assert sparse["exptl_crystal_grow.pH"] == "exptl_crystal_grow.pdbx_details"
+    # every sparse record says so where it is listed, and no other record does
+    flagged = {a["attribute"] for a in struct.SEARCH_ATTRIBUTES if "often_empty" in a}
+    assert flagged == set(sparse)
+    for path in sparse:
+        assert by_path[path]["often_empty"].endswith(
+            f"of entries with {path.split('.')[0]} have no value"), path
     assert "exptl.crystals_number" not in sparse, "a universal category must not be judged"
 
 
