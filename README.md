@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/rcsb-rcsb-mcp-badge.png)](https://mseep.ai/app/rcsb-rcsb-mcp)
+
 <!-- mcp-name: io.github.rcsb/rcsb-mcp -->
 
 # rcsb-mcp
