@@ -255,7 +255,8 @@ curl -s https://mcp-beta.rcsb.org/mcp \
         "clientInfo":{"name":"curl","version":"0"}}}'
 ```
 
-`GET /healthz` returns 200 for liveness checks.
+`GET /healthz` returns 200 for liveness checks. Opening the endpoint (or the site root) in a
+web browser shows a short page on how to connect a client; MCP clients are unaffected.
 
 > **Beta.** The endpoint, the tool surface and the tool descriptions may change without
 > notice, and there is no stability guarantee — pin `uvx rcsb-mcp==<version>` and run it

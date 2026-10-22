@@ -120,6 +120,7 @@ mcp = FastMCP(
 mcp._mcp_server.version = _server_version()
 
 from rcsb_mcp.data import register_data_tools
+from rcsb_mcp.landing import BrowserLandingMiddleware, landing_response
 from rcsb_mcp.report.routes import register_report_routes
 from rcsb_mcp.report.tools import register_report_tools
 from rcsb_mcp.resolvers import register_resolver_tools
@@ -199,15 +200,29 @@ async def healthz(_request):
     return PlainTextResponse("ok")
 
 
+@mcp.custom_route("/", methods=["GET"])
+async def landing(request):
+    """The site root: the same human-readable "how to connect" page a browser gets at /mcp."""
+    return landing_response(request, mcp.settings.streamable_http_path, _server_version())
+
+
 def create_app():
     """ASGI app factory for HTTP deployment (the Docker image).
 
     Serves the MCP over the streamable-HTTP transport at POST /mcp (plus GET /healthz
-    for Kubernetes probes). Built only when called, so importing this module for local
+    for Kubernetes probes, and a "how to connect" page for browsers at / and /mcp). Built only when called, so importing this module for local
     stdio use (main() / the `rcsb-mcp` console script) constructs nothing.
     Run with: uvicorn rcsb_mcp.server:create_app --factory
     """
     app = mcp.streamable_http_app()
+    # The endpoint URL gets opened in browsers too (it is the link we advertise); answer
+    # those page loads with a "how to connect" page instead of the SDK's 406 JSON-RPC
+    # error. MCP clients never match, so their traffic passes through (see landing.py).
+    app.add_middleware(
+        BrowserLandingMiddleware,
+        mcp_path=mcp.settings.streamable_http_path,
+        version=_server_version(),
+    )
     # Browser-based ("web") agents call POST /mcp with fetch(), which triggers a CORS
     # preflight and requires CORS response headers; FastMCP's app adds none for /mcp,
     # so without this a browser blocks the request before it is ever sent. This is a
