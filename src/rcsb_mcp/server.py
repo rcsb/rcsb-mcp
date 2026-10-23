@@ -72,7 +72,8 @@ def _transport_security() -> TransportSecuritySettings:
 # asks for it, and `instructions` may be injected whole, truncated (Claude Code cuts at
 # 2048 chars) or dropped entirely (Claude web) with no way for the server to tell which.
 # Every arrangement that put shared rules in one of those channels and pointed at it from
-# tool descriptions produced the same failure: a promise this server could not keep.
+# tool descriptions produced the same failure: a promise this server could not keep. (The
+# `instructions` block is back, as a map of the tool families only: see INSTRUCTIONS.)
 #
 # What is left here is genuinely optional — a search/report POLICY a user opts into, not
 # facts a tool call depends on.
@@ -102,8 +103,32 @@ def _server_version() -> str:
         return "0+unknown"
 
 
+# --------------------------------------------------------------------------- #
+# Server `instructions`: a MAP of the tool families, nothing more.
+#
+# Claude Code defers MCP tools: until the model searches for one it sees only the tool
+# NAMES, plus this block. The names group the families but not how they connect (resolve,
+# build, run, fetch), so this says that, one line per family. Claude web drops the block
+# entirely, so every line restates what a tool description already says, and no rule,
+# gotcha or argument detail may live here. The guide this channel used to carry was cut at
+# 2048 chars and lost 85% of its text; this stays far below that.
+# tests/test_tool_descriptions.py pins the budget, the shape, and that the names it cites
+# are registered and cover every tool.
+# --------------------------------------------------------------------------- #
+INSTRUCTIONS = """\
+RCSB PDB tools, by family:
+- rcsb_find_*: resolve free text (organism, GO term, EC class, InterPro domain, disease) to the ontology ids search attributes take.
+- rcsb_list_pdb_search_attributes: discover the attribute paths rcsb_query_attribute takes.
+- rcsb_query_*: build query documents (attribute, full text, sequence, structure, chemical, sequence or structural motif); nothing is searched yet. rcsb_query_composer joins documents with AND/OR.
+- rcsb_search_request: run a built query; returns matching PDB ids, counts or facets.
+- rcsb_get_*: fetch Data API records for known ids. rcsb_describe_data_object finds paths for their fields=.
+- rcsb_seqcoord_*: residue-level sequence data: alignments across PDB, UniProt and NCBI, and positional annotations of a PDB entity or chain. rcsb_describe_seqcoord_object finds paths for their fields=.
+- rcsb_render_report: render search findings as an HTML report."""
+
+
 mcp = FastMCP(
     name="rcsb_mcp",
+    instructions=INSTRUCTIONS,
     # HTTP deployment runs 2-6 load-balanced replicas with no session affinity, so
     # run stateless (any pod can serve any request — no per-session state to lose)
     # and answer with plain JSON instead of long-lived SSE streams. Both flags are

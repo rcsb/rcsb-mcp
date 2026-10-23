@@ -49,6 +49,7 @@ def _agent_facing_texts() -> dict[str, str]:
         f"prompt:{p.name}": _prompt_text(p.name)
         for p in asyncio.run(server.mcp.list_prompts())
     }
+    texts["instructions"] = server.mcp.instructions or ""
     for t in tools:
         texts[f"{t.name}.description"] = t.description or ""
         texts[f"{t.name}.inputSchema"] = json.dumps(t.inputSchema, ensure_ascii=False)

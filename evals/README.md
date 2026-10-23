@@ -190,7 +190,10 @@ A fourth thing surfaced while fixing it: `load_server` read `server.mcp.instruct
 the server no longer ships. It was silently degrading to `""`, so every future run would have
 measured a no-guide arm while looking identical to the historical runs that had the full
 guide. The channel is now explicit — `--guide {guide,assistant,none}`, defaulting to the
-`rcsb_mcp_guide` prompt, which reproduces the old behaviour.
+`rcsb_mcp_guide` prompt, which reproduces the old behaviour. (Since then the guide was retired,
+the default became `none`, and an `instructions` arm was added for the short tool-family map
+the server now ships, making it `--guide {guide,assistant,instructions,none}`; `guide` refuses
+a checkout that has the map.)
 
 Still true regardless: **read `errors` in the `--out` JSON before believing any delta.** If a
 winner follows the running order rather than the `--src`, suspect the harness first.

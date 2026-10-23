@@ -2,8 +2,9 @@
 
 The prompt is the agent's only instruction on what to put in a report and how to
 deliver it, and it has no other coverage: the tool-selection eval
-(``evals/tool_selection/``) loads the ``instructions=`` block and tool schemas, NOT
-this prompt, so nothing else notices if a rule is trimmed away.
+(``evals/tool_selection/``) grades only the model's first tool call, so even its
+``--guide assistant`` arm, which loads this prompt, never reaches the report and nothing
+else notices if a rule is trimmed away.
 
 These assertions lock in the rules the JSON schema cannot encode — what to do with
 an id the report can't show, how to deliver the link, and the provenance flag — plus

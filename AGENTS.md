@@ -97,17 +97,26 @@ evals/                       end-to-end accuracy suite + tool_selection A/B prob
   folder's `shared.py`. The docstring keeps what the tool is for, when to use it, and Returns.
   `tests/test_tool_descriptions.py` checks what is *delivered* (the description up to the cut,
   plus the schema), not merely what is present: every description fits, no `Args:` section
-  exists, every argument is described, and each `rcsb_get_*` `fields` text names the object its
-  tool queries.
+  exists (nor, before Returns, a line documenting an input field by name, whatever its heading),
+  every argument is described (through nested models, all the way down, bar the named
+  exceptions in `BARE_BY_DESIGN`), and each `rcsb_get_*`
+  `fields` text names the object its tool queries. A model's class docstring reaches the agent
+  as its schema description, so it says what the object is; maintainer rationale goes in
+  comments.
 - **The `rcsb_search_assistant` prompt** (`@mcp.prompt()` in `server.py`, text in
   [`prompts/rcsb_search_assistant.md`](src/rcsb_mcp/prompts/rcsb_search_assistant.md)) carries
   the search requirements and HTML-report format. It is **opt-in** — the user invokes it from
   their client's prompt menu — so nothing a client needs in order to drive the tools may live
   only here.
-- **A server `instructions` block no longer exists.** It was retired because clients truncate
-  or drop it (Claude Code cuts at 2048 chars, discarding ~85% of what was there). A second
-  `rcsb_mcp_guide` prompt was retired for the same reason the assistant prompt can't be
-  relied on: opt-in. Do not reintroduce either as the home for tool guidance.
+- **The server `instructions` block is a map of the tool families, and only that.**
+  (`INSTRUCTIONS` in `server.py`, one line per family.) Claude Code defers MCP tools: until it
+  searches for one, the model sees only tool names plus this block, so the map says how the
+  families connect. Claude web drops the block, so every line restates what a tool
+  description already says and no rule, gotcha or argument detail may live only there. It
+  once held the whole guide and lost ~85% of it to Claude Code's 2048-char cut; the tests
+  hold it to 1,000 chars, one `- <name>: ...` line per family, citing only registered tools
+  and covering every one. A second `rcsb_mcp_guide` prompt was retired for the same reason the
+  assistant prompt can't be relied on: opt-in. Do not make either the home for tool guidance.
 
 ## Dev workflow
 
@@ -231,6 +240,6 @@ After validating, add/adjust the default and re-run the suite.
   `tests/test_tool_inventory.py` checks that every tool name `README.md` and this file cite
   is registered, and that the README mentions every registered tool — so a rename or removal
   fails CI. Nothing checks whether the *prose* is still true: this file once described a
-  two-module layout, a `pdb_assistant` prompt and a server `instructions` block long after
+  two-module layout, a `pdb_assistant` prompt and a server `instructions` guide long after
   all three were gone. Update both files in the same change that renames a tool, moves a
   parameter, or splits a module.
