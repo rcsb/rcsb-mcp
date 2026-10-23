@@ -20,6 +20,8 @@ src/rcsb_mcp/
   data.py                    rcsb_get_* tools (one per Data API root field) + rcsb_describe_data_object
   resolvers.py               rcsb_find_* free-text -> ontology-id resolvers (EBI/UniProt backends)
   seqcoord.py                rcsb_seqcoord_* tools + rcsb_describe_seqcoord_object
+  landing.py                 the "how to connect" page a browser gets at / and /mcp (MCP
+                             clients pass through to the transport)
   report/                    rcsb_render_report: models, render, link packing, routes, store
   descriptions/              the model-facing ARGUMENT text, one module per tool, mirroring the
                              source modules (search/, data/, seqcoord/, resolvers/) — see below
