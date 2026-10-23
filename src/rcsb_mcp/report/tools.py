@@ -192,24 +192,8 @@ def register_report_tools(mcp: Any, entry_fetcher: enrich.EntryFetcher | None = 
         Call this LAST, after the searches and rcsb_get_* calls that produce the
         values shown in the report. Supply facts only: the page is rendered from a
         fixed server-side template, so do not write HTML yourself and do not
-        rewrite what this tool returns.
-
-        Key fields of ``report``:
-            title: page heading describing the search.
-            api_calls: one per Search/Data/Sequence-Coordinates call, using the
-                ``editor`` object the tool returned VERBATIM. Resolver and
-                discovery tools have no editor link — pass label and tool_name only.
-            result_type: what your ids ARE — "entry" for PDB entry ids (4HHB, the
-                default) or "ligand" for chemical component ids (ATP). It must match
-                the ids you send: a mismatch resolves nothing, and every derived
-                value comes back empty.
-            results: the identifiers you are reporting, in the order you want them
-                ranked, each ``{"id": ..., "evidence": {...}}``. Evidence has two
-                fields: ``grounds`` (the tool-returned value the match rests on) and
-                optional ``interpretation`` (your own reading of it). Splitting them is
-                what stops your inference from being read as something the archive returned.
-            data_usage: ordered narrative of how each call shaped the final set;
-                each item's ``body`` is plain prose — your own account of how you worked.
+        rewrite what this tool returns. Each field of ``report`` is described in
+        the input schema.
 
         Returns:
             RenderReportResult with EITHER a `url` or `html` (never both), plus

@@ -3,6 +3,10 @@
 The model is the *contract*: the agent supplies facts, the Jinja2 template
 supplies markup. Nothing in here accepts HTML — all strings are escaped at
 render time, which also satisfies the "escape tool-returned text" rule for free.
+
+The docstring of every model the agent fills (ReportRequest and what it contains) reaches
+the agent as a description in the tool's input schema, so it says what the object is, for
+the agent. Rationale for maintainers goes in comments beside the class.
 """
 
 from __future__ import annotations
@@ -41,18 +45,16 @@ class _Strict(BaseModel):
 # server-filled value (tool-sourced by construction) or agent narrative
 # (data_usage), so neither needs the split. How the two halves are presented is the
 # template's business, not the model's.
+#
+# Two fields rather than a free run of text: it makes the tool/inference seam a schema
+# boundary instead of a flag the agent has to remember to set, so a title and the
+# assistant's gloss on it can't be conflated into a single value.
 # --------------------------------------------------------------------------
 
 
 class Evidence(_Strict):
-    """One result's justification, split so the two halves stay distinct and can
-    never be blurred: ``grounds`` is the tool-returned value the match rests on;
-    ``interpretation`` is the assistant's own reading of it.
-
-    Two fields rather than a free run of text: it makes the tool/inference seam a
-    schema boundary instead of a flag the agent has to remember to set, so a title
-    and the assistant's gloss on it can't be conflated into a single value.
-    """
+    """One result's justification: what a tool returned (grounds) and your own reading
+    of it (interpretation)."""
 
     grounds: str = Field(
         ...,
@@ -104,13 +106,11 @@ class Column(_Strict):
 # --------------------------------------------------------------------------
 
 
+# Carried un-encoded to save tokens: the tool returns this `editor` object instead of a
+# long percent-encoded URL, and the template rebuilds the exact editor URL at render time
+# by JSON-encoding and percent-encoding `params`.
 class EditorLink(_Strict):
-    """A query-editor link carried un-encoded, to save tokens.
-
-    The tool returns this ``editor`` object instead of a long percent-encoded
-    URL; the template rebuilds the exact editor URL at render time by
-    JSON-encoding and percent-encoding ``params``. Copy it through verbatim.
-    """
+    """The `editor` object an rcsb_* tool returned. Copy it through verbatim."""
 
     url: str = Field(
         ...,
@@ -139,11 +139,7 @@ class ApiCall(_Strict):
     label: str = Field(..., description="Short human-readable label for the call.", min_length=1)
     editor: EditorLink | None = Field(
         default=None,
-        description=(
-            "The `editor` object returned BY THE TOOL, verbatim. Leave null for "
-            "resolver and discovery tools (rcsb_find_*, rcsb_list_pdb_search_attributes, "
-            "rcsb_describe_*), which do not return one."
-        ),
+        description="The `editor` object returned BY THE TOOL, verbatim; null when the tool returned none.",
     )
     tool_name: str | None = Field(default=None, description="MCP tool that was called, e.g. 'rcsb_get_entries'.")
 
@@ -167,13 +163,11 @@ class DataUsageItem(_Strict):
 # --------------------------------------------------------------------------
 
 
+# The ONE thing only the agent knows — what it searched for — and it selects the whole
+# table layout server-side. Adding a kind is one enum value plus one entry in
+# report/tables.py; the agent never names a column.
 class ResultType(str, Enum):
-    """What kind of identifier the report is about.
-
-    This is the ONE thing only the agent knows — what it searched for — and it
-    selects the whole table layout server-side. Adding a kind is one enum value
-    plus one entry in report/tables.py; the agent never names a column.
-    """
+    """What kind of identifier the report is about."""
 
     ENTRY = "entry"  # PDB entry ids (4HHB) -> PDB ID / Title / Organism / Method / Resolution
     LIGAND = "ligand"  # chemical component ids (ATP) -> Ligand ID / Name / Type / Weight
@@ -197,17 +191,25 @@ class Result(_Strict):
     )
 
 
+# Deliberately minimal: identifiers plus the reasoning. Every presentation concern —
+# which columns exist, their order, labels, links, and the values that are derivable from
+# the identifier — is owned by the server, so the fixed schema cannot drift and the agent
+# cannot spend tokens restating it.
 class ReportRequest(_Strict):
-    """What the agent supplies for a report.
-
-    Deliberately minimal: identifiers plus the reasoning. Every presentation
-    concern — which columns exist, their order, labels, links, and the values
-    that are derivable from the identifier — is owned by the server, so the
-    fixed schema cannot drift and the agent cannot spend tokens restating it.
-    """
+    """What you supply for a report: the identifiers and your reasoning. The server
+    fills the other table columns from the identifiers."""
 
     title: str = Field(..., description="Page title describing the search.", min_length=1)
-    api_calls: list[ApiCall] = Field(default_factory=list)
+    api_calls: list[ApiCall] = Field(
+        default_factory=list,
+        description=(
+            "One entry per tool call behind the report, each with label and tool_name: every "
+            "Search, Data and Sequence Coordinates call (rcsb_search_request, rcsb_get_*, "
+            "rcsb_seqcoord_*), which also carries the `editor` it returned, and every resolver "
+            "or discovery call (rcsb_find_*, rcsb_describe_*, rcsb_list_pdb_search_attributes), "
+            "which has none."
+        ),
+    )
     result_type: ResultType = Field(
         ...,
         description=(
@@ -222,7 +224,10 @@ class ReportRequest(_Strict):
         description="The reported identifiers, in the order you want them ranked.",
     )
     sort_note: str | None = Field(default=None, description="How the table is ordered, e.g. 'Sorted by resolution, best first.'")
-    data_usage: list[DataUsageItem] = Field(default_factory=list)
+    data_usage: list[DataUsageItem] = Field(
+        default_factory=list,
+        description="Ordered narrative of how each call shaped the final set, one step per item.",
+    )
     no_results_note: str | None = Field(
         default=None,
         description="Shown instead of the table when results is empty; explain the search limitations here. Plain prose.",

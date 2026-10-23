@@ -5,10 +5,11 @@ to act on each prompt in probes.xml, and grades the model's FIRST tool call agai
 probe's <expect> assertion. Run it twice — once with --src pointing at the pre-change
 server, once at the current one — and compare the pass rates with --compare.
 
-`--guide` picks the delivery channel to simulate (the rcsb_mcp_guide prompt by default,
-`assistant` for guide+policy, `none` for a client that loads neither). It is a real
-variable: the server no longer ships an `instructions` block, so what the model receives
-depends on what the client chooses to load.
+`--guide` picks the delivery channel to simulate (`none` by default: tools only, what a
+client that drops `instructions` sees; `instructions` for the tool-family map a client such
+as Claude Code injects; `assistant` for the opt-in policy prompt; `guide` for the retired
+rcsb_mcp_guide on an old checkout). It is a real variable: what the model receives beyond
+the tools depends on what the client chooses to load.
 
 A rate is computed over the samples that actually REACHED the model, never over --k, and
 attrition is reported. Anything else scores a dropped connection as a wrong tool choice —
@@ -119,15 +120,18 @@ def load_server(src_path, guide="guide"):
     `guide` selects WHICH delivery channel the run simulates, because that is a real
     variable now and not an implementation detail:
 
-      "guide"     the rcsb_mcp_guide prompt        — what a client that loads the guide sees
-      "assistant" rcsb_search_assistant            — guide + search/report policy
-      "none"      nothing                          — a client that loads neither
+      "guide"        the rcsb_mcp_guide prompt     — old checkouts only (see below)
+      "assistant"    rcsb_search_assistant         — the opt-in search/report policy
+      "instructions" the tool-family map           — what a client that injects it sees
+      "none"         nothing                       — a client that drops instructions
 
-    This used to read `server.mcp.instructions`, which the server no longer ships (see the
-    comment at the FastMCP() call). Left alone it silently degraded to "", so every run
-    would have measured the "none" arm while looking exactly like the historical runs that
-    had the full guide — an invisible change of what the number means. Falls back to
-    `instructions` so this runner still works against an OLD --src checkout that has it.
+    This once read `server.mcp.instructions` as the guide. When the guide was retired that
+    read silently degraded to "", so every run would have measured the "none" arm while
+    looking exactly like the historical runs that had the full guide — an invisible change
+    of what the number means. "guide" still falls back to `instructions` for an OLD --src
+    checkout whose block held the guide, and refuses a checkout whose block is the short
+    tool-family map (server.INSTRUCTIONS; see the comment above it): reading the map as
+    "the guide" would be the same invisible change again. The "instructions" arm reads it.
     """
     src_path = os.path.abspath(src_path)
     sys.path.insert(0, src_path)
@@ -139,7 +143,14 @@ def load_server(src_path, guide="guide"):
         system = ""
     elif guide == "assistant":
         system = server.rcsb_search_assistant()
+    elif guide == "instructions":
+        system = getattr(server.mcp, "instructions", "") or ""
+        if not system:
+            raise SystemExit(f"--src {src_path} ships no instructions")
     else:
+        if hasattr(server, "INSTRUCTIONS"):
+            raise SystemExit(f"--src {src_path} ships the tool-family map, not the guide; "
+                             "use --guide instructions")
         system = (getattr(server, "rcsb_mcp_guide", lambda: "")()
                   or getattr(server.mcp, "instructions", "") or "")
         if not system:
@@ -393,13 +404,15 @@ if __name__ == "__main__":
     p.add_argument("--temperature", type=float, default=1.0)
     # Default is "none": the rcsb_mcp_guide prompt was retired and every rule moved onto the
     # tool descriptions, so a client that loads nothing is the SUPPORTED configuration, not a
-    # degraded one — and it is what a public MCP client actually sees. "guide" is kept only
-    # for running against an old --src checkout that still exposes the prompt; against this
-    # tree it exits with a clear error rather than silently measuring the "none" arm.
-    p.add_argument("--guide", choices=["guide", "assistant", "none"], default="none",
+    # degraded one — and it is what a client that drops `instructions` (Claude web) sees.
+    # "instructions" adds the tool-family map a client such as Claude Code injects. "guide"
+    # is kept only for running against an old --src checkout that still exposes the prompt;
+    # against this tree it exits with a clear error rather than measuring another arm.
+    p.add_argument("--guide", choices=["guide", "assistant", "instructions", "none"], default="none",
                    help="which delivery channel to simulate: nothing (default -- what a "
-                        "public MCP client sees), rcsb_search_assistant, or the retired "
-                        "rcsb_mcp_guide prompt (old --src checkouts only)")
+                        "client that drops instructions sees), the instructions map, "
+                        "rcsb_search_assistant, or the retired rcsb_mcp_guide prompt "
+                        "(old --src checkouts only)")
     p.add_argument("--attempts", type=int, default=3,
                    help="tries per sample before recording a transport/throttle error")
     p.add_argument("--only", default="", help="comma-separated probe ids to run (default: all)")

@@ -1,7 +1,8 @@
 """Deterministic guard for load-bearing tool-description content.
 
 Tool descriptions and their input schemas are the only text the protocol always delivers
-to the model: the server ships no ``instructions`` block, and prompts are opt-in. These
+to the model: the server's ``instructions`` block is a map of the tool families that some
+clients drop (checked at the end of this module), and prompts are opt-in. These
 assertions lock in the cross-field rules and routing gotchas the JSON schema cannot encode,
 so a future trim can't silently delete one.
 
@@ -20,6 +21,7 @@ No network, no API key, no model — this is the cheap CI gate. The behavioral A
 checks whether the model still *acts* on this text lives in ``evals/tool_selection/``.
 """
 import asyncio
+import fnmatch
 import re
 
 from rcsb_mcp import server
@@ -96,7 +98,7 @@ def _delivered():
 
 
 # Gotchas that must stay in the SPECIFIC tool's own description: they are not derivable
-# from the schema and are not shared enough to live in the instructions block.
+# from the schema, and no shared channel is guaranteed to arrive.
 REQUIRED_IN_TOOL = {
     "rcsb_query_fulltext": [
         "text-relevance, NOT biological importance",   # score is not quality
@@ -227,19 +229,27 @@ REQUIRED_IN_TOOL = {
     "rcsb_get_chem_comps": [
         "InChIKey",                                      # a default field callers rely on
     ],
-    # rcsb_find_* resolvers: the search-by-id recipe was delegated to the instructions block,
-    # but these bits live ONLY here. `namespace`/`entry_type` are `str | None` (NOT Literals),
-    # so their allowed values never reach the JSON schema — this docstring is their only home.
+    # ReportRequest.api_calls: resolver and discovery calls are listed too, without an editor.
+    # The docstring's "Key fields" block said so until it moved into the schema, and the
+    # first copy there dropped it.
+    "rcsb_render_report": [
+        "each with label and tool_name",
+        "rcsb_find_*, rcsb_describe_*, rcsb_list_pdb_search_attributes",
+    ],
+    # rcsb_find_* resolvers: the search-by-id recipe was once delegated to the retired guide
+    # (the old instructions block), but these bits always lived ONLY here. `namespace`/
+    # `entry_type` are `str | None` (NOT Literals), so their allowed values never reach the
+    # JSON schema — this docstring is their only home.
     "rcsb_find_go_terms": [
         # namespace's values are no longer guarded here: it is now a GoNamespace Literal, so the
         # schema ships the enum (incl. the mf/bp/cc aliases) and the prose is redundant.
-        "are involved in",                               # trigger paraphrases (not in instructions)
+        "are involved in",                               # trigger paraphrases (not in the retired guide)
         "localized to",
     ],
     "rcsb_find_interpro_domains": [
         # entry_type's values are no longer guarded here: it is now an InterProEntryType Literal,
         # so the schema ships the enum (incl. the "superfamily" alias) and the prose is redundant.
-        "-containing proteins",                          # trigger paraphrase (not in instructions)
+        "-containing proteins",                          # trigger paraphrase (not in the retired guide)
     ],
     "rcsb_find_enzyme_classes": [
         "break down / degrade",                          # fires when no enzyme is NAMED
@@ -248,7 +258,7 @@ REQUIRED_IN_TOOL = {
         "implicated in",                                 # trigger paraphrase
     ],
     "rcsb_find_organisms": [
-        "disambiguates a species from its strains",      # not in instructions ('strain' absent)
+        "disambiguates a species from its strains",      # not in the retired guide ('strain' absent)
     ],
     # rcsb_seqcoord_*: the reference VALUES are a Literal (SequenceRef), so the
     # schema ships them and the prose was cut. These are what the schema cannot express — the
@@ -344,29 +354,102 @@ def test_no_tool_description_has_an_args_section():
     )
 
 
-def _documents_itself(prop: dict, defs: dict) -> bool:
-    """True for an argument that is a $ref to a model which is documented and describes
-    every one of its own fields -- the model carries the documentation instead
-    (rcsb_render_report's `params`, a ReportRequest wrapper)."""
-    target = defs.get(prop.get("$ref", "").split("/")[-1]) if prop.get("$ref") else None
-    return bool(
-        target
-        and target.get("description")
-        and all(field.get("description") for field in target.get("properties", {}).values())
+def _schema_properties(node) -> set[str]:
+    """Every property name anywhere in a JSON schema, $defs included."""
+    if isinstance(node, dict):
+        names = set(node.get("properties") or {}) if isinstance(node.get("properties"), dict) else set()
+        return names.union(*(_schema_properties(v) for v in node.values()))
+    if isinstance(node, list):
+        return set().union(*(_schema_properties(v) for v in node))
+    return set()
+
+
+def _input_part(description: str | None) -> str:
+    """A description up to its Returns section, which names OUTPUT fields."""
+    return re.split(r"^[ \t]*Returns:[ \t]*$", description or "", maxsplit=1, flags=re.M)[0]
+
+
+def test_no_tool_description_documents_a_schema_property():
+    """An Args section under another heading is still an Args section.
+
+    rcsb_render_report's "Key fields of ``report``:" listed five ReportRequest fields as
+    `name: text` lines, so the ``Args:`` check above never saw it, and its copy had drifted
+    from the schema's (it called result_type defaulted; the schema makes it REQUIRED). A line
+    that starts with an input property's name and a colon is that pattern, whatever the
+    heading: bare, bulleted (`-`/`*`), backticked, dotted (`report.title`) or typed
+    (`title (str):`). The Returns section is left out, since output fields can share a name
+    with an input.
+    """
+    offenders = []
+    for t in _tools():
+        text = _input_part(t.description)
+        for name in sorted(_schema_properties(t.inputSchema)):
+            line = (rf"^[ \t]*(?:[-*][ \t]+)?`{{0,2}}(?:[\w.]+\.)?{re.escape(name)}`{{0,2}}"
+                    rf"(?:[ \t]*\([^)]*\))?[ \t]*:")
+            if re.search(line, text, re.M):
+                offenders.append(f"{t.name}: {name}")
+    assert not offenders, (
+        "these descriptions document input fields; put the text in the field's "
+        "Field(description=...) instead:\n  " + "\n  ".join(offenders)
     )
 
 
+def _refs(node) -> list[str]:
+    """The $defs names a property schema points at, through arrays, tuples, maps and
+    anyOf/oneOf/allOf."""
+    if not isinstance(node, dict):
+        return []
+    out = [node["$ref"].split("/")[-1]] if "$ref" in node else []
+    for key in ("items", "prefixItems", "additionalProperties", "anyOf", "oneOf", "allOf"):
+        sub = node.get(key)
+        for item in sub if isinstance(sub, list) else [sub] if sub else []:
+            out += _refs(item)
+    return out
+
+
+#: Model fields left undescribed on purpose, as "<Model>.<field>". QueryDocument.query: its
+#: $defs block is emitted into two tools, and their argument descriptions cover the pair
+#: (see the comment on QueryDocument in search.py).
+BARE_BY_DESIGN = {"QueryDocument.query"}
+
+
+def _documented_through(prop: dict, defs: dict, seen: frozenset = frozenset()) -> bool:
+    """True when every model an argument points at is documented and describes every one of
+    its own fields, all the way down. A field left undescribed in a nested model is as
+    undocumented as one at the top: ReportRequest.api_calls and .data_usage were, behind a
+    one-level check."""
+    for name in _refs(prop):
+        target = defs.get(name)
+        if not target or not target.get("description"):
+            return False
+        if name in seen:
+            continue
+        for fname, field in target.get("properties", {}).items():
+            if not field.get("description") and f"{name}.{fname}" not in BARE_BY_DESIGN:
+                return False
+            if not _documented_through(field, defs, seen | {name}):
+                return False
+    return True
+
+
 def test_every_argument_has_a_schema_description():
-    """With Args sections gone, an argument without a schema description is undocumented."""
+    """With Args sections gone, an argument without a schema description is undocumented.
+
+    An argument that is a model may leave its own description to the model (rcsb_render_
+    report's `params`, a ReportRequest wrapper); any argument pointing at models needs them
+    documented all the way down, whether or not it carries a description itself.
+    """
     missing = []
     for t in _tools():
         defs = t.inputSchema.get("$defs", {})
         for name, prop in t.inputSchema.get("properties", {}).items():
-            if not prop.get("description") and not _documents_itself(prop, defs):
+            refs = _refs(prop)
+            if (refs and not _documented_through(prop, defs)) or (not refs and not prop.get("description")):
                 missing.append(f"{t.name}.{name}")
     assert not missing, (
-        "arguments with no schema description -- add Field(description=...) with its "
-        "wording in rcsb_mcp/descriptions/:\n  " + "\n  ".join(missing)
+        "arguments with no schema description, or pointing at a model with an undescribed "
+        "class or field -- add Field(description=...) with its wording in "
+        "rcsb_mcp/descriptions/:\n  " + "\n  ".join(missing)
     )
 
 
@@ -427,33 +510,112 @@ def test_the_unrelocated_gap_is_still_the_gap_we_think_it_is():
     )
 
 
-def test_no_description_points_at_the_removed_instructions_block():
-    """The `instructions` channel is gone; a docstring still citing it sends the agent nowhere.
+def test_no_description_points_at_the_instructions_block():
+    """Claude web drops the `instructions` block, so a description citing it sends the agent
+    nowhere there. The block is a map of the tool families, not a place to look things up.
 
     Kept as a distinct assertion from the one above because the failure modes differ: that
-    one catches guidance deleted from the guide, this one catches a REFERENCE left behind
-    when the destination moved.
+    one catches guidance deleted from the guide, this one catches a REFERENCE to a channel
+    that may never arrive. No tool text needs the word, so any use of it is caught, in any
+    case and with or without backticks ("the server `instructions` block").
     """
     stale = sorted(n for n, d in _descriptions().items()
-                   if "server instructions" in d or "instructions block" in d)
+                   if re.search(r"\binstructions\b", d, re.IGNORECASE))
     assert not stale, (
-        "these tool descriptions still cite the removed `instructions` block:\n  "
+        "these tool descriptions cite the `instructions` block, which some clients drop:\n  "
         + "\n  ".join(stale)
     )
 
 
-def test_the_server_ships_no_instructions_block():
-    """Deliberate: see the comment at the FastMCP() call in server.py.
+# --------------------------------------------------------------------------- #
+# The `instructions` block: a map of the tool families (server.INSTRUCTIONS)
+# --------------------------------------------------------------------------- #
+#: A ceiling on what the map may grow into, far below the 2048-char cut that cost the
+#: retired guide 85% of its text. Past it the block is turning back into a guide, whose
+#: rules belong on the tools that need them.
+INSTRUCTIONS_BUDGET = 1000
+INSTRUCTIONS_HEADER = "RCSB PDB tools, by family:"
 
-    Guarded so that re-adding it is a decision someone makes on purpose, rather than a
-    plausible-looking one-line 'fix' that silently reintroduces a channel the tool
-    descriptions are no longer allowed to depend on.
-    """
-    assert not getattr(server.mcp, "instructions", None), (
-        "server.py passes instructions= again — the guide is delivered as the "
-        "rcsb_mcp_guide prompt, which arrives whole or not at all"
+#: A tool name or a family glob, whole (`rcsb_get_*`, `rcsb_*_groups`).
+_MAP_CITATION = re.compile(r"\brcsb_[A-Za-z0-9_*]+")
+#: A map line: "- <tool name or family glob>: <what it does>".
+_MAP_LINE = re.compile(r"- (rcsb_[A-Za-z0-9_*]+): \S")
+
+
+def _instructions() -> str:
+    return server.mcp.instructions or ""
+
+
+def _map_lines() -> tuple[str, list[str]]:
+    header, *lines = _instructions().splitlines() or [""]
+    return header, lines
+
+
+def _map_heads() -> list[str]:
+    """The tool name or family glob each map line is about."""
+    return [m.group(1) for line in _map_lines()[1] if (m := _MAP_LINE.match(line))]
+
+
+def test_the_instructions_block_is_a_short_map():
+    """A fixed header, then one '- <name>: ...' line per family, within the budget. The shape
+    is what keeps it a map: a rule or gotcha added here would arrive in Claude Code and
+    nowhere in Claude web."""
+    text = _instructions()
+    assert text, "server.py passes no instructions= (see INSTRUCTIONS)"
+    size = _utf16_len(_collapsed(text))
+    assert size <= INSTRUCTIONS_BUDGET, (
+        f"instructions is {size} chars, over its {INSTRUCTIONS_BUDGET}-char budget: it is a "
+        "map of the tool families, and guidance belongs on the tool that needs it"
+    )
+    header, lines = _map_lines()
+    assert header == INSTRUCTIONS_HEADER, f"the first line is the header, not {header!r}"
+    off_shape = [line for line in lines if not _MAP_LINE.match(line)]
+    assert lines and not off_shape, (
+        "every line after the header names one tool or family: '- <name>: <what it does>'\n  "
+        + "\n  ".join(off_shape)
+    )
+    heads = _map_heads()
+    assert len(heads) == len(set(heads)), f"a family has two lines: {sorted(heads)}"
+
+
+def test_the_map_carries_no_rule_known_to_be_on_no_tool():
+    """NOT_RELOCATED lists guidance no tool description carries. In the map it would reach
+    Claude Code only, which is the map-only content the contract forbids."""
+    text = _norm(_instructions())
+    found = [p for p in NOT_RELOCATED if _norm(p) in text]
+    assert not found, (
+        "the instructions map carries guidance no tool has; it belongs on the tool that "
+        "needs it (see NOT_RELOCATED):\n  " + "\n  ".join(found)
     )
 
+
+def test_every_name_the_map_cites_is_registered():
+    """A renamed or removed tool must not leave the map pointing at it, and a family glob
+    must match at least one tool."""
+    registered = {t.name for t in _tools()}
+    cited = set(_MAP_CITATION.findall(_instructions()))
+    dangling = sorted(c for c in cited if "*" not in c and c not in registered)
+    empty = sorted(g for g in cited if "*" in g
+                   and not any(fnmatch.fnmatchcase(r, g) for r in registered))
+    assert not dangling and not empty, (
+        f"instructions cites unregistered tools {dangling} and families with no tool {empty}"
+    )
+
+
+def test_the_map_covers_every_registered_tool():
+    """Every tool is named somewhere in the map or falls under a family glob that heads a
+    line of its own, so a new tool or family cannot be missing from the one text a
+    deferred-tool client shows before it loads any tool. A glob met only inside another
+    line's text covers nothing."""
+    cited = set(_MAP_CITATION.findall(_instructions()))
+    names = {c for c in cited if "*" not in c}
+    families = [h for h in _map_heads() if "*" in h]
+    uncovered = sorted(t.name for t in _tools() if t.name not in names
+                       and not any(fnmatch.fnmatchcase(t.name, g) for g in families))
+    assert not uncovered, (
+        "add these to INSTRUCTIONS in server.py (a new family needs its own line):\n  "
+        + "\n  ".join(uncovered)
+    )
 
 # Tool-name prefixes, so a cross-reference can be told apart from an attribute path
 # (rcsb_entry_info.*, rcsb_polymer_entity.*, ...) which shares the rcsb_ prefix.

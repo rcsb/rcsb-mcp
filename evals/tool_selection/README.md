@@ -1,7 +1,8 @@
 # Tool-selection probes (A/B)
 
 A lightweight, **A/B** check for *which tool the model picks and how it fills the key
-arguments*, given only this server's tool schemas + the `instructions=` block.
+arguments*, given this server's tool schemas and, with `--guide instructions`, its
+`instructions=` map of the tool families.
 
 It complements the end-to-end accuracy suite in [`../rcsb_pdb_eval.xml`](../rcsb_pdb_eval.xml),
 and the two are **disjoint by design**. That suite grades final *answers*, so its answers must
@@ -24,7 +25,7 @@ instead of the answer is the only practical way to cover search routing — that
   `rcsb_search_request`; that is the only way to grade `return_type`, `group_by`, `sort_by`
   and `all_hits`, which exist on no other tool. Seeded query documents are real builder
   output, digests included.
-- **[`run_probes.py`](run_probes.py)** — the runner: loads tools + instructions from any
+- **[`run_probes.py`](run_probes.py)** — the runner: loads the tools (and the `--guide` text) from any
   `--src` checkout, asks a model to act on each prompt, grades the first tool call against
   `<expect>`, `--k` samples per probe. Backends: `anthropic` (needs `ANTHROPIC_API_KEY`) or
   `openai` (any OpenAI-compatible endpoint — a local vLLM, or a hosted proxy such as
@@ -83,5 +84,5 @@ just a probe or two while iterating.
 This suite needs a model + a key/endpoint, so it's a *deliberate* check, not a CI gate.
 The CI gate is [`../../tests/test_tool_descriptions.py`](../../tests/test_tool_descriptions.py):
 a free, deterministic `pytest` that asserts the load-bearing phrases still exist in each tool
-description (or in the instructions block). Run that on every change; run these probes at
+description. Run that on every change; run these probes at
 milestones.

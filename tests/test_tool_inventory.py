@@ -81,7 +81,7 @@ def test_inventory_count_is_stable():
 # documented seven `rcsb_search_by_*` tools that had been replaced by `rcsb_query_*` +
 # `rcsb_search_request`, a `group_by_identity` parameter that had become `group_by`, a
 # `pdb_assistant` prompt renamed to `rcsb_search_assistant`, and a server `instructions`
-# block that no longer exists. None of it failed anything; it was found by a human reading
+# guide that had been retired. None of it failed anything; it was found by a human reading
 # the README months later.
 #
 # This is the cheap half of that problem — a name that no longer exists is mechanically

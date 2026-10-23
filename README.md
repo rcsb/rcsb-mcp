@@ -362,7 +362,10 @@ and ships with the package.
 
 Invoke it when you want answers formatted as a PDB report. It is **not** required for the
 tools to work: every routing rule, gotcha and cross-reference lives on the tool descriptions
-themselves, which the protocol always delivers. A server `instructions` block and a second
-`rcsb_mcp_guide` prompt both used to carry that guidance and were retired — `instructions`
-because clients truncate or drop it, the prompt because it is opt-in and may never be loaded.
+themselves, which the protocol always delivers. That guidance used to live in two other
+places, both retired: the server `instructions` block (clients truncate or drop it) and a
+second `rcsb_mcp_guide` prompt (opt-in, so it may never be loaded). `instructions` now carries
+only a short map of the tool families, for clients that show tool names before loading their
+descriptions; every line restates a tool description, and nothing in it is needed to use the
+tools.
 `prompts/rcsb_mcp_guide.md` is kept on disk, unserved, as a source to rescue prose from.
