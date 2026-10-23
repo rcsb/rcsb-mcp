@@ -32,4 +32,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Serve the MCP over the streamable-HTTP transport (endpoint: POST /mcp).
 # create_app is the FastMCP streamable-HTTP ASGI app factory (--factory builds it on start).
-CMD ["uvicorn", "rcsb_mcp.server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
+# The pod sits behind the TLS-terminating HAProxy ingress, so trust its X-Forwarded-Proto.
+# Otherwise uvicorn's redirects (e.g. /mcp/ -> /mcp) point at http:// and break clients.
+CMD ["uvicorn", "rcsb_mcp.server:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]
